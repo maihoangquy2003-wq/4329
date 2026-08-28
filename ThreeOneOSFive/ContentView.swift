@@ -7,53 +7,55 @@ enum ViewState {
 
 struct ContentView: View {
     @State private var currentViewState: ViewState = .login
-    // Khởi tạo state quản lý phiên điều hướng gốc của ứng dụng
-    @StateObject private var tabNavigationState = AppTabNavigationState()
     
     var body: some View {
         ZStack {
-            // Nền không gian tối thẳm huyền bí
+            // Nền không gian tối thẳm huyền bí, sang trọng
             LinearGradient(
-                colors: [Color(red: 0.01, green: 0.02, blue: 0.05), Color(red: 0.04, green: 0.01, blue: 0.08)],
+                colors: [Color(red: 0.02, green: 0.01, blue: 0.06), Color(red: 0.05, green: 0.02, blue: 0.10)],
                 startPoint: .topLeading,
                 endPoint: .bottomTrailing
             )
             .ignoresSafeArea()
             
-            // Hiệu ứng hạt sáng lấp lánh nền phía sau
-            ParticleRainView()
+            // Hiệu ứng ánh sáng nền neon động mượt mà
+            BackgroundGlowEffect()
             
             switch currentViewState {
             case .login:
                 NeonLoginView(currentViewState: $currentViewState)
             case .mainApp:
-                // Truyền đúng kiểu @Binding dạng $tabNavigationState theo yêu cầu của ứng dụng gốc
-                FilesTabSwitcherView(session: $tabNavigationState)
+                MainDashboardView(currentViewState: $currentViewState)
             }
         }
         .preferredColorScheme(.dark)
     }
 }
 
-// MARK: - HIỆU ỨNG HẠT SÁNG NỀN
-struct ParticleRainView: View {
+// MARK: - HIỆU ỨNG ÁNH SÁNG NỀN NEON
+struct BackgroundGlowEffect: View {
+    @State private var isAnimating = false
+    
     var body: some View {
-        TimelineView(.animation) { context in
-            Canvas { graphicsContext, size in
-                let time = context.date.timeIntervalSinceReferenceDate
-                for i in 0..<30 {
-                    let seed = Double(i) * 40.0
-                    let x = (sin(time * 0.4 + seed) * 0.5 + 0.5) * size.width
-                    let y = fmod(seed + time * 50.0, size.height)
-                    let rect = CGRect(x: x, y: y, width: 2.5, height: 2.5)
-                    
-                    graphicsContext.fill(Path(ellipseIn: rect), with: .color(i % 2 == 0 ? .cyan : .purple))
-                    graphicsContext.addFilter(.glow(color: i % 2 == 0 ? .cyan : .purple, radius: 3))
-                }
+        ZStack {
+            Circle()
+                .fill(Color.cyan.opacity(0.15))
+                .frame(width: 300, height: 300)
+                .blur(radius: 80)
+                .offset(x: isAnimating ? -100 : 100, y: isAnimating ? -150 : 150)
+            
+            Circle()
+                .fill(Color.purple.opacity(0.15))
+                .frame(width: 300, height: 300)
+                .blur(radius: 80)
+                .offset(x: isAnimating ? 120 : -120, y: isAnimating ? 160 : -160)
+        }
+        .onAppear {
+            withAnimation(.easeInOut(duration: 6).repeatForever(autoreverses: true)) {
+                isAnimating.toggle()
             }
         }
         .ignoresSafeArea()
-        .allowsHitTesting(false)
     }
 }
 
@@ -62,38 +64,38 @@ struct NeonLoginView: View {
     @Binding var currentViewState: ViewState
     @State private var keyInput: String = ""
     @State private var showError = false
-    @State private var glowPulse = false
+    @State private var isGlowing = false
     
     // ĐIỀN LINK ẢNH AVATAR CỦA BẠN VÀO ĐÂY (Phải kết thúc bằng .png hoặc .jpg)
     let avatarURL = "https://i.imgur.com/Thay_Bang_Link_Anh_Cua_Ban.png"
     
     var body: some View {
-        VStack(spacing: 28) {
+        VStack(spacing: 26) {
             Spacer()
             
             // AVATAR NEON PHÁT SÁNG
             ZStack {
                 Circle()
                     .stroke(LinearGradient(colors: [.cyan, .purple], startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 3)
-                    .frame(width: 105, height: 105)
-                    .shadow(color: .cyan, radius: glowPulse ? 16 : 6)
-                    .scaleEffect(glowPulse ? 1.03 : 0.98)
+                    .frame(width: 110, height: 110)
+                    .shadow(color: .cyan, radius: isGlowing ? 18 : 6)
+                    .scaleEffect(isGlowing ? 1.04 : 0.98)
                 
                 AsyncImage(url: URL(string: avatarURL)) { phase in
                     if let image = phase.image {
                         image.resizable().scaledToFill()
                     } else {
-                        Image(systemName: "atom")
+                        Image(systemName: "person.crop.circle.fill.badge.checkmark")
                             .resizable().scaledToFit().padding(22)
                             .foregroundStyle(LinearGradient(colors: [.cyan, .purple], startPoint: .top, endPoint: .bottom))
                     }
                 }
-                .frame(width: 95, height: 95)
+                .frame(width: 100, height: 100)
                 .clipShape(Circle())
             }
             .onAppear {
-                withAnimation(.easeInOut(duration: 2.0).repeatForever(autoreverses: true)) {
-                    glowPulse.toggle()
+                withAnimation(.easeInOut(duration: 2.2).repeatForever(autoreverses: true)) {
+                    isGlowing.toggle()
                 }
             }
             
@@ -104,7 +106,7 @@ struct NeonLoginView: View {
                     .tracking(4)
                     .foregroundColor(.white)
                     .shadow(color: .cyan, radius: 10)
-                    .shadow(color: .cyan, radius: 20)
+                    .shadow(color: .cyan, radius: 25)
                 
                 Text("QUANTUM SECURE GATEWAY")
                     .font(.system(size: 11, weight: .bold))
@@ -120,7 +122,7 @@ struct NeonLoginView: View {
                         .foregroundColor(.cyan)
                         .shadow(color: .cyan, radius: 5)
                     
-                    TextField("Nhập Zenith Key kích hoạt...", text: $keyInput)
+                    TextField("Nhập mã kích hoạt Zenith Key...", text: $keyInput)
                         .foregroundColor(.white)
                         .accentColor(.cyan)
                         .autocapitalization(.none)
@@ -216,6 +218,77 @@ struct NeonLoginView: View {
                     .foregroundColor(.gray)
             }
             .padding(.bottom, 25)
+        }
+    }
+}
+
+// MARK: - MÀN HÌNH CHÍNH SAU KHI ĐĂNG NHẬP
+struct MainDashboardView: View {
+    @Binding var currentViewState: ViewState
+    
+    var body: some View {
+        VStack(spacing: 22) {
+            Spacer()
+            
+            ZStack {
+                Circle()
+                    .fill(Color.cyan.opacity(0.15))
+                    .frame(width: 110, height: 110)
+                    .blur(radius: 10)
+                
+                Image(systemName: "shield.checkered")
+                    .font(.system(size: 55))
+                    .foregroundStyle(LinearGradient(colors: [.cyan, .purple], startPoint: .top, endPoint: .bottom))
+                    .shadow(color: .cyan, radius: 12)
+            }
+            
+            Text("ZENITH SECURE DASHBOARD")
+                .font(.system(size: 22, weight: .black))
+                .foregroundColor(.white)
+                .tracking(2)
+                .shadow(color: .cyan, radius: 8)
+            
+            Text("Phiên làm việc đã được mã hóa và xác thực toàn quyền thành công.")
+                .font(.system(size: 13))
+                .foregroundColor(.gray)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 40)
+            
+            VStack(alignment: .leading, spacing: 12) {
+                HStack {
+                    Image(systemName: "cpu").foregroundColor(.cyan)
+                    Text("Trạng thái Lõi: Hoạt động tối ưu").font(.system(size: 12, weight: .bold)).foregroundColor(.white)
+                }
+                HStack {
+                    Image(systemName: "lock.shield").foregroundColor(.purple)
+                    Text("Bảo mật: Mã hóa phần cứng độc lập").font(.system(size: 12, weight: .bold)).foregroundColor(.white)
+                }
+            }
+            .padding(20)
+            .background(.ultraThinMaterial)
+            .cornerRadius(16)
+            .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.cyan.opacity(0.3), lineWidth: 1))
+            .padding(.horizontal, 30)
+            
+            Button(action: {
+                withAnimation {
+                    currentViewState = .login
+                }
+            }) {
+                Text("ĐĂNG XUẤT PHIÊN LÀM VIỆC")
+                    .font(.system(size: 13, weight: .bold))
+                    .tracking(1)
+                    .foregroundColor(.red)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 14)
+                    .background(Color.red.opacity(0.1))
+                    .cornerRadius(14)
+                    .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.red.opacity(0.4), lineWidth: 1))
+            }
+            .padding(.horizontal, 30)
+            .padding(.top, 10)
+            
+            Spacer()
         }
     }
 }
