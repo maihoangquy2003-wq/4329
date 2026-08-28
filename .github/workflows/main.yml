@@ -7,33 +7,34 @@ on:
 
 jobs:
   build:
-    runs-on: macos-latest
+    runs-on: macos-14
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Select Xcode
-        run: sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
+      - name: Set up Xcode
+        run: sudo xcode-select -s /Applications/Xcode_15.4.app/Contents/Developer
 
-      - name: Build Archive
+      - name: Build App
         run: |
           xcodebuild -project ThreeOneOSFive.xcodeproj \
                      -scheme ThreeOneOSFive \
                      -configuration Release \
                      -sdk iphoneos \
-                     -archivePath build/ThreeOneOSFive.xcarchive \
-                     CODE_SIGNING_ALLOWED=NO \
+                     -derivedDataPath build \
+                     CODE_SIGN_IDENTITY="" \
                      CODE_SIGNING_REQUIRED=NO \
-                     clean archive
+                     CODE_SIGNING_ALLOWED=NO \
+                     build
 
-      - name: Export Payload to IPA
+      - name: Package IPA
         run: |
-          mkdir -p build/Payload
-          cp -r build/ThreeOneOSFive.xcarchive/Products/Applications/*.app build/Payload/
-          cd build && zip -r ThreeOneOSFive.ipa Payload
+          mkdir -p Payload
+          cp -r build/Build/Products/Release-iphoneos/*.app Payload/
+          zip -r ThreeOneOSFive.ipa Payload
 
-      - name: Upload IPA Artifact
+      - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ThreeOneOSFive-Build
-          path: build/ThreeOneOSFive.ipa
+          name: ThreeOneOSFive-IPA
+          path: ThreeOneOSFive.ipa
