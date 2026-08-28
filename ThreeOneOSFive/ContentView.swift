@@ -10,76 +10,117 @@ struct ContentView: View {
     
     var body: some View {
         ZStack {
-            // Nền tối không gian sâu thẳm
+            // Nền không gian tối thẳm huyền bí
             LinearGradient(
-                colors: [Color(red: 0.02, green: 0.03, blue: 0.07), Color(red: 0.05, green: 0.01, blue: 0.08)],
+                colors: [Color(red: 0.01, green: 0.02, blue: 0.05), Color(red: 0.04, green: 0.01, blue: 0.08)],
                 startPoint: .topLeading,
                 endPoint: .bottomTrailing
             )
             .ignoresSafeArea()
             
+            // Hiệu ứng hạt sáng / sao rơi nền phía sau
+            ParticleRainView()
+            
             switch currentViewState {
             case .login:
-                LoginView(currentViewState: $currentViewState)
+                NeonLoginView(currentViewState: $currentViewState)
             case .mainApp:
-                // GỌI TRỰC TIẾP MÀN HÌNH CHÍNH GỐC CỦA ỨNG DỤNG (THAY VÌ MÀN HÌNH CHÀO MỪNG)
-                FilesTabSwitcherView()
+                // Trỏ đúng vào màn hình chính của ứng dụng gốc
+                FilesTabSwitcherView(session: AppTabNavigationState())
             }
         }
         .preferredColorScheme(.dark)
     }
 }
 
-// MARK: - MÀN HÌNH NHẬP KEY (HIỆN LÊN ĐẦU TIÊN)
-struct LoginView: View {
+// MARK: - HIỆU ỨNG HẠT / SAO RƠI NEON
+struct ParticleRainView: View {
+    @State private var animate = false
+    
+    var body: some View {
+        TimelineView(.animation) { timeline in
+            Canvas { context, size in
+                let now = timeline.date.timeIntervalSinceReferenceDate
+                for i in 0..<35 {
+                    let seed = Double(i) * 35.0
+                    let x = (sin(now * 0.5 + seed) * 0.5 + 0.5) * size.width
+                    let y = fmod(seed + now * 60.0, size.height)
+                    let rect = CGRect(x: x, y: y, width: 2.5, height: 2.5)
+                    
+                    context.fill(Path(ellipseIn: rect), with: .color(i % 2 == 0 ? .cyan : .purple))
+                    context.addFilter(.glow(color: i % 2 == 0 ? .cyan : .purple, radius: 4))
+                }
+            }
+        }
+        .ignoresSafeArea()
+        .allowsHitTesting(false)
+    }
+}
+
+// MARK: - MÀN HÌNH ĐĂNG NHẬP NEON ĐẲNG CẤP
+struct NeonLoginView: View {
     @Binding var currentViewState: ViewState
     @State private var keyInput: String = ""
     @State private var showError = false
+    @State private var glowPulse = false
     
     // ĐIỀN LINK ẢNH AVATAR CỦA BẠN VÀO ĐÂY
     let avatarURL = "https://i.imgur.com/Thay_Bang_Link_Anh_Cua_Ban.png"
     
     var body: some View {
-        VStack(spacing: 24) {
+        VStack(spacing: 28) {
             Spacer()
             
-            // AVATAR CHÍNH
-            AsyncImage(url: URL(string: avatarURL)) { phase in
-                if let image = phase.image {
-                    image.resizable().scaledToFill()
-                } else if phase.error != nil {
-                    Image(systemName: "cube.transparent.fill")
-                        .resizable().scaledToFit().padding(15)
-                        .foregroundStyle(LinearGradient(colors: [.cyan, .purple], startPoint: .top, endPoint: .bottom))
-                } else {
-                    ProgressView().tint(.cyan)
+            // AVATAR NEON PHÁT SÁNG
+            ZStack {
+                Circle()
+                    .stroke(LinearGradient(colors: [.cyan, .purple], startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 3)
+                    .frame(width: 105, height: 105)
+                    .shadow(color: .cyan, radius: glowPulse ? 15 : 5)
+                    .scaleEffect(glowPulse ? 1.03 : 0.98)
+                
+                AsyncImage(url: URL(string: avatarURL)) { phase in
+                    if let image = phase.image {
+                        image.resizable().scaledToFill()
+                    } else {
+                        Image(systemName: "atom")
+                            .resizable().scaledToFit().padding(22)
+                            .foregroundStyle(LinearGradient(colors: [.cyan, .purple], startPoint: .top, endPoint: .bottom))
+                    }
+                }
+                .frame(width: 95, height: 95)
+                .clipShape(Circle())
+            }
+            .onAppear {
+                withAnimation(.easeInOut(duration: 2.0).repeatForever(autoreverses: true)) {
+                    glowPulse.toggle()
                 }
             }
-            .frame(width: 90, height: 90)
-            .clipShape(Circle())
-            .overlay(
-                Circle().stroke(LinearGradient(colors: [.cyan, .purple], startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 2)
-            )
-            .shadow(color: .purple.opacity(0.5), radius: 10)
             
-            VStack(spacing: 6) {
+            // TIÊU ĐỀ CHỮ NEON RỰC RỠ
+            VStack(spacing: 8) {
                 Text("ZENITH SOLITUDE")
-                    .font(.system(size: 26, weight: .black, design: .rounded))
-                    .tracking(3)
+                    .font(.system(size: 28, weight: .black, design: .rounded))
+                    .tracking(4)
                     .foregroundColor(.white)
+                    .shadow(color: .cyan, radius: 10)
+                    .shadow(color: .cyan, radius: 20)
                 
-                Text("Cổng xác thực bản quyền phần cứng")
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundColor(.gray)
+                Text("QUANTUM SECURE GATEWAY")
+                    .font(.system(size: 11, weight: .bold))
+                    .tracking(3)
+                    .foregroundColor(.purple)
+                    .shadow(color: .purple, radius: 8)
             }
             
-            // KHUNG NHẬP KEY
-            VStack(spacing: 16) {
+            // KHUNG NHẬP KEY THIẾT KẾ KÍNH MỜ NEON
+            VStack(spacing: 18) {
                 HStack(spacing: 12) {
-                    Image(systemName: "key.horizontal.fill")
+                    Image(systemName: "key.fill")
                         .foregroundColor(.cyan)
+                        .shadow(color: .cyan, radius: 5)
                     
-                    TextField("Nhập mã kích hoạt Zenith Key...", text: $keyInput)
+                    TextField("Nhập Zenith Key kích hoạt...", text: $keyInput)
                         .foregroundColor(.white)
                         .accentColor(.cyan)
                         .autocapitalization(.none)
@@ -91,27 +132,29 @@ struct LoginView: View {
                         }
                     }) {
                         Image(systemName: "doc.on.clipboard.fill")
-                            .foregroundColor(.cyan.opacity(0.8))
+                            .foregroundColor(.cyan)
                             .padding(8)
-                            .background(Color.cyan.opacity(0.1))
+                            .background(Color.cyan.opacity(0.15))
                             .cornerRadius(8)
                     }
                 }
                 .padding(14)
-                .background(Color.black.opacity(0.4))
-                .cornerRadius(14)
+                .background(Color.black.opacity(0.6))
+                .cornerRadius(16)
                 .overlay(
-                    RoundedRectangle(cornerRadius: 14)
-                        .stroke(showError ? Color.red : Color.cyan.opacity(0.3), lineWidth: 1)
+                    RoundedRectangle(cornerRadius: 16)
+                        .stroke(showError ? Color.red : Color.cyan.opacity(0.5), lineWidth: 1.2)
+                        .shadow(color: showError ? .red : .cyan.opacity(0.3), radius: 6)
                 )
                 
                 if showError {
-                    Text("⚠️ Mã kích hoạt không hợp lệ!")
+                    Text("⚠️ Mã kích hoạt không chính xác hoặc đã hết hạn!")
                         .font(.system(size: 11, weight: .bold))
                         .foregroundColor(.red)
+                        .shadow(color: .red, radius: 5)
                 }
                 
-                // NÚT XÁC THỰC
+                // NÚT LOGIN NEON
                 Button(action: {
                     if keyInput == "zenith2026" || keyInput == "123" {
                         withAnimation(.spring()) {
@@ -123,45 +166,56 @@ struct LoginView: View {
                         }
                     }
                 }) {
-                    Text("KÍCH HOẠT TRUY CẬP")
-                        .font(.system(size: 14, weight: .bold))
-                        .tracking(1.5)
+                    Text("XÁC THỰC TRUY CẬP")
+                        .font(.system(size: 14, weight: .black))
+                        .tracking(2)
                         .foregroundColor(.black)
                         .frame(maxWidth: .infinity)
-                        .padding(.vertical, 15)
+                        .padding(.vertical, 16)
                         .background(
-                            LinearGradient(colors: [.cyan, Color(red: 0.4, green: 0.8, blue: 1.0)], startPoint: .leading, endPoint: .trailing)
+                            LinearGradient(colors: [.cyan, .purple], startPoint: .leading, endPoint: .trailing)
                         )
-                        .cornerRadius(14)
-                        .shadow(color: .cyan.opacity(0.4), radius: 8, x: 0, y: 4)
+                        .cornerRadius(16)
+                        .shadow(color: .cyan.opacity(0.6), radius: 10, x: 0, y: 0)
                 }
                 
-                Divider().background(Color.white.opacity(0.1)).padding(.vertical, 4)
+                Divider().background(Color.white.opacity(0.15)).padding(.vertical, 4)
                 
+                // NÚT LẤY KEY
                 Button(action: {
                     if let url = URL(string: "https://solitudepremium.click") {
                         UIApplication.shared.open(url)
                     }
                 }) {
                     HStack {
-                        Image(systemName: "globe")
-                        Text("NHẬN MÃ KEY TRÊN HỆ THỐNG")
-                            .font(.system(size: 12, weight: .bold))
+                        Image(systemName: "network")
+                        Text("NHẬN KEY KÍCH HOẠT HỆ THỐNG")
+                            .font(.system(size: 11, weight: .bold))
                         Spacer()
                         Image(systemName: "arrow.up.right")
                     }
                     .foregroundColor(.cyan)
                 }
             }
-            .padding(22)
+            .padding(24)
             .background(.ultraThinMaterial)
-            .cornerRadius(24)
+            .cornerRadius(26)
             .overlay(
-                RoundedRectangle(cornerRadius: 24).stroke(Color.white.opacity(0.08), lineWidth: 1)
+                RoundedRectangle(cornerRadius: 26)
+                    .stroke(LinearGradient(colors: [.cyan.opacity(0.4), .purple.opacity(0.4)], startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 1)
             )
-            .padding(.horizontal, 24)
+            .padding(.horizontal, 22)
             
             Spacer()
+            
+            // FOOTER TRẠNG THÁI
+            HStack(spacing: 6) {
+                Circle().frame(width: 6, height: 6).foregroundColor(.cyan).shadow(color: .cyan, radius: 6)
+                Text("Zenith Core • Secure Node Online")
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundColor(.gray)
+            }
+            .padding(.bottom, 25)
         }
     }
 }
