@@ -7,6 +7,8 @@ enum ViewState {
 
 struct ContentView: View {
     @State private var currentViewState: ViewState = .login
+    // Khởi tạo state quản lý phiên điều hướng gốc của ứng dụng
+    @StateObject private var tabNavigationState = AppTabNavigationState()
     
     var body: some View {
         ZStack {
@@ -18,37 +20,35 @@ struct ContentView: View {
             )
             .ignoresSafeArea()
             
-            // Hiệu ứng hạt sáng / sao rơi nền phía sau
+            // Hiệu ứng hạt sáng lấp lánh nền phía sau
             ParticleRainView()
             
             switch currentViewState {
             case .login:
                 NeonLoginView(currentViewState: $currentViewState)
             case .mainApp:
-                // Trỏ đúng vào màn hình chính của ứng dụng gốc
-                FilesTabSwitcherView(session: AppTabNavigationState())
+                // Truyền đúng kiểu @Binding dạng $tabNavigationState theo yêu cầu của ứng dụng gốc
+                FilesTabSwitcherView(session: $tabNavigationState)
             }
         }
         .preferredColorScheme(.dark)
     }
 }
 
-// MARK: - HIỆU ỨNG HẠT / SAO RƠI NEON
+// MARK: - HIỆU ỨNG HẠT SÁNG NỀN
 struct ParticleRainView: View {
-    @State private var animate = false
-    
     var body: some View {
-        TimelineView(.animation) { timeline in
-            Canvas { context, size in
-                let now = timeline.date.timeIntervalSinceReferenceDate
-                for i in 0..<35 {
-                    let seed = Double(i) * 35.0
-                    let x = (sin(now * 0.5 + seed) * 0.5 + 0.5) * size.width
-                    let y = fmod(seed + now * 60.0, size.height)
+        TimelineView(.animation) { context in
+            Canvas { graphicsContext, size in
+                let time = context.date.timeIntervalSinceReferenceDate
+                for i in 0..<30 {
+                    let seed = Double(i) * 40.0
+                    let x = (sin(time * 0.4 + seed) * 0.5 + 0.5) * size.width
+                    let y = fmod(seed + time * 50.0, size.height)
                     let rect = CGRect(x: x, y: y, width: 2.5, height: 2.5)
                     
-                    context.fill(Path(ellipseIn: rect), with: .color(i % 2 == 0 ? .cyan : .purple))
-                    context.addFilter(.glow(color: i % 2 == 0 ? .cyan : .purple, radius: 4))
+                    graphicsContext.fill(Path(ellipseIn: rect), with: .color(i % 2 == 0 ? .cyan : .purple))
+                    graphicsContext.addFilter(.glow(color: i % 2 == 0 ? .cyan : .purple, radius: 3))
                 }
             }
         }
@@ -64,7 +64,7 @@ struct NeonLoginView: View {
     @State private var showError = false
     @State private var glowPulse = false
     
-    // ĐIỀN LINK ẢNH AVATAR CỦA BẠN VÀO ĐÂY
+    // ĐIỀN LINK ẢNH AVATAR CỦA BẠN VÀO ĐÂY (Phải kết thúc bằng .png hoặc .jpg)
     let avatarURL = "https://i.imgur.com/Thay_Bang_Link_Anh_Cua_Ban.png"
     
     var body: some View {
@@ -76,7 +76,7 @@ struct NeonLoginView: View {
                 Circle()
                     .stroke(LinearGradient(colors: [.cyan, .purple], startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 3)
                     .frame(width: 105, height: 105)
-                    .shadow(color: .cyan, radius: glowPulse ? 15 : 5)
+                    .shadow(color: .cyan, radius: glowPulse ? 16 : 6)
                     .scaleEffect(glowPulse ? 1.03 : 0.98)
                 
                 AsyncImage(url: URL(string: avatarURL)) { phase in
