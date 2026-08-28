@@ -1,6 +1,5 @@
 import SwiftUI
 
-// Trạng thái hiển thị giao diện tùy chỉnh
 enum ViewState {
     case splash
     case login
@@ -12,152 +11,127 @@ struct ContentView: View {
     
     var body: some View {
         ZStack {
-            // Nền đen tuyền cho toàn bộ app
-            Color(red: 0.05, green: 0.0, blue: 0.02).ignoresSafeArea()
+            // Nền tối không gian sâu thẳm
+            LinearGradient(
+                colors: [Color(red: 0.02, green: 0.03, blue: 0.07), Color(red: 0.05, green: 0.01, blue: 0.08)],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+            .ignoresSafeArea()
             
-            // Điều hướng các màn hình
             switch currentViewState {
             case .splash:
                 SplashView(currentViewState: $currentViewState)
             case .login:
                 LoginView(currentViewState: $currentViewState)
             case .mainApp:
-                // MÀN HÌNH CHÍNH SAU KHI ĐĂNG NHẬP THÀNH CÔNG
-                VStack(spacing: 15) {
-                    Image(systemName: "checkmark.shield.fill")
-                        .font(.system(size: 60))
-                        .foregroundColor(.green)
-                        .shadow(color: .green, radius: 10)
-                    
-                    Text("ĐĂNG NHẬP THÀNH CÔNG!")
-                        .font(.title2)
-                        .fontWeight(.heavy)
-                        .foregroundColor(.white)
-                    
-                    Text("Hệ thống đã xác thực Key VIP thành công.")
-                        .font(.caption)
-                        .foregroundColor(.gray)
-                    
-                    Button(action: {
-                        // Quay lại màn hình khóa nếu muốn test lại
-                        currentViewState = .login
-                    }) {
-                        Text("Đăng xuất / Khóa lại")
-                            .font(.footnote)
-                            .fontWeight(.bold)
-                            .foregroundColor(.red)
-                            .padding(.horizontal, 20)
-                            .padding(.vertical, 10)
-                            .background(Color.white.opacity(0.1))
-                            .cornerRadius(10)
-                    }
-                    .padding(.top, 10)
-                }
+                // MÀN HÌNH CHÍNH
+                MainDashboardView(currentViewState: $currentViewState)
             }
         }
         .preferredColorScheme(.dark)
     }
 }
 
-// MARK: - MÀN HÌNH 1: SPLASH SCREEN (TẢI THANH TIẾN ĐỘ)
+// MARK: - MÀN HÌNH 1: SPLASH SCREEN (THANH TẢI 0-100%)
 struct SplashView: View {
     @Binding var currentViewState: ViewState
     @State private var progress: CGFloat = 0.0
     
+    // ĐIỀN LINK ẢNH AVATAR CỦA BẠN VÀO GIỮA 2 DẤU NGOẶC KÉP BÊN DƯỚI
+    let avatarURL = "https://i.imgur.com/Thay_Bang_Link_Anh_Cua_Ban.png"
+    
     var body: some View {
-        VStack(spacing: 20) {
+        VStack(spacing: 25) {
             Spacer()
             
-            ZStack {
-                Circle()
-                    .stroke(Color.red, lineWidth: 2)
-                    .frame(width: 120, height: 120)
-                    .shadow(color: .red, radius: 15)
-                
-                Image(systemName: "shield.fill")
-                    .resizable()
-                    .scaledToFit()
-                    .frame(width: 60, height: 60)
-                    .foregroundColor(.white)
+            // AVATAR CHÍNH
+            AsyncImage(url: URL(string: avatarURL)) { phase in
+                if let image = phase.image {
+                    image.resizable().scaledToFill()
+                } else if phase.error != nil {
+                    // Nếu link lỗi hoặc chưa có link, hiển thị icon mặc định
+                    Image(systemName: "cube.transparent.fill")
+                        .resizable().scaledToFit().padding(20)
+                        .foregroundStyle(LinearGradient(colors: [.cyan, .purple], startPoint: .top, endPoint: .bottom))
+                } else {
+                    ProgressView().tint(.cyan)
+                }
             }
-            .padding(.bottom, 20)
+            .frame(width: 120, height: 120)
+            .clipShape(Circle())
+            .overlay(
+                Circle().stroke(LinearGradient(colors: [.cyan, .purple], startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 3)
+            )
+            .shadow(color: .cyan.opacity(0.6), radius: 20)
+            .padding(.bottom, 10)
             
-            Text("HEADLOCK KEZIS")
-                .font(.system(size: 32, weight: .heavy, design: .default))
+            Text("ZENITH SOLITUDE")
+                .font(.system(size: 30, weight: .black, design: .rounded))
+                .tracking(5)
                 .foregroundColor(.white)
-                .shadow(color: .red, radius: 10)
+                .shadow(color: .cyan.opacity(0.8), radius: 10)
             
-            Text("POWERED BY MITXY SECURITY")
-                .font(.caption)
-                .fontWeight(.bold)
-                .tracking(2)
-                .foregroundColor(Color(red: 0.8, green: 0.4, blue: 0.4))
+            Text("QUANTUM CORE V4.0")
+                .font(.system(size: 12, weight: .bold))
+                .tracking(4)
+                .foregroundColor(.cyan.opacity(0.8))
             
-            // Khung chứa thanh Loading
-            VStack(alignment: .leading, spacing: 15) {
+            // THANH TIẾN TRÌNH 0 - 100%
+            VStack(alignment: .leading, spacing: 12) {
                 HStack {
-                    Text(progress >= 1.0 ? "Khởi động Hệ thống Hoàn tất!" : "Đang tải dữ liệu...")
-                        .font(.footnote)
-                        .fontWeight(.bold)
-                        .foregroundColor(.white)
+                    Text(progress >= 1.0 ? "Khởi tạo hệ thống thành công" : "Đang giải mã dữ liệu...")
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundColor(.white.opacity(0.8))
                     Spacer()
+                    // Hiển thị số %
                     Text("\(Int(progress * 100))%")
-                        .font(.footnote)
-                        .fontWeight(.bold)
-                        .foregroundColor(.red)
+                        .font(.system(size: 14, weight: .heavy))
+                        .foregroundColor(.cyan)
+                        .shadow(color: .cyan, radius: 5)
                 }
                 
+                // Khung thanh chạy
                 GeometryReader { geometry in
                     ZStack(alignment: .leading) {
                         Capsule()
-                            .frame(height: 6)
-                            .foregroundColor(Color.red.opacity(0.2))
+                            .frame(height: 8)
+                            .foregroundColor(Color.white.opacity(0.1))
                         
                         Capsule()
-                            .frame(width: geometry.size.width * progress, height: 6)
-                            .foregroundColor(.red)
-                            .shadow(color: .red, radius: 5)
+                            .frame(width: geometry.size.width * progress, height: 8)
+                            .foregroundStyle(LinearGradient(colors: [.cyan, .purple], startPoint: .leading, endPoint: .trailing))
+                            .shadow(color: .cyan, radius: 8)
                     }
                 }
-                .frame(height: 6)
-                
-                HStack {
-                    Spacer()
-                    Circle().frame(width: 6, height: 6).foregroundColor(.green)
-                    Text("Anti-Ban v2.8 • Kernel Sandboxed • Verified")
-                        .font(.caption2)
-                        .fontWeight(.bold)
-                        .foregroundColor(.green)
-                    Spacer()
-                }
+                .frame(height: 8)
             }
             .padding(25)
-            .background(Color.black)
+            .background(Color.black.opacity(0.4))
             .cornerRadius(20)
             .overlay(
-                RoundedRectangle(cornerRadius: 20)
-                    .stroke(Color.red.opacity(0.5), lineWidth: 1)
+                RoundedRectangle(cornerRadius: 20).stroke(Color.cyan.opacity(0.3), lineWidth: 1)
             )
             .padding(.horizontal, 30)
-            .padding(.top, 30)
+            .padding(.top, 20)
             
             Spacer()
             
-            Text("MITXY SECURITY ARCHITECTURE • 2026")
-                .font(.caption2)
-                .fontWeight(.bold)
-                .tracking(1)
-                .foregroundColor(.red.opacity(0.5))
+            Text("SECURED BY ZENITH LABS")
+                .font(.system(size: 10, weight: .semibold))
+                .tracking(2)
+                .foregroundColor(.gray.opacity(0.5))
                 .padding(.bottom, 20)
         }
         .onAppear {
-            Timer.scheduledTimer(withTimeInterval: 0.025, repeats: true) { timer in
+            // Chạy % từ 0 đến 100
+            Timer.scheduledTimer(withTimeInterval: 0.03, repeats: true) { timer in
                 if self.progress < 1.0 {
                     self.progress += 0.01
                 } else {
                     timer.invalidate()
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                        withAnimation(.easeInOut(duration: 0.5)) {
+                        withAnimation(.easeInOut(duration: 0.6)) {
                             self.currentViewState = .login
                         }
                     }
@@ -171,103 +145,109 @@ struct SplashView: View {
 struct LoginView: View {
     @Binding var currentViewState: ViewState
     @State private var keyInput: String = ""
-    @State private var showErrorMessage = false
+    @State private var showError = false
+    
+    // ĐIỀN LINK ẢNH AVATAR CỦA BẠN VÀO ĐÂY NỮA NHÉ
+    let avatarURL = "https://i.imgur.com/Thay_Bang_Link_Anh_Cua_Ban.png"
     
     var body: some View {
-        VStack(spacing: 20) {
+        VStack(spacing: 24) {
             Spacer()
             
-            ZStack {
-                Circle()
-                    .stroke(Color.red, lineWidth: 2)
-                    .frame(width: 120, height: 120)
-                    .shadow(color: .red, radius: 15)
-                
-                Image(systemName: "shield.fill")
-                    .resizable()
-                    .scaledToFit()
-                    .frame(width: 60, height: 60)
-                    .foregroundColor(.white)
+            // AVATAR CHÍNH
+            AsyncImage(url: URL(string: avatarURL)) { phase in
+                if let image = phase.image {
+                    image.resizable().scaledToFill()
+                } else if phase.error != nil {
+                    Image(systemName: "cube.transparent.fill")
+                        .resizable().scaledToFit().padding(15)
+                        .foregroundStyle(LinearGradient(colors: [.cyan, .purple], startPoint: .top, endPoint: .bottom))
+                } else {
+                    ProgressView().tint(.cyan)
+                }
             }
-            .padding(.bottom, 20)
+            .frame(width: 90, height: 90)
+            .clipShape(Circle())
+            .overlay(
+                Circle().stroke(LinearGradient(colors: [.cyan, .purple], startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 2)
+            )
+            .shadow(color: .purple.opacity(0.5), radius: 10)
             
-            Text("HEADLOCK KEZIS")
-                .font(.system(size: 32, weight: .heavy, design: .default))
-                .foregroundColor(.white)
-                .shadow(color: .red, radius: 10)
+            VStack(spacing: 6) {
+                Text("ZENITH SOLITUDE")
+                    .font(.system(size: 26, weight: .black, design: .rounded))
+                    .tracking(3)
+                    .foregroundColor(.white)
+                
+                Text("Cổng xác thực bản quyền phần cứng")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundColor(.gray)
+            }
             
-            Text("— MOD MENU ONLINE —")
-                .font(.caption)
-                .fontWeight(.bold)
-                .tracking(2)
-                .foregroundColor(Color(red: 0.8, green: 0.4, blue: 0.4))
-            
-            VStack(spacing: 20) {
-                HStack {
-                    Image(systemName: "key.fill")
-                        .foregroundColor(.red)
+            // KHUNG NHẬP KEY
+            VStack(spacing: 16) {
+                HStack(spacing: 12) {
+                    Image(systemName: "key.horizontal.fill")
+                        .foregroundColor(.cyan)
                     
-                    TextField("Nhập mã Key (VIP hoặc FREE)...", text: $keyInput)
+                    TextField("Nhập mã kích hoạt Zenith Key...", text: $keyInput)
                         .foregroundColor(.white)
-                        .accentColor(.red)
+                        .accentColor(.cyan)
                         .autocapitalization(.none)
                         .disableAutocorrection(true)
                     
                     Button(action: {
-                        if let clipboard = UIPasteboard.general.string {
-                            keyInput = clipboard
+                        if let pasteboard = UIPasteboard.general.string {
+                            keyInput = pasteboard
                         }
                     }) {
-                        Image(systemName: "doc.on.clipboard")
-                            .foregroundColor(.red.opacity(0.7))
+                        Image(systemName: "doc.on.clipboard.fill")
+                            .foregroundColor(.cyan.opacity(0.8))
                             .padding(8)
-                            .background(Color.white.opacity(0.1))
+                            .background(Color.cyan.opacity(0.1))
                             .cornerRadius(8)
                     }
                 }
-                .padding()
-                .background(Color.white.opacity(0.05))
-                .cornerRadius(12)
+                .padding(14)
+                .background(Color.black.opacity(0.4))
+                .cornerRadius(14)
                 .overlay(
-                    RoundedRectangle(cornerRadius: 12)
-                        .stroke(Color.red.opacity(0.5), lineWidth: 1)
+                    RoundedRectangle(cornerRadius: 14)
+                        .stroke(showError ? Color.red : Color.cyan.opacity(0.3), lineWidth: 1)
                 )
                 
-                if showErrorMessage {
-                    Text("Key không hợp lệ hoặc đã hết hạn!")
-                        .font(.caption)
+                if showError {
+                    Text("⚠️ Mã kích hoạt không hợp lệ!")
+                        .font(.system(size: 11, weight: .bold))
                         .foregroundColor(.red)
-                        .transition(.opacity)
                 }
                 
+                // NÚT XÁC THỰC
                 Button(action: {
-                    if keyInput == "123" {
-                        withAnimation(.easeInOut(duration: 0.5)) {
+                    if keyInput == "zenith2026" || keyInput == "123" {
+                        withAnimation(.spring()) {
                             currentViewState = .mainApp
                         }
                     } else {
                         withAnimation {
-                            showErrorMessage = true
+                            showError = true
                         }
                     }
                 }) {
-                    HStack {
-                        Image(systemName: "door.right.hand.open")
-                        Text("LOGIN")
-                            .fontWeight(.bold)
-                            .tracking(1)
-                    }
-                    .foregroundColor(.white)
-                    .frame(maxWidth: .infinity)
-                    .padding()
-                    .background(
-                        LinearGradient(gradient: Gradient(colors: [Color.red, Color(red: 0.6, green: 0, blue: 0)]), startPoint: .top, endPoint: .bottom)
-                    )
-                    .cornerRadius(15)
-                    .shadow(color: .red.opacity(0.6), radius: 8, x: 0, y: 4)
+                    Text("KÍCH HOẠT TRUY CẬP")
+                        .font(.system(size: 14, weight: .bold))
+                        .tracking(1.5)
+                        .foregroundColor(.black)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 15)
+                        .background(
+                            LinearGradient(colors: [.cyan, Color(red: 0.4, green: 0.8, blue: 1.0)], startPoint: .leading, endPoint: .trailing)
+                        )
+                        .cornerRadius(14)
+                        .shadow(color: .cyan.opacity(0.4), radius: 8, x: 0, y: 4)
                 }
                 
-                Divider().background(Color.red.opacity(0.3)).padding(.vertical, 5)
+                Divider().background(Color.white.opacity(0.1)).padding(.vertical, 4)
                 
                 Button(action: {
                     if let url = URL(string: "https://solitudepremium.click") {
@@ -275,44 +255,74 @@ struct LoginView: View {
                     }
                 }) {
                     HStack {
-                        Image(systemName: "questionmark.circle")
-                        Text("CHƯA CÓ KEY? LẤY KEY TẠI ĐÂY")
-                            .font(.caption)
-                            .fontWeight(.bold)
+                        Image(systemName: "globe")
+                        Text("NHẬN MÃ KEY TRÊN HỆ THỐNG")
+                            .font(.system(size: 12, weight: .bold))
                         Spacer()
-                        Image(systemName: "chevron.right")
+                        Image(systemName: "arrow.up.right")
                     }
-                    .foregroundColor(Color(red: 0.8, green: 0.4, blue: 0.4))
+                    .foregroundColor(.cyan)
                 }
             }
-            .padding(25)
-            .background(Color.black)
-            .cornerRadius(20)
+            .padding(22)
+            .background(.ultraThinMaterial) // Kính mờ siêu đẹp
+            .cornerRadius(24)
             .overlay(
-                RoundedRectangle(cornerRadius: 20)
-                    .stroke(Color.red.opacity(0.3), lineWidth: 1)
+                RoundedRectangle(cornerRadius: 24).stroke(Color.white.opacity(0.08), lineWidth: 1)
             )
-            .padding(.horizontal, 30)
-            .padding(.top, 20)
+            .padding(.horizontal, 24)
             
             Spacer()
+        }
+    }
+}
+
+// MARK: - MÀN HÌNH CHÍNH SAU KHI VÀO
+struct MainDashboardView: View {
+    @Binding var currentViewState: ViewState
+    
+    var body: some View {
+        VStack(spacing: 20) {
+            Spacer()
             
-            HStack {
-                Circle().frame(width: 8, height: 8).foregroundColor(.green)
-                Text("Hệ thống bảo vệ Anti-Ban MITXY v2.8 Online")
-                    .font(.caption)
-                    .fontWeight(.bold)
-                    .foregroundColor(.green)
+            ZStack {
+                Circle()
+                    .fill(Color.cyan.opacity(0.1))
+                    .frame(width: 100, height: 100)
+                Image(systemName: "checkmark.shield.fill")
+                    .font(.system(size: 50))
+                    .foregroundColor(.cyan)
+                    .shadow(color: .cyan, radius: 10)
             }
-            .padding(.vertical, 12)
-            .padding(.horizontal, 20)
-            .background(Color.black)
-            .cornerRadius(20)
-            .overlay(
-                RoundedRectangle(cornerRadius: 20)
-                    .stroke(Color.red.opacity(0.2), lineWidth: 1)
-            )
-            .padding(.bottom, 20)
+            
+            Text("CHÀO MỪNG ĐẾN VỚI ZENITH")
+                .font(.system(size: 22, weight: .heavy))
+                .foregroundColor(.white)
+                .tracking(2)
+            
+            Text("Không gian làm việc mã hóa của bạn đã sẵn sàng hoạt động.")
+                .font(.system(size: 13))
+                .foregroundColor(.gray)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 40)
+            
+            Button(action: {
+                withAnimation {
+                    currentViewState = .login
+                }
+            }) {
+                Text("ĐĂNG XUẤT PHIÊN LÀM VIỆC")
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundColor(.red)
+                    .padding(.horizontal, 24)
+                    .padding(.vertical, 12)
+                    .background(Color.red.opacity(0.1))
+                    .cornerRadius(10)
+                    .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.red.opacity(0.3), lineWidth: 1))
+            }
+            .padding(.top, 10)
+            
+            Spacer()
         }
     }
 }
