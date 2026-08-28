@@ -1,6 +1,6 @@
 import SwiftUI
 
-// Trạng thái hiển thị giao diện tùy chỉnh (Đã đổi tên tránh đụng độ với AppState gốc của dự án)
+// Trạng thái hiển thị giao diện tùy chỉnh
 enum ViewState {
     case splash
     case login
@@ -22,8 +22,37 @@ struct ContentView: View {
             case .login:
                 LoginView(currentViewState: $currentViewState)
             case .mainApp:
-                // KHI NHẬP ĐÚNG KEY SẼ GỌI MÀN HÌNH CHÍNH GỐC CỦA DỰ ÁN 3105
-                RepositoryMarketplaceView()
+                // MÀN HÌNH CHÍNH SAU KHI ĐĂNG NHẬP THÀNH CÔNG
+                VStack(spacing: 15) {
+                    Image(systemName: "checkmark.shield.fill")
+                        .font(.system(size: 60))
+                        .foregroundColor(.green)
+                        .shadow(color: .green, radius: 10)
+                    
+                    Text("ĐĂNG NHẬP THÀNH CÔNG!")
+                        .font(.title2)
+                        .fontWeight(.heavy)
+                        .foregroundColor(.white)
+                    
+                    Text("Hệ thống đã xác thực Key VIP thành công.")
+                        .font(.caption)
+                        .foregroundColor(.gray)
+                    
+                    Button(action: {
+                        // Quay lại màn hình khóa nếu muốn test lại
+                        currentViewState = .login
+                    }) {
+                        Text("Đăng xuất / Khóa lại")
+                            .font(.footnote)
+                            .fontWeight(.bold)
+                            .foregroundColor(.red)
+                            .padding(.horizontal, 20)
+                            .padding(.vertical, 10)
+                            .background(Color.white.opacity(0.1))
+                            .cornerRadius(10)
+                    }
+                    .padding(.top, 10)
+                }
             }
         }
         .preferredColorScheme(.dark)
