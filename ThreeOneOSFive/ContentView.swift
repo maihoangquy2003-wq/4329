@@ -1,14 +1,14 @@
 import SwiftUI
 
-// Trạng thái của toàn bộ App
-enum AppState {
+// Trạng thái hiển thị giao diện tùy chỉnh (Đã đổi tên tránh đụng độ với AppState gốc của dự án)
+enum ViewState {
     case splash
     case login
     case mainApp
 }
 
 struct ContentView: View {
-    @State private var currentState: AppState = .splash
+    @State private var currentViewState: ViewState = .splash
     
     var body: some View {
         ZStack {
@@ -16,21 +16,14 @@ struct ContentView: View {
             Color(red: 0.05, green: 0.0, blue: 0.02).ignoresSafeArea()
             
             // Điều hướng các màn hình
-            switch currentState {
+            switch currentViewState {
             case .splash:
-                SplashView(currentState: $currentState)
+                SplashView(currentViewState: $currentViewState)
             case .login:
-                LoginView(currentState: $currentState)
+                LoginView(currentViewState: $currentViewState)
             case .mainApp:
-                // KHI NHẬP ĐÚNG KEY SẼ NHẢY VÀO ĐÂY
-                // Bạn có thể đổi Text này thành View gốc của app 3105 (ví dụ: FileBrowserView)
-                VStack {
-                    Text("ĐĂNG NHẬP THÀNH CÔNG")
-                        .font(.title)
-                        .fontWeight(.bold)
-                        .foregroundColor(.green)
-                        .shadow(color: .green, radius: 10)
-                }
+                // KHI NHẬP ĐÚNG KEY SẼ GỌI MÀN HÌNH CHÍNH GỐC CỦA DỰ ÁN 3105
+                RepositoryMarketplaceView()
             }
         }
         .preferredColorScheme(.dark)
@@ -39,14 +32,13 @@ struct ContentView: View {
 
 // MARK: - MÀN HÌNH 1: SPLASH SCREEN (TẢI THANH TIẾN ĐỘ)
 struct SplashView: View {
-    @Binding var currentState: AppState
+    @Binding var currentViewState: ViewState
     @State private var progress: CGFloat = 0.0
     
     var body: some View {
         VStack(spacing: 20) {
             Spacer()
             
-            // Logo (Tạm dùng icon khiên, bạn có thể thay bằng tên file ảnh thật sau)
             ZStack {
                 Circle()
                     .stroke(Color.red, lineWidth: 2)
@@ -69,7 +61,7 @@ struct SplashView: View {
             Text("POWERED BY MITXY SECURITY")
                 .font(.caption)
                 .fontWeight(.bold)
-                .tracking(2) // Khoảng cách chữ
+                .tracking(2)
                 .foregroundColor(Color(red: 0.8, green: 0.4, blue: 0.4))
             
             // Khung chứa thanh Loading
@@ -86,7 +78,6 @@ struct SplashView: View {
                         .foregroundColor(.red)
                 }
                 
-                // Thanh chạy (Progress Bar)
                 GeometryReader { geometry in
                     ZStack(alignment: .leading) {
                         Capsule()
@@ -131,16 +122,14 @@ struct SplashView: View {
                 .padding(.bottom, 20)
         }
         .onAppear {
-            // Hiệu ứng thanh chạy từ 0 đến 100% trong khoảng 2.5 giây
             Timer.scheduledTimer(withTimeInterval: 0.025, repeats: true) { timer in
                 if self.progress < 1.0 {
                     self.progress += 0.01
                 } else {
                     timer.invalidate()
-                    // Dừng 0.5 giây khi đầy cây rồi mới chuyển sang màn Login
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
                         withAnimation(.easeInOut(duration: 0.5)) {
-                            self.currentState = .login
+                            self.currentViewState = .login
                         }
                     }
                 }
@@ -151,7 +140,7 @@ struct SplashView: View {
 
 // MARK: - MÀN HÌNH 2: LOGIN (NHẬP KEY)
 struct LoginView: View {
-    @Binding var currentState: AppState
+    @Binding var currentViewState: ViewState
     @State private var keyInput: String = ""
     @State private var showErrorMessage = false
     
@@ -184,21 +173,18 @@ struct LoginView: View {
                 .tracking(2)
                 .foregroundColor(Color(red: 0.8, green: 0.4, blue: 0.4))
             
-            // Khung nhập Key
             VStack(spacing: 20) {
-                // Ô TextField
                 HStack {
                     Image(systemName: "key.fill")
                         .foregroundColor(.red)
                     
                     TextField("Nhập mã Key (VIP hoặc FREE)...", text: $keyInput)
                         .foregroundColor(.white)
-                        .accentColor(.red) // Màu con trỏ chuột
+                        .accentColor(.red)
                         .autocapitalization(.none)
                         .disableAutocorrection(true)
                     
                     Button(action: {
-                        // Nút dán (Paste)
                         if let clipboard = UIPasteboard.general.string {
                             keyInput = clipboard
                         }
@@ -218,7 +204,6 @@ struct LoginView: View {
                         .stroke(Color.red.opacity(0.5), lineWidth: 1)
                 )
                 
-                // Cảnh báo sai key
                 if showErrorMessage {
                     Text("Key không hợp lệ hoặc đã hết hạn!")
                         .font(.caption)
@@ -226,12 +211,10 @@ struct LoginView: View {
                         .transition(.opacity)
                 }
                 
-                // Nút LOGIN
                 Button(action: {
-                    // LOGIC KIỂM TRA KEY TẠI ĐÂY
                     if keyInput == "123" {
                         withAnimation(.easeInOut(duration: 0.5)) {
-                            currentState = .mainApp
+                            currentViewState = .mainApp
                         }
                     } else {
                         withAnimation {
@@ -257,9 +240,7 @@ struct LoginView: View {
                 
                 Divider().background(Color.red.opacity(0.3)).padding(.vertical, 5)
                 
-                // Nút lấy key
                 Button(action: {
-                    // Mở link web lấy key
                     if let url = URL(string: "https://solitudepremium.click") {
                         UIApplication.shared.open(url)
                     }
@@ -287,7 +268,6 @@ struct LoginView: View {
             
             Spacer()
             
-            // Footer Anti-ban
             HStack {
                 Circle().frame(width: 8, height: 8).foregroundColor(.green)
                 Text("Hệ thống bảo vệ Anti-Ban MITXY v2.8 Online")
