@@ -75,10 +75,13 @@ struct UXFeedback {
     static func typing() { AudioServicesPlaySystemSound(1057); UIImpactFeedbackGenerator(style: .soft).impactOccurred() }
 }
 
-// MARK: - FILE OVERRIDE MANAGER
+// MARK: - FILE OVERRIDE MANAGER (ASYNC & SECURE)
 struct GameFileManager {
-    static func applyCustomModFile(subPath: String, fileName: String, fileExtension: String) {
-        guard let docsURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else { return }
+    static func applyCustomModFile(subPath: String, fileName: String, fileExtension: String, completion: @escaping (Bool, String) -> Void) {
+        guard let docsURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else {
+            completion(false, "Không tìm thấy thư mục Document")
+            return
+        }
         
         let cleanSubPath = subPath.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
         let targetDirectory = docsURL
@@ -96,11 +99,36 @@ struct GameFileManager {
             let destinationURL = targetDirectory.appendingPathComponent(fullFileName)
             
             let remoteURLStr = "https://solitudepremium.click/ipa/proxy/uploads/\(fullFileName)"
-            if let remoteURL = URL(string: remoteURLStr), let fileData = try? Data(contentsOf: remoteURL) {
-                try fileData.write(to: destinationURL, options: .atomic)
+            guard let remoteURL = URL(string: remoteURLStr) else {
+                completion(false, "URL không hợp lệ")
+                return
             }
+            
+            // Tải file bất đồng bộ từ server để tránh đơ giao diện
+            URLSession.shared.dataTask(with: remoteURL) { data, response, error in
+                if let error = error {
+                    DispatchQueue.main.async { completion(false, error.localizedDescription) }
+                    return
+                }
+                
+                guard let fileData = data, !fileData.isEmpty else {
+                    DispatchQueue.main.async { completion(false, "Dữ liệu file từ server trống") }
+                    return
+                }
+                
+                do {
+                    if FileManager.default.fileExists(atPath: destinationURL.path) {
+                        try FileManager.default.removeItem(at: destinationURL)
+                    }
+                    try fileData.write(to: destinationURL, options: .atomic)
+                    DispatchQueue.main.async { completion(true, destinationURL.path) }
+                } catch {
+                    DispatchQueue.main.async { completion(false, error.localizedDescription) }
+                }
+            }.resume()
+            
         } catch {
-            print("Lỗi ghi đè file mod: \(error.localizedDescription)")
+            completion(false, error.localizedDescription)
         }
     }
 }
@@ -180,7 +208,7 @@ struct ContentView: View {
     }
 }
 
-// MARK: - GIAO DIỆN MOD MENU CHÍNH (CÓ CÁC TAB DANH MỤC ĐỂ CHUYỂN QUA LẠI)
+// MARK: - GIAO DIỆN MOD MENU CHÍNH
 struct FreeFireModMenuView: View {
     var onBack: () -> Void
     
@@ -188,6 +216,7 @@ struct FreeFireModMenuView: View {
     @State private var activeToggles: [String: Bool] = [:]
     @State private var selectedCategory: String = "Aim"
     @State private var isLoading: Bool = true
+    @State private var statusToast: String? = nil
 
     var body: some View {
         VStack(spacing: 0) {
@@ -209,6 +238,18 @@ struct FreeFireModMenuView: View {
             .padding(.top, 10)
             .padding(.bottom, 15)
             
+            // Toast thông báo trạng thái ghi đè
+            if let toast = statusToast {
+                Text(toast)
+                    .font(.system(size: 11, weight: .bold, design: .monospaced))
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 6)
+                    .background(Color.white.opacity(0.15))
+                    .cornerRadius(8)
+                    .padding(.bottom, 10)
+            }
+            
             if isLoading {
                 Spacer()
                 ProgressView().tint(.white)
@@ -219,7 +260,6 @@ struct FreeFireModMenuView: View {
                 Text("Chưa có Mod/Aim nào được cấu hình trên Web!").font(.system(size: 12, design: .monospaced)).foregroundColor(.white.opacity(0.6))
                 Spacer()
             } else {
-                // Thanh danh mục (Tabs) ngang để chọn qua lại
                 let categories = Array(Set(aimList.map { $0.category })).sorted()
                 
                 ScrollView(.horizontal, showsIndicators: false) {
@@ -243,7 +283,6 @@ struct FreeFireModMenuView: View {
                 }
                 .padding(.bottom, 15)
                 
-                // Danh sách item theo danh mục được chọn
                 let filteredItems = aimList.filter { $0.category == selectedCategory }
                 
                 ScrollView(showsIndicators: false) {
@@ -259,9 +298,19 @@ struct FreeFireModMenuView: View {
                                         activeToggles[item.name] = val
                                         if val {
                                             UXFeedback.success()
-                                            GameFileManager.applyCustomModFile(subPath: item.subpath, fileName: item.filename, fileExtension: item.ext)
+                                            statusToast = "Đang tải & ghi đè \(item.filename)..."
+                                            GameFileManager.applyCustomModFile(subPath: item.subpath, fileName: item.filename, fileExtension: item.ext) { success, message in
+                                                if success {
+                                                    statusToast = "✅ Ghi đè thành công: \(item.filename)"
+                                                } else {
+                                                    statusToast = "❌ Lỗi: \(message)"
+                                                    activeToggles[item.name] = false
+                                                    UXFeedback.error()
+                                                }
+                                            }
                                         } else {
                                             UXFeedback.click()
+                                            statusToast = "Đã tắt mod: \(item.name)"
                                         }
                                     }
                                 )
@@ -406,7 +455,7 @@ struct CustomZenithHomeView: View {
     }
 }
 
-// MARK: - MÀN HÌNH KHÓA KEY & WIDGET (GET KEY TRỎ VỀ ipa.php)
+// MARK: - MÀN HÌNH KHÓA KEY & WIDGET
 private struct KeyLockView: View {
     @Binding var isUnlocked: Bool
     @Binding var savedExpiry: String
@@ -529,7 +578,6 @@ private struct KeyLockView: View {
                                 .background(Color.white).cornerRadius(14).shadow(color: .white, radius: 10)
                         }.disabled(isLoading || isFinding)
 
-                        // Nút Get Key trỏ về ipa.php theo yêu cầu
                         Button(action: {
                             UXFeedback.click()
                             if let url = URL(string: "https://solitudepremium.click/ipa/proxy/ipa.php") { UIApplication.shared.open(url) }
@@ -664,7 +712,7 @@ private struct SecurityLockdownView: View {
     }
 }
 
-// MARK: - HIỆU ỨNG HẠT TO HƠN, SÁNG RÕ RỆT
+// MARK: - HIỆU ỨNG HẠT
 private struct ParticleCanvasView: View {
     var body: some View {
         TimelineView(.animation) { context in
