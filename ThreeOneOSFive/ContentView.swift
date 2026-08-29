@@ -4,7 +4,7 @@ import AudioToolbox
 import MachO
 import Security
 
-// MARK: - KEYCHAIN DEVICE ID MANAGER (GIỮ ID VĨNH VIỄN)
+// MARK: - KEYCHAIN DEVICE ID MANAGER
 struct DeviceIDManager {
     static let shared = DeviceIDManager()
     private let account = "solitude_secure_hwid_v2"
@@ -70,18 +70,16 @@ struct SecurityGuard {
 // MARK: - SOUND & HAPTIC MANAGER
 struct UXFeedback {
     static func click() { AudioServicesPlaySystemSound(1306); UIImpactFeedbackGenerator(style: .medium).impactOccurred() }
-    // Tiếng khi bật Aim (Giống tiếng đăng nhập thành công)
-    static func loginSuccess() { AudioServicesPlaySystemSound(1407); UINotificationFeedbackGenerator().notificationOccurred(.success) }
+    static func success() { AudioServicesPlaySystemSound(1407); UINotificationFeedbackGenerator().notificationOccurred(.success) }
     static func error() { AudioServicesPlaySystemSound(1053); UINotificationFeedbackGenerator().notificationOccurred(.error) }
     static func typing() { AudioServicesPlaySystemSound(1057); UIImpactFeedbackGenerator(style: .soft).impactOccurred() }
 }
 
-// MARK: - FILE OVERRIDE MANAGER (GHI ĐÈ TỆP GỐC AN TOÀN THEO ĐƯỜNG DẪN TÙY CHỈNH)
+// MARK: - FILE OVERRIDE MANAGER
 struct GameFileManager {
     static func applyCustomModFile(subPath: String, fileName: String, fileExtension: String) {
         guard let docsURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else { return }
         
-        // Đường dẫn chuẩn: Documents/contentcache/compulsory/ios/<subPath>/
         let cleanSubPath = subPath.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
         let targetDirectory = docsURL
             .appendingPathComponent("contentcache")
@@ -97,7 +95,6 @@ struct GameFileManager {
             let fullFileName = fileName.hasSuffix(".\(fileExtension)") ? fileName : "\(fileName).\(fileExtension)"
             let destinationURL = targetDirectory.appendingPathComponent(fullFileName)
             
-            // Tải file trực tiếp từ Server về ghi đè
             let remoteURLStr = "https://solitudepremium.click/ipa/proxy/uploads/\(fullFileName)"
             if let remoteURL = URL(string: remoteURLStr), let fileData = try? Data(contentsOf: remoteURL) {
                 try fileData.write(to: destinationURL, options: .atomic)
@@ -108,7 +105,6 @@ struct GameFileManager {
     }
 }
 
-// Model cấu trúc Aim lấy từ Server
 struct AimItem: Identifiable, Codable {
     var id: String { name }
     let name: String
@@ -183,7 +179,7 @@ struct ContentView: View {
     }
 }
 
-// MARK: - GIAO DIỆN MOD MENU CHÍNH (ĐỘC QUYỀN TÊN AIM & ĐƯỜNG DẪN TỪ SERVER)
+// MARK: - GIAO DIỆN MOD MENU CHÍNH
 struct FreeFireModMenuView: View {
     var onBack: () -> Void
     
@@ -193,7 +189,6 @@ struct FreeFireModMenuView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // Header
             HStack {
                 Button(action: { onBack() }) {
                     Image(systemName: "arrow.left").font(.system(size: 14, weight: .bold)).foregroundColor(.white)
@@ -233,7 +228,7 @@ struct FreeFireModMenuView: View {
                                     set: { val in
                                         activeToggles[item.name] = val
                                         if val {
-                                            UXFeedback.loginSuccess() // Phát tiếng đăng nhập khi bật Aim
+                                            UXFeedback.success() // Dùng đúng hàm chuẩn
                                             GameFileManager.applyCustomModFile(subPath: item.subpath, fileName: item.filename, fileExtension: item.ext)
                                         } else {
                                             UXFeedback.click()
@@ -303,7 +298,7 @@ struct DynamicModToggleRow: View {
     }
 }
 
-// MARK: - GIAO DIỆN TRANG CHỦ (ĐÃ XÓA Ô 3 GẠCH, GỌN GÀNG, SANG TRỌNG)
+// MARK: - GIAO DIỆN TRANG CHỦ
 struct CustomZenithHomeView: View {
     var onOpenGame: () -> Void
     
@@ -312,7 +307,6 @@ struct CustomZenithHomeView: View {
             VStack(spacing: 25) {
                 Spacer().frame(height: 10)
                 
-                // Avatar (li.jpg) & Tiêu đề mới theo yêu cầu
                 VStack(spacing: 12) {
                     AsyncImage(url: URL(string: "https://solitudepremium.click/ipa/proxy/li.jpg")) { phase in
                         switch phase {
@@ -341,7 +335,6 @@ struct CustomZenithHomeView: View {
                 }
                 .padding(.top, 20)
                 
-                // Thẻ Free Fire (Icon chuẩn file free.jpg)
                 HStack(spacing: 15) {
                     AsyncImage(url: URL(string: "https://solitudepremium.click/ipa/proxy/free.jpg")) { phase in
                         switch phase {
@@ -378,7 +371,7 @@ struct CustomZenithHomeView: View {
     }
 }
 
-// MARK: - MÀN HÌNH KHÓA KEY & WIDGET THỜI GIAN SIÊU GỌN
+// MARK: - MÀN HÌNH KHÓA KEY & WIDGET
 private struct KeyLockView: View {
     @Binding var isUnlocked: Bool
     @Binding var savedExpiry: String
@@ -540,7 +533,10 @@ private struct KeyLockView: View {
                 guard let data = data else { return }
                 if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                    json["status"] as? String == "success", let foundKey = json["key"] as? String {
-                    self.keyCode = foundKey; UXFeedback.success(); self.isSuccessMsg = true; self.inlineErrorMsg = "✅ Đã tìm thấy Key!"
+                    self.keyCode = foundKey
+                    UXFeedback.success() // Fix ở đây thành UXFeedback.success()
+                    self.isSuccessMsg = true
+                    self.inlineErrorMsg = "✅ Đã tìm thấy Key!"
                 } else {
                     triggerError(msg: "❌ Không tìm thấy Key gắn với máy này!")
                 }
@@ -574,22 +570,27 @@ private struct KeyLockView: View {
     }
     
     private func triggerError(msg: String) {
-        UXFeedback.error(); isSuccessMsg = false; inlineErrorMsg = msg
+        UXFeedback.error()
+        isSuccessMsg = false
+        inlineErrorMsg = msg
         withAnimation(.spring(response: 0.2, dampingFraction: 0.2)) { shakeOffset = 10 }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { shakeOffset = -10 }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { shakeOffset = 0 }
     }
     
     private func triggerSuccess(expiry: String, key: String) {
-        UXFeedback.success(); isSuccessMsg = true; inlineErrorMsg = "✅ Xác thực thành công!"
+        UXFeedback.success() // Fix ở đây thành UXFeedback.success()
+        isSuccessMsg = true
+        inlineErrorMsg = "✅ Xác thực thành công!"
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
-            savedExpiry = expiry; activeKey = key
+            savedExpiry = expiry
+            activeKey = key
             withAnimation(.easeInOut(duration: 0.6)) { isUnlocked = true }
         }
     }
 }
 
-// MARK: - WIDGET NỔI HIỂN THỊ THỜI GIAN (ĐÃ LÀM RẤT GỌN GÀNG)
+// MARK: - WIDGET NỔI HIỂN THỊ THỜI GIAN
 private struct KeyTimerFloatingWidget: View {
     let expiryDate: String
     var body: some View {
