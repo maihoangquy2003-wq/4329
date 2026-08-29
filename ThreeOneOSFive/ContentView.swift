@@ -7,12 +7,11 @@ import MachO
 struct SecurityGuard {
     static var isCompromised: Bool {
         #if targetEnvironment(simulator)
-        return false // Bỏ qua trên Simulator để bạn dễ test UI
+        return false
         #else
         return checkDebugger() || checkJailbreak() || checkInjectedDylibs()
         #endif
     }
-    
     private static func checkDebugger() -> Bool {
         var info = kinfo_proc()
         var mib: [Int32] = [CTL_KERN, KERN_PROC, KERN_PROC_PID, getpid()]
@@ -20,27 +19,18 @@ struct SecurityGuard {
         let junk = sysctl(&mib, UInt32(mib.count), &info, &size, nil, 0)
         return (junk == 0 && (info.kp_proc.p_flag & P_TRACED) != 0)
     }
-    
     private static func checkJailbreak() -> Bool {
-        let paths = [
-            "/Applications/Cydia.app", "/Library/MobileSubstrate/MobileSubstrate.dylib",
-            "/bin/bash", "/usr/sbin/sshd", "/etc/apt", "/private/var/lib/apt/"
-        ]
-        for path in paths {
-            if FileManager.default.fileExists(atPath: path) { return true }
-        }
+        let paths = ["/Applications/Cydia.app", "/Library/MobileSubstrate/MobileSubstrate.dylib", "/bin/bash"]
+        for path in paths { if FileManager.default.fileExists(atPath: path) { return true } }
         return false
     }
-    
     private static func checkInjectedDylibs() -> Bool {
-        let suspicious = ["frida", "cydia", "mobilesubstrate", "cycript", "sslkillswitch", "flex3"]
+        let suspicious = ["frida", "cydia", "mobilesubstrate", "cycript"]
         let count = _dyld_image_count()
         for i in 0..<count {
             if let name = _dyld_get_image_name(i) {
                 let dylibName = String(cString: name).lowercased()
-                for sus in suspicious {
-                    if dylibName.contains(sus) { return true }
-                }
+                for sus in suspicious { if dylibName.contains(sus) { return true } }
             }
         }
         return false
@@ -49,10 +39,10 @@ struct SecurityGuard {
 
 // MARK: - SOUND & HAPTIC MANAGER
 struct UXFeedback {
-    static func click() { AudioServicesPlaySystemSound(1104); UIImpactFeedbackGenerator(style: .light).impactOccurred() }
-    static func success() { AudioServicesPlaySystemSound(1025); UINotificationFeedbackGenerator().notificationOccurred(.success) }
+    static func click() { UIImpactFeedbackGenerator(style: .light).impactOccurred() }
+    static func success() { AudioServicesPlaySystemSound(1407); UINotificationFeedbackGenerator().notificationOccurred(.success) }
     static func error() { AudioServicesPlaySystemSound(1053); UINotificationFeedbackGenerator().notificationOccurred(.error) }
-    static func typing() { AudioServicesPlaySystemSound(1103) }
+    static func typing() { UIImpactFeedbackGenerator(style: .soft).impactOccurred() }
 }
 
 // MARK: - MAIN CONTENT VIEW
@@ -68,6 +58,9 @@ struct ContentView: View {
     @AppStorage("solitude_is_unlocked") private var isUnlocked = false
     @AppStorage("solitude_key_expiry") private var keyExpiryDate: String = ""
     @AppStorage("solitude_active_key") private var activeKey: String = ""
+    
+    // Tự động tạo Device ID chuẩn form APEX-ZENITH-SOLITUDE-<RANDOM> và lưu vĩnh viễn
+    @AppStorage("solitude_device_id") private var deviceID: String = "APEX-ZENITH-SOLITUDE-\(UUID().uuidString.prefix(8).uppercased())"
     
     @State private var tabNavigation: AppTabNavigationState
     @State private var showSettings = false
@@ -93,20 +86,14 @@ struct ContentView: View {
                 mainAppContent
                     .overlay(KeyTimerFloatingWidget(expiryDate: keyExpiryDate), alignment: .bottomTrailing)
             } else {
-                KeyLockView(isUnlocked: $isUnlocked, savedExpiry: $keyExpiryDate, activeKey: $activeKey)
+                KeyLockView(isUnlocked: $isUnlocked, savedExpiry: $keyExpiryDate, activeKey: $activeKey, deviceID: deviceID)
             }
         }
-        .onAppear {
-            if SecurityGuard.isCompromised {
-                securityBreach = true
-            }
-        }
+        .onAppear { if SecurityGuard.isCompromised { securityBreach = true } }
     }
 
     private var mainAppContent: some View {
-        Group {
-            if horizontalSizeClass == .regular { regularLayout } else { compactLayout }
-        }
+        Group { if horizontalSizeClass == .regular { regularLayout } else { compactLayout } }
         .tint(AppTheme.accent)
         .imageScale(.small)
         .sheet(isPresented: $showSettings) { SettingsView() }
@@ -118,9 +105,7 @@ struct ContentView: View {
     private var compactLayout: some View {
         TabView(selection: tabSelection) {
             ForEach(featureVisibility.visibleSections) { section in
-                sectionContent(section)
-                    .tabItem { CompactTabLabel(title: language.text(section.titleKey), systemImage: section.systemImage) }
-                    .tag(section.rawValue)
+                sectionContent(section).tabItem { CompactTabLabel(title: language.text(section.titleKey), systemImage: section.systemImage) }.tag(section.rawValue)
             }
         }
     }
@@ -129,21 +114,15 @@ struct ContentView: View {
         NavigationSplitView {
             List {
                 ForEach(featureVisibility.visibleSections) { section in
-                    Button {
-                        withAnimation(.easeInOut(duration: 0.18)) { tabNavigation.select(section.rawValue) }
-                    } label: {
+                    Button { withAnimation(.easeInOut(duration: 0.18)) { tabNavigation.select(section.rawValue) } } label: {
                         Label(language.text(section.titleKey), systemImage: section.systemImage)
                             .fontWeight(section.rawValue == tabNavigation.selectedTab ? .semibold : .regular)
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
+                    }.buttonStyle(.plain)
                 }
-            }
-            .navigationTitle("3105")
-        } detail: {
-            sectionContent(selectedVisibleSection)
-        }
+            }.navigationTitle("3105")
+        } detail: { sectionContent(selectedVisibleSection) }
     }
 
     @ViewBuilder
@@ -165,87 +144,46 @@ struct ContentView: View {
     private func openSettings() { showSettings = true }
     private func openLogs() { showLogs = true }
     
-    // Check nếu key hết hạn ngay trong lúc dùng
     private func isKeyExpired() -> Bool {
         guard !keyExpiryDate.isEmpty else { return true }
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
         formatter.timeZone = TimeZone(identifier: "Asia/Ho_Chi_Minh")
-        if let expDate = formatter.date(from: keyExpiryDate) {
-            return Date() > expDate
-        }
+        if let expDate = formatter.date(from: keyExpiryDate) { return Date() > expDate }
         return true
     }
 }
 
-// MARK: - MÀN HÌNH KHÓA KEY (THIẾT KẾ MỚI CỰC CHẤT THEO ẢNH)
+// MARK: - MÀN HÌNH KHÓA KEY (ĐEN TRẮNG, HẠT BAY TỐC ĐỘ CAO)
 private struct KeyLockView: View {
     @Binding var isUnlocked: Bool
     @Binding var savedExpiry: String
     @Binding var activeKey: String
+    var deviceID: String
     
     @State private var keyCode: String = ""
     @State private var isKeyVisible: Bool = false
-    @State private var deviceID: String = UIDevice.current.identifierForVendor?.uuidString ?? "SECURE-ID"
-    
-    // Status UI
     @State private var isLoading: Bool = false
     @State private var inlineErrorMsg: String? = nil
-    @State private var glowColor: Color = .cyan.opacity(0.4)
-    @State private var borderColor: Color = .white.opacity(0.3)
     @State private var shakeOffset: CGFloat = 0
-
-    // Animations
     @State private var rotationAngle: Double = 0.0
-    @State private var breathingScale: CGFloat = 1.0
-    @State private var scanlineOffset: CGFloat = -200
 
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
+            ParticleCanvasView() // Hạt bay từ dưới lên
             
-            // NEON BACKGROUND EFFECTS
-            RadialGradient(colors: [glowColor.opacity(0.3), .black], center: .center, startRadius: 50, endRadius: 400)
-                .ignoresSafeArea()
-                .scaleEffect(breathingScale)
-                .onAppear {
-                    withAnimation(.easeInOut(duration: 3).repeatForever(autoreverses: true)) {
-                        breathingScale = 1.1
-                    }
-                }
-            ParticleCanvasView(glowColor: $glowColor)
-            
-            // TIA QUÉT LASER
-            VStack {
-                Rectangle()
-                    .fill(LinearGradient(colors: [.clear, glowColor.opacity(0.5), .clear], startPoint: .top, endPoint: .bottom))
-                    .frame(height: 60)
-                    .offset(y: scanlineOffset)
-                    .onAppear {
-                        withAnimation(.linear(duration: 4).repeatForever(autoreverses: false)) {
-                            scanlineOffset = UIScreen.main.bounds.height + 100
-                        }
-                    }
-                Spacer()
-            }
-            .allowsHitTesting(false)
-
             ScrollView(showsIndicators: false) {
                 VStack(spacing: 25) {
-                    
-                    // MARK: - HEADER & AVATAR
+                    // MARK: AVATAR & HEADER
                     VStack(spacing: 12) {
                         ZStack {
                             Circle()
-                                .stroke(AngularGradient(gradient: Gradient(colors: [.clear, glowColor, .clear]), center: .center), lineWidth: 3)
+                                .stroke(AngularGradient(gradient: Gradient(colors: [.clear, .white, .clear]), center: .center), lineWidth: 2.5)
                                 .frame(width: 110, height: 110)
                                 .rotationEffect(.degrees(rotationAngle))
-                                .onAppear {
-                                    withAnimation(.linear(duration: 3).repeatForever(autoreverses: false)) {
-                                        rotationAngle = 360
-                                    }
-                                }
-                                .shadow(color: glowColor, radius: 15)
+                                .onAppear { withAnimation(.linear(duration: 3).repeatForever(autoreverses: false)) { rotationAngle = 360 } }
+                                .shadow(color: .white.opacity(0.8), radius: 15)
                             
                             AsyncImage(url: URL(string: "https://solitudepremium.click/ipa/proxy/li.jpg")) { phase in
                                 switch phase {
@@ -265,194 +203,132 @@ private struct KeyLockView: View {
                             .font(.system(size: 26, weight: .black, design: .monospaced))
                             .tracking(6)
                             .foregroundColor(.white)
-                            .shadow(color: glowColor, radius: 10)
+                            .shadow(color: .white.opacity(0.8), radius: 10)
                         
                         HStack(spacing: 8) {
-                            Circle().frame(width: 4, height: 4).foregroundColor(glowColor).shadow(color: glowColor, radius: 5)
+                            Circle().frame(width: 4, height: 4).foregroundColor(.white).shadow(color: .white, radius: 5)
                             Text("Headlock Version 4.3.29")
                                 .font(.system(size: 10, weight: .bold, design: .monospaced))
                                 .tracking(2)
                                 .foregroundColor(.white.opacity(0.8))
-                            Circle().frame(width: 4, height: 4).foregroundColor(glowColor).shadow(color: glowColor, radius: 5)
+                            Circle().frame(width: 4, height: 4).foregroundColor(.white).shadow(color: .white, radius: 5)
                         }
                     }
 
-                    // MARK: - BẢNG ĐIỀU KHIỂN CHÍNH
+                    // MARK: KHUNG ĐIỀU KHIỂN
                     VStack(spacing: 18) {
-                        
-                        // ID THIẾT BỊ
+                        // HWID
                         HStack {
                             Image(systemName: "cpu").foregroundColor(.white.opacity(0.5)).font(.system(size: 10))
-                            Text("HWID: \(deviceID.prefix(18))...")
-                                .font(.system(size: 9, weight: .semibold, design: .monospaced))
+                            Text("HWID: \(deviceID)")
+                                .font(.system(size: 8, weight: .semibold, design: .monospaced))
                                 .foregroundColor(.white.opacity(0.5))
                             Spacer()
-                            if isLoading { ProgressView().scaleEffect(0.7).tint(glowColor) }
+                            if isLoading { ProgressView().scaleEffect(0.7).tint(.white) }
                         }
                         .padding(.horizontal, 16)
                         
-                        // MARK: Ô NHẬP KEY (Thiết kế y hệt image_055247.png)
+                        // INPUT FORM
                         VStack(alignment: .leading, spacing: 10) {
                             HStack(spacing: 12) {
-                                // Nút Key Trái
                                 ZStack {
                                     RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.08)).frame(width: 42, height: 42)
-                                    Image(systemName: "key.horizontal.fill")
-                                        .font(.system(size: 16))
-                                        .foregroundColor(glowColor)
-                                        .rotationEffect(.degrees(-45))
+                                    Image(systemName: "key.horizontal.fill").font(.system(size: 16)).foregroundColor(.white).rotationEffect(.degrees(-45))
                                 }
                                 
-                                // Khung nhập liệu + Nút mắt
                                 VStack(alignment: .leading, spacing: 4) {
                                     HStack {
-                                        Text("Key:")
-                                            .font(.system(size: 14, weight: .bold, design: .monospaced))
-                                            .foregroundColor(.white.opacity(0.8))
-                                        
+                                        Text("Key:").font(.system(size: 14, weight: .bold, design: .monospaced)).foregroundColor(.white.opacity(0.8))
                                         Group {
-                                            if isKeyVisible {
-                                                TextField("Nhập Key...", text: $keyCode)
-                                            } else {
-                                                SecureField("••••••••••••", text: $keyCode)
-                                            }
+                                            if isKeyVisible { TextField("Nhập Key...", text: $keyCode) } 
+                                            else { SecureField("••••••••••••", text: $keyCode) }
                                         }
                                         .font(.system(size: 14, weight: .black, design: .monospaced))
                                         .foregroundColor(.white)
-                                        .accentColor(glowColor)
+                                        .accentColor(.white)
                                         .autocapitalization(.allCharacters)
                                         .disableAutocorrection(true)
                                         .onChange(of: keyCode) { _ in UXFeedback.typing() }
                                         
-                                        Button(action: {
-                                            UXFeedback.click()
-                                            isKeyVisible.toggle()
-                                        }) {
-                                            Image(systemName: isKeyVisible ? "eye.slash.fill" : "eye.fill")
-                                                .foregroundColor(.white.opacity(0.5))
-                                                .font(.system(size: 13))
+                                        Button(action: { UXFeedback.click(); isKeyVisible.toggle() }) {
+                                            Image(systemName: isKeyVisible ? "eye.slash.fill" : "eye.fill").foregroundColor(.white.opacity(0.5)).font(.system(size: 13))
                                         }
                                     }
-                                    .padding(.vertical, 8)
-                                    .padding(.horizontal, 12)
-                                    .background(Color.black.opacity(0.8))
-                                    .cornerRadius(8)
+                                    .padding(.vertical, 8).padding(.horizontal, 12).background(Color.black.opacity(0.8)).cornerRadius(8)
                                     .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.white.opacity(0.15), lineWidth: 1))
                                     
-                                    // Chữ Báo Lỗi Hoặc Thời Gian Trực Tiếp Ở Dưới
                                     if let error = inlineErrorMsg {
-                                        Text(error)
-                                            .font(.system(size: 10, weight: .bold, design: .monospaced))
-                                            .foregroundColor(.red)
-                                            .shadow(color: .red, radius: 5)
-                                            .transition(.opacity)
+                                        Text(error).font(.system(size: 10, weight: .bold, design: .monospaced)).foregroundColor(.white).shadow(color: .white, radius: 2)
                                     } else {
-                                        Text("Trạng thái: Chờ xác thực mã...")
-                                            .font(.system(size: 10, weight: .medium, design: .monospaced))
-                                            .foregroundColor(.white.opacity(0.4))
+                                        Text("Trạng thái: Chờ xác thực mã...").font(.system(size: 10, weight: .medium, design: .monospaced)).foregroundColor(.white.opacity(0.4))
                                     }
                                 }
                                 
-                                // Nút Paste Phải
                                 Button(action: {
                                     UXFeedback.click()
-                                    if let pasted = UIPasteboard.general.string {
-                                        keyCode = pasted.trimmingCharacters(in: .whitespacesAndNewlines)
-                                    }
+                                    if let pasted = UIPasteboard.general.string { keyCode = pasted.trimmingCharacters(in: .whitespacesAndNewlines) }
                                 }) {
                                     ZStack {
                                         RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.08)).frame(width: 42, height: 42)
-                                        Image(systemName: "doc.on.clipboard")
-                                            .font(.system(size: 15))
-                                            .foregroundColor(.white.opacity(0.9))
+                                        Image(systemName: "doc.on.clipboard").font(.system(size: 15)).foregroundColor(.white.opacity(0.9))
                                     }
                                 }
                             }
                         }
                         .padding(14)
-                        .background(Color(white: 0.1)) // Nền tối giống ảnh
+                        .background(Color.black.opacity(0.5))
                         .cornerRadius(20)
-                        .overlay(RoundedRectangle(cornerRadius: 20).stroke(borderColor, lineWidth: 1.5))
-                        .shadow(color: glowColor.opacity(0.3), radius: 15)
+                        .overlay(RoundedRectangle(cornerRadius: 20).stroke(Color.white.opacity(0.3), lineWidth: 1.5))
+                        .shadow(color: .white.opacity(0.1), radius: 15)
                         .offset(x: shakeOffset)
 
-                        // NÚT XÁC THỰC LOGIN
-                        Button(action: {
-                            UXFeedback.click()
-                            verifyKeyWithServer()
-                        }) {
+                        // NÚT KÍCH HOẠT
+                        Button(action: { UXFeedback.click(); verifyKeyWithServer() }) {
                             Text("KÍCH HOẠT HỆ THỐNG")
                                 .font(.system(size: 14, weight: .black, design: .monospaced))
-                                .tracking(2)
-                                .foregroundColor(.black)
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, 16)
-                                .background(LinearGradient(colors: [.white, Color.gray.opacity(0.8)], startPoint: .top, endPoint: .bottom))
-                                .cornerRadius(14)
-                                .shadow(color: .white.opacity(0.6), radius: 10)
-                        }
-                        .disabled(isLoading)
+                                .tracking(2).foregroundColor(.black).frame(maxWidth: .infinity).padding(.vertical, 16)
+                                .background(LinearGradient(colors: [.white, Color(white: 0.7)], startPoint: .top, endPoint: .bottom))
+                                .cornerRadius(14).shadow(color: .white.opacity(0.6), radius: 10)
+                        }.disabled(isLoading)
 
-                        // NÚT LẤY KEY TRÊN WEB
+                        // NÚT WEB
                         Button(action: {
                             UXFeedback.click()
-                            if let url = URL(string: "https://solitudepremium.click/ipa/proxy/key.php") {
-                                UIApplication.shared.open(url)
-                            }
+                            if let url = URL(string: "https://solitudepremium.click/ipa/proxy/key.php") { UIApplication.shared.open(url) }
                         }) {
                             HStack {
                                 Image(systemName: "globe.asia.australia.fill")
                                 Text("LẤY KEY BẢN QUYỀN MỚI")
                             }
-                            .font(.system(size: 11, weight: .bold, design: .monospaced))
-                            .foregroundColor(.white)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 14)
-                            .background(Color.white.opacity(0.05))
-                            .cornerRadius(12)
+                            .font(.system(size: 11, weight: .bold, design: .monospaced)).foregroundColor(.white).frame(maxWidth: .infinity)
+                            .padding(.vertical, 14).background(Color.white.opacity(0.05)).cornerRadius(12)
                             .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.white.opacity(0.2), lineWidth: 1))
                         }
                     }
-                    .padding(20)
-                    .background(Color.black.opacity(0.6))
-                    .cornerRadius(28)
-                    .overlay(RoundedRectangle(cornerRadius: 28).stroke(Color.white.opacity(0.2), lineWidth: 1))
+                    .padding(20).background(Color.black.opacity(0.7)).cornerRadius(28)
+                    .overlay(RoundedRectangle(cornerRadius: 28).stroke(Color.white.opacity(0.2), lineWidth: 1.5))
                     .shadow(color: .black.opacity(0.9), radius: 40, x: 0, y: 20)
                     .padding(.horizontal, 16)
-                }
-                .padding(.bottom, 40)
+                }.padding(.bottom, 40)
             }
         }
     }
 
-    // XỬ LÝ API BẢO MẬT & HIỆU ỨNG THẤT BẠI/THÀNH CÔNG
     private func verifyKeyWithServer() {
         let trimmedKey = keyCode.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmedKey.isEmpty else {
-            triggerError(msg: "⚠️ Vui lòng nhập mã Key!")
-            return
-        }
-
-        isLoading = true
-        inlineErrorMsg = nil
-        glowColor = .yellow.opacity(0.5) // Chuyển màu đang tải
-        borderColor = .yellow
+        guard !trimmedKey.isEmpty else { triggerError(msg: "⚠️ Vui lòng nhập mã Key!"); return }
+        isLoading = true; inlineErrorMsg = nil
 
         let endpoint = URL(string: "https://solitudepremium.click/ipa/proxy/api.php")!
         var request = URLRequest(url: endpoint)
         request.httpMethod = "POST"
         request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
-        let bodyParams = "action=verify_app_key&key=\(trimmedKey)&device_id=\(deviceID)"
-        request.httpBody = bodyParams.data(using: .utf8)
+        request.httpBody = "action=verify_app_key&key=\(trimmedKey)&device_id=\(deviceID)".data(using: .utf8)
 
         URLSession.shared.dataTask(with: request) { data, _, error in
             DispatchQueue.main.async {
                 isLoading = false
-                guard let data = data, error == nil else {
-                    triggerError(msg: "⚠️ Lỗi kết nối máy chủ!")
-                    return
-                }
-
+                guard let data = data, error == nil else { triggerError(msg: "⚠️ Lỗi kết nối máy chủ!"); return }
                 do {
                     if let json = try JSONSerialization.jsonObject(with: data, options: []) as? [String: Any],
                        let status = json["status"] as? String {
@@ -463,140 +339,92 @@ private struct KeyLockView: View {
                             let msg = json["message"] as? String ?? "Mã Key sai hoặc không tồn tại!"
                             triggerError(msg: "❌ " + msg)
                         }
-                    } else {
-                        triggerError(msg: "⚠️ Dữ liệu máy chủ bất thường!")
-                    }
-                } catch {
-                    triggerError(msg: "⚠️ Lỗi hệ thống mã hóa!")
-                }
+                    } else { triggerError(msg: "⚠️ Phản hồi bất thường!") }
+                } catch { triggerError(msg: "⚠️ Lỗi hệ thống mã hóa!") }
             }
         }.resume()
     }
     
     private func triggerError(msg: String) {
-        UXFeedback.error()
-        inlineErrorMsg = msg
-        withAnimation(.default) { glowColor = .red.opacity(0.8); borderColor = .red }
-        // Rung lắc ô nhập
-        withAnimation(.spring(response: 0.2, dampingFraction: 0.2, blendDuration: 0.2)) { shakeOffset = 10 }
+        UXFeedback.error(); inlineErrorMsg = msg
+        withAnimation(.spring(response: 0.2, dampingFraction: 0.2)) { shakeOffset = 10 }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { shakeOffset = -10 }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { shakeOffset = 0 }
-        // Hồi màu lại sau 3s
-        DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
-            withAnimation { glowColor = .cyan.opacity(0.4); borderColor = .white.opacity(0.3) }
-        }
     }
     
     private func triggerSuccess(expiry: String, key: String) {
-        UXFeedback.success()
-        inlineErrorMsg = "✅ Xác thực thành công!"
-        withAnimation(.default) { glowColor = .green.opacity(0.8); borderColor = .green }
-        
-        // Lưu dữ liệu & Chuyển màn hình sau 1.5 giây
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
-            savedExpiry = expiry
-            activeKey = key
-            withAnimation(.easeInOut(duration: 0.6)) {
-                isUnlocked = true
-            }
+        UXFeedback.success(); inlineErrorMsg = "✅ Xác thực thành công!"
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
+            savedExpiry = expiry; activeKey = key
+            withAnimation(.easeInOut(duration: 0.6)) { isUnlocked = true }
         }
     }
 }
 
-// MARK: - WIDGET NỔI GÓC DƯỚI (HIỂN THỊ THỜI GIAN KEY KHI ĐÃ ĐĂNG NHẬP)
+// MARK: - WIDGET NỔI GÓC DƯỚI (HIỂN THỊ THỜI GIAN)
 private struct KeyTimerFloatingWidget: View {
     let expiryDate: String
-    
     var body: some View {
         TimelineView(.periodic(from: .now, by: 1.0)) { context in
             let remaining = calculateRemaining(from: expiryDate, currentDate: context.date)
-            
             HStack(spacing: 10) {
                 ZStack {
                     RoundedRectangle(cornerRadius: 8).fill(Color.white.opacity(0.1)).frame(width: 32, height: 32)
-                    Image(systemName: "key.radiowaves.forward")
-                        .font(.system(size: 14))
-                        .foregroundColor(.green)
-                        .shadow(color: .green, radius: 4)
+                    Image(systemName: "key.radiowaves.forward").font(.system(size: 14)).foregroundColor(.white).shadow(color: .white, radius: 4)
                 }
-                
                 VStack(alignment: .leading, spacing: 2) {
                     Text("BẢN QUYỀN ĐÃ KÍCH HOẠT")
-                        .font(.system(size: 9, weight: .bold, design: .monospaced))
-                        .foregroundColor(.white.opacity(0.6))
+                        .font(.system(size: 9, weight: .bold, design: .monospaced)).foregroundColor(.white.opacity(0.6))
                     Text("Còn Lại: \(remaining)")
-                        .font(.system(size: 11, weight: .black, design: .monospaced))
-                        .foregroundColor(.white)
+                        .font(.system(size: 11, weight: .black, design: .monospaced)).foregroundColor(.white)
                 }
             }
-            .padding(10)
-            .background(.ultraThinMaterial)
-            .background(Color.black.opacity(0.7))
-            .cornerRadius(12)
-            .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.green.opacity(0.5), lineWidth: 1))
-            .shadow(color: .green.opacity(0.3), radius: 10)
-            .padding(.bottom, 60) // Nâng lên khỏi thanh Tabbar
-            .padding(.trailing, 16)
+            .padding(10).background(.ultraThinMaterial).background(Color.black.opacity(0.8)).cornerRadius(12)
+            .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.white.opacity(0.3), lineWidth: 1))
+            .shadow(color: .white.opacity(0.1), radius: 10).padding(.bottom, 60).padding(.trailing, 16)
         }
     }
-    
     private func calculateRemaining(from dateStr: String, currentDate: Date) -> String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
-        formatter.timeZone = TimeZone(identifier: "Asia/Ho_Chi_Minh")
+        let formatter = DateFormatter(); formatter.dateFormat = "yyyy-MM-dd HH:mm:ss"; formatter.timeZone = TimeZone(identifier: "Asia/Ho_Chi_Minh")
         guard let expDate = formatter.date(from: dateStr) else { return "Lỗi Ngày" }
-        
         let diff = Int(expDate.timeIntervalSince(currentDate))
         if diff <= 0 { return "Đã Hết Hạn" }
-        
-        let days = diff / 86400
-        let hrs = (diff % 86400) / 3600
-        let mins = (diff % 3600) / 60
-        let secs = diff % 60
+        let days = diff / 86400, hrs = (diff % 86400) / 3600, mins = (diff % 3600) / 60, secs = diff % 60
         return String(format: "%d Ngày %02d:%02d:%02d", days, hrs, mins, secs)
     }
 }
 
-// MARK: - MÀN HÌNH KHÓA KHẨN CẤP (NẾU PHÁT HIỆN DYLIB/CRACK)
+// MARK: - MÀN HÌNH KHÓA KHẨN CẤP
 private struct SecurityLockdownView: View {
     var body: some View {
         ZStack {
-            Color.red.opacity(0.2).ignoresSafeArea()
+            Color.black.ignoresSafeArea()
             VStack(spacing: 20) {
-                Image(systemName: "exclamationmark.triangle.fill")
-                    .font(.system(size: 80))
-                    .foregroundColor(.red)
-                    .shadow(color: .red, radius: 20)
-                Text("SECURITY BREACH DETECTED")
-                    .font(.system(size: 20, weight: .black, design: .monospaced))
-                    .foregroundColor(.white)
-                Text("Phát hiện phần mềm can thiệp (Dylib/Debugger). Ứng dụng đã bị khóa để bảo vệ bản quyền.")
-                    .font(.system(size: 12, design: .monospaced))
-                    .multilineTextAlignment(.center)
-                    .foregroundColor(.white.opacity(0.7))
-                    .padding(.horizontal, 40)
+                Image(systemName: "shield.slash.fill").font(.system(size: 80)).foregroundColor(.white).shadow(color: .white, radius: 20)
+                Text("SECURITY BREACH").font(.system(size: 20, weight: .black, design: .monospaced)).foregroundColor(.white)
+                Text("Phát hiện phần mềm can thiệp.\nỨng dụng đã bị khóa an toàn.").font(.system(size: 12, design: .monospaced)).multilineTextAlignment(.center).foregroundColor(.white.opacity(0.7))
             }
         }
     }
 }
 
-// MARK: - HIỆU ỨNG HẠT BỤI NỀN ĐỘNG
+// MARK: - HIỆU ỨNG HẠT BỤI NỀN ĐỘNG (BAY LÊN TRÊN RẤT NHANH)
 private struct ParticleCanvasView: View {
-    @Binding var glowColor: Color
     var body: some View {
         TimelineView(.animation) { context in
             Canvas { graphicsContext, size in
                 let time = context.date.timeIntervalSinceReferenceDate
-                for i in 0..<80 {
-                    let seed = Double(i) * 35.0
-                    let x = (sin(time * 0.2 + seed) * 0.5 + 0.5) * size.width
-                    let y = size.height - fmod(seed * 15.0 + time * 25.0, size.height)
-                    let particleSize = CGFloat(fmod(seed, 2.5) + 0.5)
-                    let opacity = Double(fmod(seed, 0.7) + 0.1)
+                for i in 0..<150 { // Số lượng hạt dày đặc hơn
+                    let seed = Double(i) * 99.0
+                    let x = (sin(time * 0.15 + seed) * 0.5 + 0.5) * size.width
+                    let speed = 150.0 + fmod(seed, 100.0) // Tốc độ bay cực nhanh
+                    // Hạt bay từ dưới lên trên
+                    let y = size.height - fmod(time * speed + seed, size.height + 50)
+                    let particleSize = CGFloat(fmod(seed, 1.5) + 0.5) // Hạt li ti
+                    let opacity = Double(fmod(seed, 0.6) + 0.1)
                     
                     let rect = CGRect(x: x, y: y, width: particleSize, height: particleSize)
-                    // Hạt sẽ có màu đổi theo glowColor (Cyan -> Đỏ/Xanh khi đúng sai)
-                    graphicsContext.fill(Path(ellipseIn: rect), with: .color(glowColor.opacity(opacity)))
+                    graphicsContext.fill(Path(ellipseIn: rect), with: .color(.white.opacity(opacity)))
                 }
             }
         }
@@ -605,11 +433,9 @@ private struct ParticleCanvasView: View {
 }
 
 private struct CompactTabLabel: View {
-    let title: String
-    let systemImage: String
+    let title: String; let systemImage: String
     var body: some View { Image(systemName: systemImage); Text(title) }
 }
-
 private extension AppSection {
     var titleKey: String {
         switch self {
