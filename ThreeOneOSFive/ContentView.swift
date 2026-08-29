@@ -194,7 +194,7 @@ struct ContentView: View {
     private func openLogs() { showLogs = true }
 }
 
-// MARK: - Màn hình Khóa & Nhập Key (Đỉnh cao Dark-Neon & Hiệu ứng Canvas)
+// MARK: - Màn hình Khóa & Nhập Key (Dark-Neon + Canvas Hiệu ứng Hạt)
 private struct KeyLockView: View {
     @Binding var isUnlocked: Bool
     @State private var keyCode: String = "123"
@@ -211,10 +211,9 @@ private struct KeyLockView: View {
 
     var body: some View {
         ZStack {
-            // Nền đen sâu thẳm
             Color.black.ignoresSafeArea()
             
-            // Hiệu ứng hạt rơi lấp lánh mô phỏng đúng bản Web PHP
+            // Hiệu ứng hạt bay lấp lánh trực tiếp giống web
             ParticleCanvasView()
             
             // Hiệu ứng tia quét ngang (Scanline)
@@ -238,7 +237,6 @@ private struct KeyLockView: View {
                     // MARK: - AVATAR & RADAR XOAY TRÒN
                     VStack(spacing: 12) {
                         ZStack {
-                            // Vòng sáng radar chuyển sắc
                             Circle()
                                 .stroke(
                                     AngularGradient(gradient: Gradient(colors: [.clear, .white, .clear]), center: .center),
@@ -253,7 +251,6 @@ private struct KeyLockView: View {
                                 }
                                 .shadow(color: .white, radius: 10, x: 0, y: 0)
                             
-                            // Lớp bóng mờ phát sáng nền
                             Circle()
                                 .fill(Color.white.opacity(0.08))
                                 .frame(width: 96, height: 96)
@@ -385,7 +382,7 @@ private struct KeyLockView: View {
                         )
                         .shadow(color: .white.opacity(0.15), radius: 10)
 
-                        // NÚT LOGIN HỆ THỐNG (Phát sáng mạnh mẽ)
+                        // NÚT LOGIN HỆ THỐNG
                         Button(action: {
                             playClickSound()
                             let trimmedKey = keyCode.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -470,7 +467,7 @@ private struct KeyLockView: View {
     }
 }
 
-// MARK: - Hiệu ứng hạt bay lấp lánh trực tiếp (Mô phỏng Canvas Web)
+// MARK: - Hiệu ứng hạt bay lấp lánh (Đã sửa lỗi chính tả thành allowsHitTesting)
 private struct ParticleCanvasView: View {
     var body: some View {
         TimelineView(.animation) { context in
@@ -488,7 +485,7 @@ private struct ParticleCanvasView: View {
                 }
             }
         }
-        .allowsHitTechting(false)
+        .allowsHitTesting(false)
     }
 }
 
