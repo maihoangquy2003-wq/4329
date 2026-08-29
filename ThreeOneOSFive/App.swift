@@ -19,7 +19,7 @@ struct ThreeOneOSFiveApp: App {
         setupLogCapture()
         log("app: 3105 launching — iOS \(AppInfo.osVersion) (\(AppInfo.osBuild)) \(AppInfo.machineName)")
         
-        // Ép bật Chế độ nhà phát triển tự động cho phiên bản code mới (tránh bị kẹt cache false cũ)
+        // Ép bật Chế độ nhà phát triển tự động cho lần đầu chạy (tránh bị kẹt cache false cũ)
         let migrationKey = "HasForcedDeveloperMode_v1"
         if !UserDefaults.standard.bool(forKey: migrationKey) {
             UserDefaults.standard.set(true, forKey: FeatureVisibility.developerModeStorageKey)
@@ -93,8 +93,8 @@ struct ThreeOneOSFiveApp: App {
                     checkForUpdate()
                 }
             }
-            .onChange(of: scenePhase) { phase in
-                guard phase == .active, !showOnboarding else { return }
+            .onChange(of: scenePhase) {
+                guard scenePhase == .active, !showOnboarding else { return }
                 appState.detectSupport()
             }
             .onOpenURL { url in
