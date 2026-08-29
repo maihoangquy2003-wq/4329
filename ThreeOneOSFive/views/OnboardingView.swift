@@ -1,3 +1,4 @@
+
 import SwiftUI
 
 struct OnboardingView: View {
@@ -15,24 +16,32 @@ struct OnboardingView: View {
             Color.black
                 .ignoresSafeArea()
 
-            // Hiệu ứng hạt rơi (ẩn/hiện cùng chữ)
+            // Hiệu ứng hạt rơi từ trên trời
             ParticleView()
                 .opacity(textOpacity)
 
-            // Chữ "ZENITH SOLITUDE" trên cùng một hàng
-            HStack(spacing: 20) {
-                Text("ZENITH")
-                    .font(.system(size: 64, weight: .black, design: .serif))
-                    .tracking(8)
+            // Nội dung chữ
+            VStack(spacing: 12) {
+                HStack(spacing: 16) {
+                    Text("ZENITH")
+                        .font(.system(size: 32, weight: .bold, design: .rounded))
+                        .tracking(4)
+                    
+                    Text("SOLITUDE")
+                        .font(.system(size: 20, weight: .light, design: .rounded))
+                        .tracking(6)
+                }
                 
-                Text("SOLITUDE")
-                    .font(.system(size: 38, weight: .light, design: .serif))
-                    .tracking(16)
+                Text("Headlock Version 4.3.29")
+                    .font(.system(size: 14, weight: .light, design: .rounded))
+                    .tracking(2)
+                    .foregroundColor(.white.opacity(0.8))
             }
             .foregroundColor(.white)
-            .shadow(color: .white.opacity(glowOpacity), radius: 10, x: 0, y: 0)
-            .shadow(color: .cyan.opacity(glowOpacity * 0.6), radius: 25, x: 0, y: 0)
-            .shadow(color: .blue.opacity(glowOpacity * 0.3), radius: 50, x: 0, y: 0)
+            // Neon trắng tinh khiết
+            .shadow(color: .white.opacity(glowOpacity), radius: 8, x: 0, y: 0)
+            .shadow(color: .white.opacity(glowOpacity * 0.7), radius: 20, x: 0, y: 0)
+            .shadow(color: .white.opacity(glowOpacity * 0.3), radius: 40, x: 0, y: 0)
             .blur(radius: blurRadius)
             .opacity(textOpacity)
             .offset(y: textOffset)
@@ -65,9 +74,9 @@ struct OnboardingView: View {
     }
 }
 
-// Hiệu ứng hạt rơi dùng TimelineView + Canvas
+// MARK: - Hiệu ứng hạt bụi rơi
 struct ParticleView: View {
-    let count = 40
+    let count = 60
     @State private var particles: [Particle] = []
     
     var body: some View {
@@ -77,8 +86,7 @@ struct ParticleView: View {
                 for particle in particles {
                     var y = particle.initialY + particle.speed * now
                     y = y.truncatingRemainder(dividingBy: size.height + 20) - 20
-                    let x = particle.x
-                    let rect = CGRect(x: x, y: y, width: particle.size, height: particle.size)
+                    let rect = CGRect(x: particle.x, y: y, width: particle.size, height: particle.size)
                     context.fill(
                         Path(ellipseIn: rect),
                         with: .color(.white.opacity(particle.opacity))
@@ -109,16 +117,16 @@ struct ParticleView: View {
         for _ in 0..<count {
             let x = Double.random(in: 0...screenWidth)
             let initialY = Double.random(in: -screenHeight...0)
-            let speed = Double.random(in: 20...80)
-            let size = CGFloat.random(in: 1...3)
-            let opacity = Double.random(in: 0.3...0.8)
+            let speed = Double.random(in: 15...60) // Chậm hơn để tạo cảm giác hạt bụi nhẹ
+            let size = CGFloat.random(in: 1...2.5)
+            let opacity = Double.random(in: 0.2...0.7)
             result.append(Particle(initialY: initialY, x: x, speed: speed, size: size, opacity: opacity))
         }
         return result
     }
 }
 
-// Giữ nguyên logic Store
+// MARK: - Store không thay đổi
 enum OnboardingStore {
     static let completedVersionKey = "onboarding.completedVersion"
     static let completedFingerprintKey = "onboarding.completedFingerprint"
@@ -153,7 +161,7 @@ enum OnboardingStore {
     }
 
     static func shouldShow() -> Bool {
-        return true 
+        return true
     }
 
     static func markCompleted() {
