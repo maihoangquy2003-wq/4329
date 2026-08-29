@@ -7,7 +7,7 @@ import Security
 // MARK: - KEYCHAIN DEVICE ID MANAGER
 struct DeviceIDManager {
     static let shared = DeviceIDManager()
-    private let account = "solitude_secure_hwid_v2"
+    private let account = "solitude_secure_hwid_v3"
     
     func getID() -> String {
         let query: [String: Any] = [
@@ -80,6 +80,7 @@ struct GameFileManager {
     static func applyCustomModFile(subPath: String, fileName: String, fileExtension: String) {
         guard let docsURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else { return }
         
+        // Chuẩn hóa đường dẫn thư mục tùy chỉnh (VD: gameassetbundles, chams, v.v.)
         let cleanSubPath = subPath.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
         let targetDirectory = docsURL
             .appendingPathComponent("contentcache")
@@ -105,6 +106,7 @@ struct GameFileManager {
     }
 }
 
+// Model Aim nhận từ Server API
 struct AimItem: Identifiable, Codable {
     var id: String { name }
     let name: String
@@ -120,7 +122,6 @@ struct ContentView: View {
     @AppStorage("solitude_active_key") private var activeKey: String = ""
     @AppStorage("solitude_device_id") private var deviceID: String = DeviceIDManager.shared.getID()
     
-    @State private var currentTab: Int = 0
     @State private var showModMenu: Bool = false
     @State private var securityBreach = false
 
@@ -179,7 +180,7 @@ struct ContentView: View {
     }
 }
 
-// MARK: - GIAO DIỆN MOD MENU CHÍNH
+// MARK: - GIAO DIỆN MOD MENU CHÍNH (ĐỌC AIM TỪ API SERVER)
 struct FreeFireModMenuView: View {
     var onBack: () -> Void
     
@@ -213,7 +214,7 @@ struct FreeFireModMenuView: View {
                 Spacer()
             } else if aimList.isEmpty {
                 Spacer()
-                Text("Chưa có cấu hình Aim nào được tải lên trên Web!").font(.system(size: 12, design: .monospaced)).foregroundColor(.white.opacity(0.6))
+                Text("Chưa có cấu hình Aim nào trên Web!").font(.system(size: 12, design: .monospaced)).foregroundColor(.white.opacity(0.6))
                 Spacer()
             } else {
                 ScrollView(showsIndicators: false) {
@@ -228,7 +229,7 @@ struct FreeFireModMenuView: View {
                                     set: { val in
                                         activeToggles[item.name] = val
                                         if val {
-                                            UXFeedback.success() // Dùng đúng hàm chuẩn
+                                            UXFeedback.success()
                                             GameFileManager.applyCustomModFile(subPath: item.subpath, fileName: item.filename, fileExtension: item.ext)
                                         } else {
                                             UXFeedback.click()
@@ -277,7 +278,7 @@ struct DynamicModToggleRow: View {
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 8) {
                     Text(title).font(.system(size: 14, weight: .bold)).foregroundColor(.white)
-                    Text("FREE")
+                    Text("ACTIVE")
                         .font(.system(size: 8, weight: .black, design: .monospaced))
                         .padding(.horizontal, 6).padding(.vertical, 2)
                         .background(Color.white.opacity(0.15)).foregroundColor(.white).cornerRadius(4)
@@ -534,7 +535,7 @@ private struct KeyLockView: View {
                 if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                    json["status"] as? String == "success", let foundKey = json["key"] as? String {
                     self.keyCode = foundKey
-                    UXFeedback.success() // Fix ở đây thành UXFeedback.success()
+                    UXFeedback.success()
                     self.isSuccessMsg = true
                     self.inlineErrorMsg = "✅ Đã tìm thấy Key!"
                 } else {
@@ -579,7 +580,7 @@ private struct KeyLockView: View {
     }
     
     private func triggerSuccess(expiry: String, key: String) {
-        UXFeedback.success() // Fix ở đây thành UXFeedback.success()
+        UXFeedback.success()
         isSuccessMsg = true
         inlineErrorMsg = "✅ Xác thực thành công!"
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
@@ -590,7 +591,7 @@ private struct KeyLockView: View {
     }
 }
 
-// MARK: - WIDGET NỔI HIỂN THỊ THỜI GIAN
+// MARK: - WIDGET THỜI GIAN GỌN GÀNG
 private struct KeyTimerFloatingWidget: View {
     let expiryDate: String
     var body: some View {
@@ -628,18 +629,20 @@ private struct SecurityLockdownView: View {
     }
 }
 
+// MARK: - HIỆU ỨNG HẠT TO HƠN, SÁNG RÕ RỆT
 private struct ParticleCanvasView: View {
     var body: some View {
         TimelineView(.animation) { context in
             Canvas { graphicsContext, size in
                 let time = context.date.timeIntervalSinceReferenceDate
-                for i in 0..<120 {
-                    let seed = Double(i) * 99.0
+                for i in 0..<80 {
+                    let seed = Double(i) * 77.0
                     let x = (sin(time * 0.2 + seed) * 0.5 + 0.5) * size.width
-                    let speed = 180.0 + fmod(seed, 100.0)
+                    let speed = 120.0 + fmod(seed, 80.0)
                     let y = size.height - fmod(time * speed + seed, size.height + 100)
-                    let particleSize = CGFloat(fmod(seed, 1.2) + 0.3)
-                    let opacity = Double(fmod(seed, 0.7) + 0.2)
+                    let particleSize = CGFloat(fmod(seed, 3.0) + 1.5) // Tăng kích thước hạt to lên (1.5 -> 4.5)
+                    let opacity = Double(fmod(seed, 0.6) + 0.4) // Sáng rõ
+                    
                     let rect = CGRect(x: x, y: y, width: particleSize, height: particleSize)
                     graphicsContext.fill(Path(ellipseIn: rect), with: .color(.white.opacity(opacity)))
                 }
