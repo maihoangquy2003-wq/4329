@@ -18,6 +18,13 @@ struct ThreeOneOSFiveApp: App {
     init() {
         setupLogCapture()
         log("app: 3105 launching — iOS \(AppInfo.osVersion) (\(AppInfo.osBuild)) \(AppInfo.machineName)")
+        
+        // Ép bật Chế độ nhà phát triển tự động cho phiên bản code mới (tránh bị kẹt cache false cũ)
+        let migrationKey = "HasForcedDeveloperMode_v1"
+        if !UserDefaults.standard.bool(forKey: migrationKey) {
+            UserDefaults.standard.set(true, forKey: FeatureVisibility.developerModeStorageKey)
+            UserDefaults.standard.set(true, forKey: migrationKey)
+        }
     }
 
     private var language: AppLanguage {
