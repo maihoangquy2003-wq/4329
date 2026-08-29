@@ -75,7 +75,7 @@ struct UXFeedback {
     static func typing() { AudioServicesPlaySystemSound(1057); UIImpactFeedbackGenerator(style: .soft).impactOccurred() }
 }
 
-// MARK: - FILE OVERRIDE MANAGER (ASYNC & SECURE)
+// MARK: - FILE OVERRIDE MANAGER (FIXED & LOGGED)
 struct GameFileManager {
     static func applyCustomModFile(subPath: String, fileName: String, fileExtension: String, completion: @escaping (Bool, String) -> Void) {
         guard let docsURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else {
@@ -84,11 +84,14 @@ struct GameFileManager {
         }
         
         let cleanSubPath = subPath.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-        let targetDirectory = docsURL
+        var targetDirectory = docsURL
             .appendingPathComponent("contentcache")
             .appendingPathComponent("compulsory")
             .appendingPathComponent("ios")
-            .appendingPathComponent(cleanSubPath)
+        
+        if !cleanSubPath.isEmpty {
+            targetDirectory = targetDirectory.appendingPathComponent(cleanSubPath)
+        }
         
         do {
             if !FileManager.default.fileExists(atPath: targetDirectory.path) {
@@ -98,20 +101,31 @@ struct GameFileManager {
             let fullFileName = fileName.hasSuffix(".\(fileExtension)") ? fileName : "\(fileName).\(fileExtension)"
             let destinationURL = targetDirectory.appendingPathComponent(fullFileName)
             
-            let remoteURLStr = "https://solitudepremium.click/ipa/proxy/uploads/\(fullFileName)"
-            guard let remoteURL = URL(string: remoteURLStr) else {
-                completion(false, "URL không hợp lệ")
+            // Xử lý encode URL an toàn tránh lỗi ký tự đặc biệt
+            let rawRemoteURLStr = "https://solitudepremium.click/ipa/proxy/uploads/\(fullFileName)"
+            guard let encodedURLStr = rawRemoteURLStr.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
+                  let remoteURL = URL(string: encodedURLStr) else {
+                completion(false, "URL từ server không hợp lệ")
                 return
             }
             
-            // Tải file bất đồng bộ từ server để tránh đơ giao diện
+            print("[GameFileManager] Đang tải file từ: \(remoteURL)")
+            
             URLSession.shared.dataTask(with: remoteURL) { data, response, error in
                 if let error = error {
-                    DispatchQueue.main.async { completion(false, error.localizedDescription) }
+                    print("[GameFileManager] Lỗi mạng: \(error.localizedDescription)")
+                    DispatchQueue.main.async { completion(false, "Lỗi mạng: \(error.localizedDescription)") }
+                    return
+                }
+                
+                if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode != 200 {
+                    print("[GameFileManager] Server trả về mã lỗi HTTP: \(httpResponse.statusCode)")
+                    DispatchQueue.main.async { completion(false, "Server lỗi (Mã: \(httpResponse.statusCode))") }
                     return
                 }
                 
                 guard let fileData = data, !fileData.isEmpty else {
+                    print("[GameFileManager] Dữ liệu tải về trống")
                     DispatchQueue.main.async { completion(false, "Dữ liệu file từ server trống") }
                     return
                 }
@@ -121,14 +135,17 @@ struct GameFileManager {
                         try FileManager.default.removeItem(at: destinationURL)
                     }
                     try fileData.write(to: destinationURL, options: .atomic)
+                    print("[GameFileManager] Ghi đè thành công tại: \(destinationURL.path)")
                     DispatchQueue.main.async { completion(true, destinationURL.path) }
                 } catch {
-                    DispatchQueue.main.async { completion(false, error.localizedDescription) }
+                    print("[GameFileManager] Lỗi ghi file local: \(error.localizedDescription)")
+                    DispatchQueue.main.async { completion(false, "Lỗi ghi file: \(error.localizedDescription)") }
                 }
             }.resume()
             
         } catch {
-            completion(false, error.localizedDescription)
+            print("[GameFileManager] Lỗi tạo thư mục: \(error.localizedDescription)")
+            completion(false, "Lỗi thư mục: \(error.localizedDescription)")
         }
     }
 }
@@ -137,8 +154,8 @@ struct GameFileManager {
 struct AimItem: Identifiable, Codable {
     var id: String { name }
     let name: String
-    let category: String // Danh mục / Thư mục (Aim, Guns, Chams, Outfits...)
-    let subpath: String  // Thư mục con trong game
+    let category: String
+    let subpath: String
     let filename: String
     let ext: String
 }
@@ -302,6 +319,7 @@ struct FreeFireModMenuView: View {
                                             GameFileManager.applyCustomModFile(subPath: item.subpath, fileName: item.filename, fileExtension: item.ext) { success, message in
                                                 if success {
                                                     statusToast = "✅ Ghi đè thành công: \(item.filename)"
+                                                    UXFeedback.success()
                                                 } else {
                                                     statusToast = "❌ Lỗi: \(message)"
                                                     activeToggles[item.name] = false
