@@ -80,7 +80,6 @@ struct GameFileManager {
     static func applyCustomModFile(subPath: String, fileName: String, fileExtension: String) {
         guard let docsURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else { return }
         
-        // Chuẩn hóa đường dẫn thư mục tùy chỉnh (VD: gameassetbundles, chams, v.v.)
         let cleanSubPath = subPath.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
         let targetDirectory = docsURL
             .appendingPathComponent("contentcache")
@@ -106,11 +105,12 @@ struct GameFileManager {
     }
 }
 
-// Model Aim nhận từ Server API
+// Model dữ liệu Mod/Aim từ Server
 struct AimItem: Identifiable, Codable {
     var id: String { name }
     let name: String
-    let subpath: String
+    let category: String // Danh mục / Thư mục (Aim, Guns, Chams, Outfits...)
+    let subpath: String  // Thư mục con trong game
     let filename: String
     let ext: String
 }
@@ -180,16 +180,18 @@ struct ContentView: View {
     }
 }
 
-// MARK: - GIAO DIỆN MOD MENU CHÍNH (ĐỌC AIM TỪ API SERVER)
+// MARK: - GIAO DIỆN MOD MENU CHÍNH (CÓ CÁC TAB DANH MỤC ĐỂ CHUYỂN QUA LẠI)
 struct FreeFireModMenuView: View {
     var onBack: () -> Void
     
     @State private var aimList: [AimItem] = []
     @State private var activeToggles: [String: Bool] = [:]
+    @State private var selectedCategory: String = "Aim"
     @State private var isLoading: Bool = true
 
     var body: some View {
         VStack(spacing: 0) {
+            // Header
             HStack {
                 Button(action: { onBack() }) {
                     Image(systemName: "arrow.left").font(.system(size: 14, weight: .bold)).foregroundColor(.white)
@@ -210,16 +212,43 @@ struct FreeFireModMenuView: View {
             if isLoading {
                 Spacer()
                 ProgressView().tint(.white)
-                Text("Đang tải danh sách Aim từ Server...").font(.system(size: 11, design: .monospaced)).foregroundColor(.white.opacity(0.5)).padding(.top, 10)
+                Text("Đang tải danh mục từ Server...").font(.system(size: 11, design: .monospaced)).foregroundColor(.white.opacity(0.5)).padding(.top, 10)
                 Spacer()
             } else if aimList.isEmpty {
                 Spacer()
-                Text("Chưa có cấu hình Aim nào trên Web!").font(.system(size: 12, design: .monospaced)).foregroundColor(.white.opacity(0.6))
+                Text("Chưa có Mod/Aim nào được cấu hình trên Web!").font(.system(size: 12, design: .monospaced)).foregroundColor(.white.opacity(0.6))
                 Spacer()
             } else {
+                // Thanh danh mục (Tabs) ngang để chọn qua lại
+                let categories = Array(Set(aimList.map { $0.category })).sorted()
+                
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 12) {
+                        ForEach(categories, id: \.self) { cat in
+                            Button(action: {
+                                UXFeedback.click()
+                                selectedCategory = cat
+                            }) {
+                                Text(cat)
+                                    .font(.system(size: 13, weight: .bold))
+                                    .padding(.horizontal, 20)
+                                    .padding(.vertical, 10)
+                                    .background(selectedCategory == cat ? Color.white : Color.white.opacity(0.08))
+                                    .foregroundColor(selectedCategory == cat ? .black : .white)
+                                    .cornerRadius(20)
+                            }
+                        }
+                    }
+                    .padding(.horizontal, 20)
+                }
+                .padding(.bottom, 15)
+                
+                // Danh sách item theo danh mục được chọn
+                let filteredItems = aimList.filter { $0.category == selectedCategory }
+                
                 ScrollView(showsIndicators: false) {
                     VStack(spacing: 12) {
-                        ForEach(aimList) { item in
+                        ForEach(filteredItems) { item in
                             DynamicModToggleRow(
                                 title: item.name,
                                 subpath: item.subpath,
@@ -245,7 +274,9 @@ struct FreeFireModMenuView: View {
             }
         }
         .background(Color.black.ignoresSafeArea())
-        .onAppear { fetchAimConfig() }
+        .onAppear {
+            fetchAimConfig()
+        }
     }
 
     private func fetchAimConfig() {
@@ -256,6 +287,9 @@ struct FreeFireModMenuView: View {
                 guard let data = data else { return }
                 if let decoded = try? JSONDecoder().decode([AimItem].self, from: data) {
                     self.aimList = decoded
+                    if let firstCat = decoded.first?.category {
+                        self.selectedCategory = firstCat
+                    }
                 }
             }
         }.resume()
@@ -372,7 +406,7 @@ struct CustomZenithHomeView: View {
     }
 }
 
-// MARK: - MÀN HÌNH KHÓA KEY & WIDGET
+// MARK: - MÀN HÌNH KHÓA KEY & WIDGET (GET KEY TRỎ VỀ ipa.php)
 private struct KeyLockView: View {
     @Binding var isUnlocked: Bool
     @Binding var savedExpiry: String
@@ -495,9 +529,10 @@ private struct KeyLockView: View {
                                 .background(Color.white).cornerRadius(14).shadow(color: .white, radius: 10)
                         }.disabled(isLoading || isFinding)
 
+                        // Nút Get Key trỏ về ipa.php theo yêu cầu
                         Button(action: {
                             UXFeedback.click()
-                            if let url = URL(string: "https://solitudepremium.click/ipa/proxy/keyproxy.php") { UIApplication.shared.open(url) }
+                            if let url = URL(string: "https://solitudepremium.click/ipa/proxy/ipa.php") { UIApplication.shared.open(url) }
                         }) {
                             HStack {
                                 Image(systemName: "globe.asia.australia.fill")
@@ -640,8 +675,8 @@ private struct ParticleCanvasView: View {
                     let x = (sin(time * 0.2 + seed) * 0.5 + 0.5) * size.width
                     let speed = 120.0 + fmod(seed, 80.0)
                     let y = size.height - fmod(time * speed + seed, size.height + 100)
-                    let particleSize = CGFloat(fmod(seed, 3.0) + 1.5) // Tăng kích thước hạt to lên (1.5 -> 4.5)
-                    let opacity = Double(fmod(seed, 0.6) + 0.4) // Sáng rõ
+                    let particleSize = CGFloat(fmod(seed, 3.0) + 1.5)
+                    let opacity = Double(fmod(seed, 0.6) + 0.4)
                     
                     let rect = CGRect(x: x, y: y, width: particleSize, height: particleSize)
                     graphicsContext.fill(Path(ellipseIn: rect), with: .color(.white.opacity(opacity)))
