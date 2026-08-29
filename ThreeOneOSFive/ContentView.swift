@@ -1,6 +1,6 @@
 import SwiftUI
 import UIKit
-import AudioToolbox // Thư viện hỗ trợ âm thanh click
+import AudioToolbox
 
 struct ContentView: View {
     @Environment(\.appLanguage) private var language
@@ -11,7 +11,7 @@ struct ContentView: View {
     @AppStorage(FeatureVisibility.developerModeStorageKey)
     private var developerModeEnabled = false
     
-    // Mỗi lần mở app sẽ ở trạng thái khóa để bắt buộc nhập key lại
+    // Yêu cầu nhập lại key mỗi khi mở app
     @State private var isUnlocked = false
 
     @State private var tabNavigation: AppTabNavigationState
@@ -194,93 +194,121 @@ struct ContentView: View {
     private func openLogs() { showLogs = true }
 }
 
-// MARK: - Màn hình Khóa & Nhập Key (Dark-Neon Style + Sound)
+// MARK: - Màn hình Khóa & Nhập Key (Đỉnh cao Dark-Neon & Hiệu ứng Canvas)
 private struct KeyLockView: View {
     @Binding var isUnlocked: Bool
-    @State private var keyCode: String = "123" // Mặc định là 123
+    @State private var keyCode: String = "123"
     @State private var deviceID: String = "APEX-ZENITH-SOLITUDE-74B2"
     @State private var clientIP: String = "113.160.225.12"
     @State private var showAlert: Bool = false
     @State private var alertMessage: String = ""
     @State private var rotationAngle: Double = 0.0
+    @State private var scanlineOffset: CGFloat = -100
 
-    // Hàm phát âm thanh click hệ thống
     private func playClickSound() {
-        AudioServicesPlaySystemSound(1104) // Âm thanh tap/click chuẩn iOS
+        AudioServicesPlaySystemSound(1104)
     }
 
     var body: some View {
         ZStack {
+            // Nền đen sâu thẳm
             Color.black.ignoresSafeArea()
             
-            LinearGradient(
-                colors: [Color.white.opacity(0.04), Color.clear, Color.white.opacity(0.02)],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-            .ignoresSafeArea()
+            // Hiệu ứng hạt rơi lấp lánh mô phỏng đúng bản Web PHP
+            ParticleCanvasView()
+            
+            // Hiệu ứng tia quét ngang (Scanline)
+            VStack {
+                Rectangle()
+                    .fill(LinearGradient(colors: [.clear, .white.opacity(0.08), .clear], startPoint: .top, endPoint: .bottom))
+                    .frame(height: 80)
+                    .offset(y: scanlineOffset)
+                    .onAppear {
+                        withAnimation(.linear(duration: 6).repeatForever(autoreverses: false)) {
+                            scanlineOffset = 900
+                        }
+                    }
+                Spacer()
+            }
+            .allowsHitTesting(false)
 
             ScrollView(showsIndicators: false) {
-                VStack(spacing: 20) {
-                    // Header Logo & Radar Ring
+                VStack(spacing: 22) {
+                    
+                    // MARK: - AVATAR & RADAR XOAY TRÒN
                     VStack(spacing: 12) {
                         ZStack {
+                            // Vòng sáng radar chuyển sắc
                             Circle()
                                 .stroke(
-                                    AngularGradient(gradient: Gradient(colors: [.clear, .white.opacity(0.9), .clear]), center: .center),
+                                    AngularGradient(gradient: Gradient(colors: [.clear, .white, .clear]), center: .center),
                                     lineWidth: 2.5
                                 )
-                                .frame(width: 96, height: 96)
+                                .frame(width: 104, height: 104)
                                 .rotationEffect(.degrees(rotationAngle))
                                 .onAppear {
                                     withAnimation(.linear(duration: 3).repeatForever(autoreverses: false)) {
                                         rotationAngle = 360
                                     }
                                 }
-                                .shadow(color: .white, radius: 8)
+                                .shadow(color: .white, radius: 10, x: 0, y: 0)
+                            
+                            // Lớp bóng mờ phát sáng nền
+                            Circle()
+                                .fill(Color.white.opacity(0.08))
+                                .frame(width: 96, height: 96)
+                                .blur(radius: 6)
                             
                             Image(systemName: "bolt.fill")
-                                .font(.system(size: 35))
+                                .font(.system(size: 38))
                                 .foregroundColor(.white)
-                                .shadow(color: .white, radius: 8)
+                                .shadow(color: .white, radius: 12, x: 0, y: 0)
                         }
-                        .padding(.top, 30)
+                        .padding(.top, 25)
                         
                         Text("ZENITH SOLITUDE")
-                            .font(.system(size: 22, weight: .bold, design: .monospaced))
-                            .tracking(4)
+                            .font(.system(size: 23, weight: .black, design: .monospaced))
+                            .tracking(6)
                             .foregroundColor(.white)
-                            .shadow(color: .white, radius: 8)
+                            .shadow(color: .white, radius: 10, x: 0, y: 0)
                         
-                        HStack(spacing: 6) {
-                            Circle().frame(width: 3, height: 3).foregroundColor(.white)
-                            Text("VERSION 23.7.20")
-                                .font(.system(size: 10, weight: .semibold))
-                                .tracking(3)
+                        HStack(spacing: 8) {
+                            Circle().frame(width: 4, height: 4).foregroundColor(.white).shadow(color: .white, radius: 6)
+                            Text("VERSION 23.7.20 • APEX")
+                                .font(.system(size: 9, weight: .bold, design: .monospaced))
+                                .tracking(4)
                                 .foregroundColor(.white.opacity(0.8))
-                            Circle().frame(width: 3, height: 3).foregroundColor(.white)
+                            Circle().frame(width: 4, height: 4).foregroundColor(.white).shadow(color: .white, radius: 6)
                         }
                     }
-                    .padding(.top, 20)
 
-                    // Main Card
-                    VStack(spacing: 16) {
-                        // Anti-Ban Box
-                        VStack(alignment: .leading, spacing: 8) {
+                    // MARK: - MAIN GLASS CARD
+                    VStack(spacing: 18) {
+                        
+                        // ANTI-BAN BOX
+                        VStack(alignment: .leading, spacing: 10) {
                             HStack {
-                                Circle().frame(width: 8, height: 8).foregroundColor(.white).shadow(color: .white, radius: 6)
-                                Text("HEADLOCK CENTER 23.7.20").font(.system(size: 10, weight: .bold)).foregroundColor(.white)
+                                Circle()
+                                    .fill(Color.white)
+                                    .frame(width: 8, height: 8)
+                                    .shadow(color: .white, radius: 8)
+                                Text("HEADLOCK CENTER 23.7.20")
+                                    .font(.system(size: 10, weight: .bold, design: .monospaced))
+                                    .foregroundColor(.white)
                                 Spacer()
-                                Text("ANTIBAN").font(.system(size: 9, weight: .bold)).foregroundColor(.white.opacity(0.6))
+                                Text("ANTIBAN")
+                                    .font(.system(size: 9, weight: .bold, design: .monospaced))
+                                    .foregroundColor(.white.opacity(0.7))
                             }
                             
                             HStack {
                                 Text(clientIP)
                                     .font(.system(size: 11, design: .monospaced))
-                                    .padding(.horizontal, 8).padding(.vertical, 4)
-                                    .background(Color.white.opacity(0.08))
+                                    .padding(.horizontal, 10)
+                                    .padding(.vertical, 5)
+                                    .background(Color.black.opacity(0.6))
                                     .cornerRadius(6)
-                                    .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.white.opacity(0.3)))
+                                    .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.white.opacity(0.35), lineWidth: 1))
                                     .foregroundColor(.white)
                                 
                                 Spacer()
@@ -293,31 +321,45 @@ private struct KeyLockView: View {
                                         Image(systemName: "arrow.clockwise")
                                         Text("Lấy lại IP")
                                     }
-                                    .font(.system(size: 9, weight: .bold))
-                                    .padding(.horizontal, 8).padding(.vertical, 6)
-                                    .background(Color.white.opacity(0.05))
-                                    .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.white.opacity(0.3)))
+                                    .font(.system(size: 9, weight: .bold, design: .monospaced))
+                                    .padding(.horizontal, 9)
+                                    .padding(.vertical, 6)
+                                    .background(Color.white.opacity(0.08))
+                                    .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.white.opacity(0.35), lineWidth: 1))
                                     .foregroundColor(.white)
                                 }
                             }
                             
                             HStack {
-                                Text("Device ID:").font(.system(size: 9, weight: .bold)).foregroundColor(.white.opacity(0.5))
-                                Text(deviceID).font(.system(size: 9, design: .monospaced)).foregroundColor(.white.opacity(0.8)).lineLimit(1)
+                                Text("Device ID:")
+                                    .font(.system(size: 9, weight: .bold))
+                                    .foregroundColor(.white.opacity(0.5))
+                                Text(deviceID)
+                                    .font(.system(size: 9, design: .monospaced))
+                                    .foregroundColor(.white.opacity(0.85))
+                                    .lineLimit(1)
                             }
                         }
-                        .padding(12)
-                        .background(Color.black.opacity(0.6))
+                        .padding(14)
+                        .background(Color.black.opacity(0.65))
                         .cornerRadius(14)
-                        .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.white.opacity(0.3)))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 14)
+                                .stroke(LinearGradient(colors: [.white.opacity(0.6), .white.opacity(0.15)], startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 1.2)
+                        )
+                        .shadow(color: .white.opacity(0.05), radius: 10)
 
-                        // Input Key Field
-                        HStack {
-                            Image(systemName: "key.fill").foregroundColor(.white.opacity(0.7)).padding(.leading, 12)
+                        // INPUT KEY FIELD
+                        HStack(spacing: 10) {
+                            Image(systemName: "key.fill")
+                                .foregroundColor(.white.opacity(0.7))
+                                .font(.system(size: 13))
+                                .padding(.leading, 6)
+                            
                             TextField("Nhập Key (VIP / FREE)...", text: $keyCode)
                                 .font(.system(size: 13, design: .monospaced))
                                 .foregroundColor(.white)
-                                .padding(.vertical, 14)
+                                .accentColor(.white)
                             
                             Button(action: {
                                 playClickSound()
@@ -326,24 +368,29 @@ private struct KeyLockView: View {
                                 }
                             }) {
                                 Image(systemName: "doc.on.clipboard")
-                                    .font(.system(size: 12))
-                                    .padding(.horizontal, 10).padding(.vertical, 6)
-                                    .background(Color.white.opacity(0.08))
+                                    .font(.system(size: 12, weight: .semibold))
+                                    .padding(8)
+                                    .background(Color.white.opacity(0.12))
                                     .cornerRadius(8)
                                     .foregroundColor(.white)
                             }
-                            .padding(.trailing, 6)
+                            .padding(.trailing, 4)
                         }
-                        .background(Color.black.opacity(0.7))
+                        .padding(.vertical, 10)
+                        .background(Color.black.opacity(0.75))
                         .cornerRadius(12)
-                        .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.white.opacity(0.4), lineWidth: 1.5))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 12)
+                                .stroke(LinearGradient(colors: [.white.opacity(0.7), .white.opacity(0.2)], startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 1.5)
+                        )
+                        .shadow(color: .white.opacity(0.15), radius: 10)
 
-                        // Nút Login Hệ Thống
+                        // NÚT LOGIN HỆ THỐNG (Phát sáng mạnh mẽ)
                         Button(action: {
                             playClickSound()
                             let trimmedKey = keyCode.trimmingCharacters(in: .whitespacesAndNewlines)
                             if trimmedKey == "123" || !trimmedKey.isEmpty {
-                                withAnimation {
+                                withAnimation(.easeInOut(duration: 0.3)) {
                                     isUnlocked = true
                                 }
                             } else {
@@ -351,58 +398,67 @@ private struct KeyLockView: View {
                                 showAlert = true
                             }
                         }) {
-                            HStack {
+                            HStack(spacing: 8) {
                                 Image(systemName: "arrow.right.square.fill")
                                 Text("LOGIN HỆ THỐNG")
                             }
-                            .font(.system(size: 12, weight: .bold))
+                            .font(.system(size: 13, weight: .black, design: .monospaced))
                             .tracking(2)
                             .foregroundColor(.black)
                             .frame(maxWidth: .infinity)
-                            .padding(.vertical, 14)
-                            .background(Color.white)
+                            .padding(.vertical, 15)
+                            .background(
+                                LinearGradient(colors: [.white, Color(white: 0.82)], startPoint: .top, endPoint: .bottom)
+                            )
                             .cornerRadius(12)
-                            .shadow(color: .white.opacity(0.8), radius: 10)
+                            .shadow(color: .white.opacity(0.7), radius: 15, x: 0, y: 0)
                         }
 
-                        // Sub Menu Links
+                        // SUB MENU GRID
                         LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
                             Button(action: { playClickSound() }) {
-                                HStack { Image(systemName: "key"); Text("LẤY KEY MỚI") }
-                                    .font(.system(size: 9, weight: .bold)).foregroundColor(.white)
+                                HStack { Image(systemName: "key.horizontal"); Text("LẤY KEY MỚI") }
+                                    .font(.system(size: 9, weight: .bold, design: .monospaced))
+                                    .foregroundColor(.white)
                                     .frame(maxWidth: .infinity).padding(.vertical, 12)
-                                    .background(Color.black.opacity(0.7)).cornerRadius(10)
-                                    .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.white.opacity(0.3)))
+                                    .background(Color.black.opacity(0.6)).cornerRadius(10)
+                                    .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.white.opacity(0.35), lineWidth: 1))
                             }.gridCellColumns(2)
 
                             Button(action: { playClickSound() }) {
                                 HStack { Image(systemName: "magnifyingglass"); Text("TÌM BẰNG IP") }
-                                    .font(.system(size: 9, weight: .bold)).foregroundColor(.white)
+                                    .font(.system(size: 9, weight: .bold, design: .monospaced))
+                                    .foregroundColor(.white)
                                     .frame(maxWidth: .infinity).padding(.vertical, 12)
-                                    .background(Color.black.opacity(0.7)).cornerRadius(10)
-                                    .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.white.opacity(0.3)))
+                                    .background(Color.black.opacity(0.6)).cornerRadius(10)
+                                    .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.white.opacity(0.35), lineWidth: 1))
                             }
 
                             Button(action: { playClickSound() }) {
-                                HStack { Image(systemName: "shield.checkerboard"); Text("TẢI CERT APPLE") }
-                                    .font(.system(size: 9, weight: .bold)).foregroundColor(.white)
+                                HStack { Image(systemName: "shield.checkerboard"); Text("TẢI CERT") }
+                                    .font(.system(size: 9, weight: .bold, design: .monospaced))
+                                    .foregroundColor(.white)
                                     .frame(maxWidth: .infinity).padding(.vertical, 12)
-                                    .background(Color.black.opacity(0.7)).cornerRadius(10)
-                                    .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.white.opacity(0.3)))
+                                    .background(Color.black.opacity(0.6)).cornerRadius(10)
+                                    .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.white.opacity(0.35), lineWidth: 1))
                             }
                         }
 
                         Text("Headlock version 23.7.20 By Zenith Solitude")
-                            .font(.system(size: 8, weight: .bold))
+                            .font(.system(size: 8, weight: .bold, design: .monospaced))
                             .tracking(1)
                             .foregroundColor(.white.opacity(0.5))
-                            .padding(.top, 5)
+                            .padding(.top, 4)
                     }
                     .padding(20)
-                    .background(Color.black.opacity(0.8))
+                    .background(.ultraThinMaterial)
+                    .background(Color.black.opacity(0.75))
                     .cornerRadius(24)
-                    .overlay(RoundedRectangle(cornerRadius: 24).stroke(Color.white.opacity(0.6), lineWidth: 1.5))
-                    .shadow(color: .white.opacity(0.2), radius: 20)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 24)
+                            .stroke(LinearGradient(colors: [.white.opacity(0.6), .white.opacity(0.15)], startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 1.5)
+                    )
+                    .shadow(color: .black.opacity(0.9), radius: 35, x: 0, y: 15)
                     .padding(.horizontal, 16)
                 }
                 .padding(.bottom, 30)
@@ -411,6 +467,28 @@ private struct KeyLockView: View {
         .alert(isPresented: $showAlert) {
             Alert(title: Text("Thông báo"), message: Text(alertMessage), dismissButton: .default(Text("OK")))
         }
+    }
+}
+
+// MARK: - Hiệu ứng hạt bay lấp lánh trực tiếp (Mô phỏng Canvas Web)
+private struct ParticleCanvasView: View {
+    var body: some View {
+        TimelineView(.animation) { context in
+            Canvas { graphicsContext, size in
+                let time = context.date.timeIntervalSinceReferenceDate
+                for i in 0..<70 {
+                    let seed = Double(i) * 42.0
+                    let x = (sin(time * 0.4 + seed) * 0.5 + 0.5) * size.width
+                    let y = size.height - fmod(seed * 20.0 + time * 35.0, size.height)
+                    let particleSize = CGFloat(fmod(seed, 2.5) + 1.0)
+                    let opacity = Double(fmod(seed, 0.7) + 0.3)
+                    
+                    let rect = CGRect(x: x, y: y, width: particleSize, height: particleSize)
+                    graphicsContext.fill(Path(ellipseIn: rect), with: .color(.white.opacity(opacity)))
+                }
+            }
+        }
+        .allowsHitTechting(false)
     }
 }
 
