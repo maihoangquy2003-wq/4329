@@ -14,12 +14,13 @@ private enum OnboardingNavigationDirection {
 
 struct OnboardingView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @AppStorage(AppLanguage.storageKey) private var languageCode = AppLanguage.english.rawValue
+    // Đã cố định mặc định sang tiếng Việt ("vi")
+    @AppStorage(AppLanguage.storageKey) private var languageCode = "vi"
     @State private var step: OnboardingStep = .language
     @State private var navigationDirection: OnboardingNavigationDirection = .forward
     var onComplete: () -> Void
 
-    private var language: AppLanguage { AppLanguage(rawValue: languageCode) ?? .english }
+    private var language: AppLanguage { AppLanguage(rawValue: languageCode) ?? .vietnamese }
     private var motionAnimation: Animation? {
         reduceMotion ? nil : .easeInOut(duration: 0.24)
     }
@@ -182,7 +183,9 @@ struct OnboardingView: View {
                     .font(.title2.weight(.bold))
                     .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)
-                Text(language.text("onboarding.welcome_message"))
+                
+                // Đã mod hiển thị thành thương hiệu Zenith Solitude tại đây
+                Text("by Zenith Solitude")
                     .font(.body)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
@@ -440,7 +443,6 @@ enum OnboardingStore {
         return "\(v) (\(b))"
     }
 
-    /// Per-install token: executable mtime changes on every overwrite even if version stays the same.
     static var bundleToken: String {
         if let exe = Bundle.main.executablePath,
            let attrs = try? FileManager.default.attributesOfItem(atPath: exe),
@@ -465,24 +467,8 @@ enum OnboardingStore {
     }
 
     static func shouldShow() -> Bool {
-#if targetEnvironment(simulator)
-        if ProcessInfo.processInfo.arguments.contains("--skip-onboarding") { return false }
-        if ProcessInfo.processInfo.arguments.contains("--reset-onboarding") { return true }
-#endif
-        let fp = currentFingerprint
-        if let stored = completedFingerprint, !stored.isEmpty {
-            return stored != fp
-        }
-        // Migration: old installs only have completedVersion
-        if let completed = completedVersion, !completed.isEmpty {
-            if completed == currentVersion {
-                // Same version, migrate silently — next overwrite will be detected via fingerprint
-                UserDefaults.standard.set(fp, forKey: completedFingerprintKey)
-                return false
-            }
-            return true
-        }
-        return true
+        // Cố định trả về false để luôn bỏ qua màn hình giới thiệu
+        return false
     }
 
     static func markCompleted() {
