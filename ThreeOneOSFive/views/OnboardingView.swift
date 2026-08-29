@@ -1,4 +1,3 @@
-
 import SwiftUI
 
 struct OnboardingView: View {
@@ -16,29 +15,25 @@ struct OnboardingView: View {
             Color.black
                 .ignoresSafeArea()
 
-            // Hiệu ứng hạt rơi từ trên trời
+   
             ParticleView()
                 .opacity(textOpacity)
 
-            // Nội dung chữ
-            VStack(spacing: 12) {
-                HStack(spacing: 16) {
+            VStack(spacing: 10) {
+                HStack(spacing: 14) {
                     Text("ZENITH")
-                        .font(.system(size: 32, weight: .bold, design: .rounded))
-                        .tracking(4)
-                    
                     Text("SOLITUDE")
-                        .font(.system(size: 20, weight: .light, design: .rounded))
-                        .tracking(6)
                 }
-                
+                .font(.system(size: 28, weight: .bold, design: .rounded))
+                .tracking(4)
+                .foregroundColor(.white)
+
                 Text("Headlock Version 4.3.29")
                     .font(.system(size: 14, weight: .light, design: .rounded))
                     .tracking(2)
                     .foregroundColor(.white.opacity(0.8))
             }
-            .foregroundColor(.white)
-            // Neon trắng tinh khiết
+            // Neon trắng
             .shadow(color: .white.opacity(glowOpacity), radius: 8, x: 0, y: 0)
             .shadow(color: .white.opacity(glowOpacity * 0.7), radius: 20, x: 0, y: 0)
             .shadow(color: .white.opacity(glowOpacity * 0.3), radius: 40, x: 0, y: 0)
@@ -74,9 +69,8 @@ struct OnboardingView: View {
     }
 }
 
-// MARK: - Hiệu ứng hạt bụi rơi
 struct ParticleView: View {
-    let count = 60
+    let count = 80  // tăng số hạt
     @State private var particles: [Particle] = []
     
     var body: some View {
@@ -86,10 +80,14 @@ struct ParticleView: View {
                 for particle in particles {
                     var y = particle.initialY + particle.speed * now
                     y = y.truncatingRemainder(dividingBy: size.height + 20) - 20
-                    let rect = CGRect(x: particle.x, y: y, width: particle.size, height: particle.size)
+                    let x = particle.x
+               
+                    let twinkle = 0.4 + 0.6 * abs(sin(now * particle.twinkleSpeed + particle.phase))
+                    let opacity = particle.opacity * twinkle
+                    let rect = CGRect(x: x, y: y, width: particle.size, height: particle.size)
                     context.fill(
                         Path(ellipseIn: rect),
-                        with: .color(.white.opacity(particle.opacity))
+                        with: .color(.white.opacity(opacity))
                     )
                 }
             }
@@ -108,6 +106,8 @@ struct ParticleView: View {
         let speed: Double
         let size: CGFloat
         let opacity: Double
+        let phase: Double
+        let twinkleSpeed: Double
     }
     
     func generateParticles() -> [Particle] {
@@ -117,55 +117,13 @@ struct ParticleView: View {
         for _ in 0..<count {
             let x = Double.random(in: 0...screenWidth)
             let initialY = Double.random(in: -screenHeight...0)
-            let speed = Double.random(in: 15...60) // Chậm hơn để tạo cảm giác hạt bụi nhẹ
+            let speed = Double.random(in: 10...50) // chậm nhẹ
             let size = CGFloat.random(in: 1...2.5)
-            let opacity = Double.random(in: 0.2...0.7)
-            result.append(Particle(initialY: initialY, x: x, speed: speed, size: size, opacity: opacity))
+            let opacity = Double.random(in: 0.15...0.6)
+            let phase = Double.random(in: 0...(2 * .pi))
+            let twinkleSpeed = Double.random(in: 1.0...3.0)
+            result.append(Particle(initialY: initialY, x: x, speed: speed, size: size, opacity: opacity, phase: phase, twinkleSpeed: twinkleSpeed))
         }
         return result
-    }
-}
-
-// MARK: - Store không thay đổi
-enum OnboardingStore {
-    static let completedVersionKey = "onboarding.completedVersion"
-    static let completedFingerprintKey = "onboarding.completedFingerprint"
-
-    static var currentVersion: String {
-        let v = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0"
-        let b = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "0"
-        return "\(v) (\(b))"
-    }
-
-    static var bundleToken: String {
-        if let exe = Bundle.main.executablePath,
-           let attrs = try? FileManager.default.attributesOfItem(atPath: exe),
-           let date = attrs[.modificationDate] as? Date {
-            return String(Int(date.timeIntervalSince1970))
-        }
-        if let attrs = try? FileManager.default.attributesOfItem(atPath: Bundle.main.bundlePath),
-           let date = (attrs[.creationDate] as? Date) ?? (attrs[.modificationDate] as? Date) {
-            return String(Int(date.timeIntervalSince1970))
-        }
-        return "0"
-    }
-
-    static var currentFingerprint: String { "\(currentVersion)#\(bundleToken)" }
-
-    static var completedVersion: String? {
-        UserDefaults.standard.string(forKey: completedVersionKey)
-    }
-
-    static var completedFingerprint: String? {
-        UserDefaults.standard.string(forKey: completedFingerprintKey)
-    }
-
-    static func shouldShow() -> Bool {
-        return true
-    }
-
-    static func markCompleted() {
-        UserDefaults.standard.set(currentVersion, forKey: completedVersionKey)
-        UserDefaults.standard.set(currentFingerprint, forKey: completedFingerprintKey)
     }
 }
