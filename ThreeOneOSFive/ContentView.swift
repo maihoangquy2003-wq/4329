@@ -1,5 +1,6 @@
 import SwiftUI
 import UIKit
+import AudioToolbox // Thư viện hỗ trợ âm thanh click
 
 struct ContentView: View {
     @Environment(\.appLanguage) private var language
@@ -10,8 +11,8 @@ struct ContentView: View {
     @AppStorage(FeatureVisibility.developerModeStorageKey)
     private var developerModeEnabled = false
     
-    // Trạng thái khóa / mở khóa ứng dụng (có lưu lại bằng AppStorage để không phải nhập lại mỗi lần mở app)
-    @AppStorage("isAppUnlocked") private var isUnlocked = false
+    // Mỗi lần mở app sẽ ở trạng thái khóa để bắt buộc nhập key lại
+    @State private var isUnlocked = false
 
     @State private var tabNavigation: AppTabNavigationState
     @State private var showSettings = false
@@ -41,9 +42,8 @@ struct ContentView: View {
             initialValue: arguments.contains("--simulate-settings")
         )
         
-        // Nếu chạy trên simulator và có arguments bypass lock (tuỳ chọn)
         if arguments.contains("--bypass-lock") {
-            UserDefaults.standard.set(true, forKey: "isAppUnlocked")
+            _isUnlocked = State(initialValue: true)
         }
 #else
         _tabNavigation = State(initialValue: AppTabNavigationState())
@@ -53,16 +53,13 @@ struct ContentView: View {
     var body: some View {
         Group {
             if isUnlocked {
-                // Giao diện chính của app khi đã mở khóa thành công
                 mainAppContent
             } else {
-                // Màn hình khóa nhập Key phong cách Dark-Neon
                 KeyLockView(isUnlocked: $isUnlocked)
             }
         }
     }
 
-    // Tách phần giao diện chính của app ra một biến riêng cho gọn code
     private var mainAppContent: some View {
         Group {
             if horizontalSizeClass == .regular {
@@ -144,36 +141,17 @@ struct ContentView: View {
     private func sectionContent(_ section: AppSection) -> some View {
         switch section {
         case .home:
-            RepositoryHomeView(
-                onOpenSettings: openSettings,
-                onOpenLogs: openLogs
-            )
+            RepositoryHomeView(onOpenSettings: openSettings, onOpenLogs: openLogs)
         case .new:
-            RepositoryNewView(
-                onOpenSettings: openSettings,
-                onOpenLogs: openLogs
-            )
+            RepositoryNewView(onOpenSettings: openSettings, onOpenLogs: openLogs)
         case .sources:
-            RepositorySourcesView(
-                onOpenSettings: openSettings,
-                onOpenLogs: openLogs
-            )
+            RepositorySourcesView(onOpenSettings: openSettings, onOpenLogs: openLogs)
         case .installed:
-            PatchProjectsView(
-                onOpenSettings: openSettings,
-                onOpenLogs: openLogs
-            )
+            PatchProjectsView(onOpenSettings: openSettings, onOpenLogs: openLogs)
         case .files:
-            AppDataBrowserView(
-                tabSession: filesTabSession,
-                onOpenSettings: openSettings,
-                onOpenLogs: openLogs
-            )
+            AppDataBrowserView(tabSession: filesTabSession, onOpenSettings: openSettings, onOpenLogs: openLogs)
         case .search:
-            RepositorySearchView(
-                onOpenSettings: openSettings,
-                onOpenLogs: openLogs
-            )
+            RepositorySearchView(onOpenSettings: openSettings, onOpenLogs: openLogs)
         }
     }
 
@@ -212,44 +190,61 @@ struct ContentView: View {
         } ?? .home
     }
 
-    private func openSettings() {
-        showSettings = true
-    }
-
-    private func openLogs() {
-        showLogs = true
-    }
+    private func openSettings() { showSettings = true }
+    private func openLogs() { showLogs = true }
 }
 
-// MARK: - Màn hình nhập Key (Dark-Neon Style)
+// MARK: - Màn hình Khóa & Nhập Key (Dark-Neon Style + Sound)
 private struct KeyLockView: View {
     @Binding var isUnlocked: Bool
-    @State private var keyCode: String = "123" // Key mặc định
+    @State private var keyCode: String = "123" // Mặc định là 123
     @State private var deviceID: String = "APEX-ZENITH-SOLITUDE-74B2"
     @State private var clientIP: String = "113.160.225.12"
     @State private var showAlert: Bool = false
     @State private var alertMessage: String = ""
+    @State private var rotationAngle: Double = 0.0
+
+    // Hàm phát âm thanh click hệ thống
+    private func playClickSound() {
+        AudioServicesPlaySystemSound(1104) // Âm thanh tap/click chuẩn iOS
+    }
 
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
             
-            ScrollView {
+            LinearGradient(
+                colors: [Color.white.opacity(0.04), Color.clear, Color.white.opacity(0.02)],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+            .ignoresSafeArea()
+
+            ScrollView(showsIndicators: false) {
                 VStack(spacing: 20) {
-                    // Header Logo / Icon
+                    // Header Logo & Radar Ring
                     VStack(spacing: 12) {
                         ZStack {
                             Circle()
-                                .stroke(lineWidth: 2)
-                                .foregroundColor(.white)
-                                .frame(width: 90, height: 90)
-                                .shadow(color: .white.opacity(0.8), radius: 10)
+                                .stroke(
+                                    AngularGradient(gradient: Gradient(colors: [.clear, .white.opacity(0.9), .clear]), center: .center),
+                                    lineWidth: 2.5
+                                )
+                                .frame(width: 96, height: 96)
+                                .rotationEffect(.degrees(rotationAngle))
+                                .onAppear {
+                                    withAnimation(.linear(duration: 3).repeatForever(autoreverses: false)) {
+                                        rotationAngle = 360
+                                    }
+                                }
+                                .shadow(color: .white, radius: 8)
                             
                             Image(systemName: "bolt.fill")
                                 .font(.system(size: 35))
                                 .foregroundColor(.white)
                                 .shadow(color: .white, radius: 8)
                         }
+                        .padding(.top, 30)
                         
                         Text("ZENITH SOLITUDE")
                             .font(.system(size: 22, weight: .bold, design: .monospaced))
@@ -266,9 +261,9 @@ private struct KeyLockView: View {
                             Circle().frame(width: 3, height: 3).foregroundColor(.white)
                         }
                     }
-                    .padding(.top, 30)
+                    .padding(.top, 20)
 
-                    // Main Card chứa form Anti-Ban & Nhập Key
+                    // Main Card
                     VStack(spacing: 16) {
                         // Anti-Ban Box
                         VStack(alignment: .leading, spacing: 8) {
@@ -290,7 +285,10 @@ private struct KeyLockView: View {
                                 
                                 Spacer()
                                 
-                                Button(action: { clientIP = "113.160.225.12" }) {
+                                Button(action: {
+                                    playClickSound()
+                                    clientIP = "113.160.225.12"
+                                }) {
                                     HStack(spacing: 4) {
                                         Image(systemName: "arrow.clockwise")
                                         Text("Lấy lại IP")
@@ -322,6 +320,7 @@ private struct KeyLockView: View {
                                 .padding(.vertical, 14)
                             
                             Button(action: {
+                                playClickSound()
                                 if let pasted = UIPasteboard.general.string {
                                     keyCode = pasted.trimmingCharacters(in: .whitespacesAndNewlines)
                                 }
@@ -341,6 +340,7 @@ private struct KeyLockView: View {
 
                         // Nút Login Hệ Thống
                         Button(action: {
+                            playClickSound()
                             let trimmedKey = keyCode.trimmingCharacters(in: .whitespacesAndNewlines)
                             if trimmedKey == "123" || !trimmedKey.isEmpty {
                                 withAnimation {
@@ -367,7 +367,7 @@ private struct KeyLockView: View {
 
                         // Sub Menu Links
                         LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
-                            Button(action: {}) {
+                            Button(action: { playClickSound() }) {
                                 HStack { Image(systemName: "key"); Text("LẤY KEY MỚI") }
                                     .font(.system(size: 9, weight: .bold)).foregroundColor(.white)
                                     .frame(maxWidth: .infinity).padding(.vertical, 12)
@@ -375,15 +375,15 @@ private struct KeyLockView: View {
                                     .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.white.opacity(0.3)))
                             }.gridCellColumns(2)
 
-                            Button(action: {}) {
-                                HStack { Image(systemName: "magnifyingglass"); Text("TÌM KEY BẰNG IP") }
+                            Button(action: { playClickSound() }) {
+                                HStack { Image(systemName: "magnifyingglass"); Text("TÌM BẰNG IP") }
                                     .font(.system(size: 9, weight: .bold)).foregroundColor(.white)
                                     .frame(maxWidth: .infinity).padding(.vertical, 12)
                                     .background(Color.black.opacity(0.7)).cornerRadius(10)
                                     .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.white.opacity(0.3)))
                             }
 
-                            Button(action: {}) {
+                            Button(action: { playClickSound() }) {
                                 HStack { Image(systemName: "shield.checkerboard"); Text("TẢI CERT APPLE") }
                                     .font(.system(size: 9, weight: .bold)).foregroundColor(.white)
                                     .frame(maxWidth: .infinity).padding(.vertical, 12)
@@ -416,7 +416,7 @@ private struct KeyLockView: View {
 
 private struct CompactTabLabel: View {
     let title: String
-    let systemImage:String
+    let systemImage: String
 
     @ViewBuilder
     var body: some View {
