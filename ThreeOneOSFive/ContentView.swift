@@ -1,4 +1,4 @@
-import SwiftUI
+ import SwiftUI
 import UIKit
 import AudioToolbox
 import MachO
@@ -59,7 +59,7 @@ struct ContentView: View {
     @AppStorage("solitude_key_expiry") private var keyExpiryDate: String = ""
     @AppStorage("solitude_active_key") private var activeKey: String = ""
     
-    // Tự động tạo Device ID chuẩn form APEX-ZENITH-SOLITUDE-<RANDOM> và lưu vĩnh viễn
+    // Tự động tạo Device ID chuẩn form APEX-ZENITH-SOLITUDE-<RANDOM>
     @AppStorage("solitude_device_id") private var deviceID: String = "APEX-ZENITH-SOLITUDE-\(UUID().uuidString.prefix(8).uppercased())"
     
     @State private var tabNavigation: AppTabNavigationState
@@ -154,7 +154,7 @@ struct ContentView: View {
     }
 }
 
-// MARK: - MÀN HÌNH KHÓA KEY (ĐEN TRẮNG, HẠT BAY TỐC ĐỘ CAO)
+// MARK: - MÀN HÌNH KHÓA KEY (ĐÃ CHẺ NHỎ UI ĐỂ FIX LỖI BUILD)
 private struct KeyLockView: View {
     @Binding var isUnlocked: Bool
     @Binding var savedExpiry: String
@@ -164,160 +164,239 @@ private struct KeyLockView: View {
     @State private var keyCode: String = ""
     @State private var isKeyVisible: Bool = false
     @State private var isLoading: Bool = false
+    @State private var isFinding: Bool = false
     @State private var inlineErrorMsg: String? = nil
+    @State private var isSuccessMsg: Bool = false
     @State private var shakeOffset: CGFloat = 0
     @State private var rotationAngle: Double = 0.0
 
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
-            ParticleCanvasView() // Hạt bay từ dưới lên
+            ParticleCanvasView()
             
             ScrollView(showsIndicators: false) {
                 VStack(spacing: 25) {
-                    // MARK: AVATAR & HEADER
-                    VStack(spacing: 12) {
-                        ZStack {
-                            Circle()
-                                .stroke(AngularGradient(gradient: Gradient(colors: [.clear, .white, .clear]), center: .center), lineWidth: 2.5)
-                                .frame(width: 110, height: 110)
-                                .rotationEffect(.degrees(rotationAngle))
-                                .onAppear { withAnimation(.linear(duration: 3).repeatForever(autoreverses: false)) { rotationAngle = 360 } }
-                                .shadow(color: .white.opacity(0.8), radius: 15)
-                            
-                            AsyncImage(url: URL(string: "https://solitudepremium.click/ipa/proxy/li.jpg")) { phase in
-                                switch phase {
-                                case .empty: ProgressView().tint(.white)
-                                case .success(let image):
-                                    image.resizable().scaledToFill().frame(width: 94, height: 94).clipShape(Circle())
-                                        .overlay(Circle().stroke(Color.white, lineWidth: 1.5))
-                                case .failure(_):
-                                    Image(systemName: "bolt.shield.fill").font(.system(size: 40)).foregroundColor(.white)
-                                @unknown default: EmptyView()
-                                }
-                            }
-                        }
-                        .padding(.top, 40)
-                        
-                        Text("ZENITH SOLITUDE")
-                            .font(.system(size: 26, weight: .black, design: .monospaced))
-                            .tracking(6)
-                            .foregroundColor(.white)
-                            .shadow(color: .white.opacity(0.8), radius: 10)
-                        
-                        HStack(spacing: 8) {
-                            Circle().frame(width: 4, height: 4).foregroundColor(.white).shadow(color: .white, radius: 5)
-                            Text("Headlock Version 4.3.29")
-                                .font(.system(size: 10, weight: .bold, design: .monospaced))
-                                .tracking(2)
-                                .foregroundColor(.white.opacity(0.8))
-                            Circle().frame(width: 4, height: 4).foregroundColor(.white).shadow(color: .white, radius: 5)
-                        }
-                    }
-
-                    // MARK: KHUNG ĐIỀU KHIỂN
-                    VStack(spacing: 18) {
-                        // HWID
-                        HStack {
-                            Image(systemName: "cpu").foregroundColor(.white.opacity(0.5)).font(.system(size: 10))
-                            Text("HWID: \(deviceID)")
-                                .font(.system(size: 8, weight: .semibold, design: .monospaced))
-                                .foregroundColor(.white.opacity(0.5))
-                            Spacer()
-                            if isLoading { ProgressView().scaleEffect(0.7).tint(.white) }
-                        }
-                        .padding(.horizontal, 16)
-                        
-                        // INPUT FORM
-                        VStack(alignment: .leading, spacing: 10) {
-                            HStack(spacing: 12) {
-                                ZStack {
-                                    RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.08)).frame(width: 42, height: 42)
-                                    Image(systemName: "key.horizontal.fill").font(.system(size: 16)).foregroundColor(.white).rotationEffect(.degrees(-45))
-                                }
-                                
-                                VStack(alignment: .leading, spacing: 4) {
-                                    HStack {
-                                        Text("Key:").font(.system(size: 14, weight: .bold, design: .monospaced)).foregroundColor(.white.opacity(0.8))
-                                        Group {
-                                            if isKeyVisible { TextField("Nhập Key...", text: $keyCode) } 
-                                            else { SecureField("••••••••••••", text: $keyCode) }
-                                        }
-                                        .font(.system(size: 14, weight: .black, design: .monospaced))
-                                        .foregroundColor(.white)
-                                        .accentColor(.white)
-                                        .autocapitalization(.allCharacters)
-                                        .disableAutocorrection(true)
-                                        .onChange(of: keyCode) { _ in UXFeedback.typing() }
-                                        
-                                        Button(action: { UXFeedback.click(); isKeyVisible.toggle() }) {
-                                            Image(systemName: isKeyVisible ? "eye.slash.fill" : "eye.fill").foregroundColor(.white.opacity(0.5)).font(.system(size: 13))
-                                        }
-                                    }
-                                    .padding(.vertical, 8).padding(.horizontal, 12).background(Color.black.opacity(0.8)).cornerRadius(8)
-                                    .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.white.opacity(0.15), lineWidth: 1))
-                                    
-                                    if let error = inlineErrorMsg {
-                                        Text(error).font(.system(size: 10, weight: .bold, design: .monospaced)).foregroundColor(.white).shadow(color: .white, radius: 2)
-                                    } else {
-                                        Text("Trạng thái: Chờ xác thực mã...").font(.system(size: 10, weight: .medium, design: .monospaced)).foregroundColor(.white.opacity(0.4))
-                                    }
-                                }
-                                
-                                Button(action: {
-                                    UXFeedback.click()
-                                    if let pasted = UIPasteboard.general.string { keyCode = pasted.trimmingCharacters(in: .whitespacesAndNewlines) }
-                                }) {
-                                    ZStack {
-                                        RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.08)).frame(width: 42, height: 42)
-                                        Image(systemName: "doc.on.clipboard").font(.system(size: 15)).foregroundColor(.white.opacity(0.9))
-                                    }
-                                }
-                            }
-                        }
-                        .padding(14)
-                        .background(Color.black.opacity(0.5))
-                        .cornerRadius(20)
-                        .overlay(RoundedRectangle(cornerRadius: 20).stroke(Color.white.opacity(0.3), lineWidth: 1.5))
-                        .shadow(color: .white.opacity(0.1), radius: 15)
-                        .offset(x: shakeOffset)
-
-                        // NÚT KÍCH HOẠT
-                        Button(action: { UXFeedback.click(); verifyKeyWithServer() }) {
-                            Text("KÍCH HOẠT HỆ THỐNG")
-                                .font(.system(size: 14, weight: .black, design: .monospaced))
-                                .tracking(2).foregroundColor(.black).frame(maxWidth: .infinity).padding(.vertical, 16)
-                                .background(LinearGradient(colors: [.white, Color(white: 0.7)], startPoint: .top, endPoint: .bottom))
-                                .cornerRadius(14).shadow(color: .white.opacity(0.6), radius: 10)
-                        }.disabled(isLoading)
-
-                        // NÚT WEB
-                        Button(action: {
-                            UXFeedback.click()
-                            if let url = URL(string: "https://solitudepremium.click/ipa/proxy/key.php") { UIApplication.shared.open(url) }
-                        }) {
-                            HStack {
-                                Image(systemName: "globe.asia.australia.fill")
-                                Text("LẤY KEY BẢN QUYỀN MỚI")
-                            }
-                            .font(.system(size: 11, weight: .bold, design: .monospaced)).foregroundColor(.white).frame(maxWidth: .infinity)
-                            .padding(.vertical, 14).background(Color.white.opacity(0.05)).cornerRadius(12)
-                            .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.white.opacity(0.2), lineWidth: 1))
-                        }
-                    }
-                    .padding(20).background(Color.black.opacity(0.7)).cornerRadius(28)
-                    .overlay(RoundedRectangle(cornerRadius: 28).stroke(Color.white.opacity(0.2), lineWidth: 1.5))
-                    .shadow(color: .black.opacity(0.9), radius: 40, x: 0, y: 20)
-                    .padding(.horizontal, 16)
-                }.padding(.bottom, 40)
+                    headerSection
+                    controlPanelSection
+                }
+                .padding(.bottom, 40)
             }
         }
+    }
+
+    // 1. Tách phần Header (Logo, Tên, Version)
+    private var headerSection: some View {
+        VStack(spacing: 12) {
+            ZStack {
+                Circle()
+                    .stroke(AngularGradient(gradient: Gradient(colors: [.clear, .white, .clear]), center: .center), lineWidth: 2.5)
+                    .frame(width: 110, height: 110)
+                    .rotationEffect(.degrees(rotationAngle))
+                    .onAppear { withAnimation(.linear(duration: 3).repeatForever(autoreverses: false)) { rotationAngle = 360 } }
+                    .shadow(color: .white.opacity(0.8), radius: 15)
+                
+                AsyncImage(url: URL(string: "https://solitudepremium.click/ipa/proxy/li.jpg")) { phase in
+                    switch phase {
+                    case .empty: ProgressView().tint(.white)
+                    case .success(let image):
+                        image.resizable().scaledToFill().frame(width: 94, height: 94).clipShape(Circle())
+                            .overlay(Circle().stroke(Color.white, lineWidth: 1.5))
+                    case .failure(_):
+                        Image(systemName: "bolt.shield.fill").font(.system(size: 40)).foregroundColor(.white)
+                    @unknown default: EmptyView()
+                    }
+                }
+            }
+            .padding(.top, 40)
+            
+            Text("ZENITH SOLITUDE")
+                .font(.system(size: 26, weight: .black, design: .monospaced))
+                .tracking(6)
+                .foregroundColor(.white)
+                .shadow(color: .white.opacity(0.8), radius: 10)
+            
+            HStack(spacing: 8) {
+                Circle().frame(width: 4, height: 4).foregroundColor(.white).shadow(color: .white, radius: 5)
+                Text("Headlock Version 4.3.29")
+                    .font(.system(size: 10, weight: .bold, design: .monospaced))
+                    .tracking(2)
+                    .foregroundColor(.white.opacity(0.8))
+                Circle().frame(width: 4, height: 4).foregroundColor(.white).shadow(color: .white, radius: 5)
+            }
+        }
+    }
+    
+    // 2. Tách phần Khung Điều Khiển
+    private var controlPanelSection: some View {
+        VStack(spacing: 18) {
+            hwidSection
+            inputFormSection
+            actionButtonsSection
+        }
+        .padding(20)
+        .background(Color.black.opacity(0.7))
+        .cornerRadius(28)
+        .overlay(RoundedRectangle(cornerRadius: 28).stroke(Color.white.opacity(0.2), lineWidth: 1.5))
+        .shadow(color: .black.opacity(0.9), radius: 40, x: 0, y: 20)
+        .padding(.horizontal, 16)
+    }
+    
+    // 3. Tách phần HWID và Nút Tìm Key
+    private var hwidSection: some View {
+        HStack {
+            Image(systemName: "cpu").foregroundColor(.white.opacity(0.5)).font(.system(size: 10))
+            Text("HWID: \(deviceID)")
+                .font(.system(size: 8, weight: .semibold, design: .monospaced))
+                .foregroundColor(.white.opacity(0.5))
+                .lineLimit(1)
+            
+            Spacer()
+            
+            if isFinding || isLoading {
+                ProgressView().scaleEffect(0.7).tint(.white)
+            } else {
+                Button(action: {
+                    UXFeedback.click()
+                    findKeyByDeviceID()
+                }) {
+                    Text("TÌM KEY")
+                        .font(.system(size: 8, weight: .bold, design: .monospaced))
+                        .foregroundColor(.black)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(Color.white)
+                        .cornerRadius(4)
+                }
+            }
+        }
+        .padding(.horizontal, 16)
+    }
+    
+    // 4. Tách phần Form Nhập
+    private var inputFormSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 12) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.08)).frame(width: 42, height: 42)
+                    Image(systemName: "key.horizontal.fill").font(.system(size: 16)).foregroundColor(.white).rotationEffect(.degrees(-45))
+                }
+                
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack {
+                        Text("Key:").font(.system(size: 14, weight: .bold, design: .monospaced)).foregroundColor(.white.opacity(0.8))
+                        Group {
+                            if isKeyVisible { TextField("Nhập Key...", text: $keyCode) }
+                            else { SecureField("••••••••••••", text: $keyCode) }
+                        }
+                        .font(.system(size: 14, weight: .black, design: .monospaced))
+                        .foregroundColor(.white)
+                        .accentColor(.white)
+                        .autocapitalization(.allCharacters)
+                        .disableAutocorrection(true)
+                        .onChange(of: keyCode) { _ in UXFeedback.typing() }
+                        
+                        Button(action: { UXFeedback.click(); isKeyVisible.toggle() }) {
+                            Image(systemName: isKeyVisible ? "eye.slash.fill" : "eye.fill").foregroundColor(.white.opacity(0.5)).font(.system(size: 13))
+                        }
+                    }
+                    .padding(.vertical, 8).padding(.horizontal, 12).background(Color.black.opacity(0.8)).cornerRadius(8)
+                    .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.white.opacity(0.15), lineWidth: 1))
+                    
+                    if let error = inlineErrorMsg {
+                        Text(error)
+                            .font(.system(size: 10, weight: .bold, design: .monospaced))
+                            .foregroundColor(isSuccessMsg ? .green : .white)
+                            .shadow(color: isSuccessMsg ? .green : .white, radius: 2)
+                    } else {
+                        Text("Trạng thái: Chờ xác thực mã...").font(.system(size: 10, weight: .medium, design: .monospaced)).foregroundColor(.white.opacity(0.4))
+                    }
+                }
+                
+                Button(action: {
+                    UXFeedback.click()
+                    if let pasted = UIPasteboard.general.string { keyCode = pasted.trimmingCharacters(in: .whitespacesAndNewlines) }
+                }) {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.08)).frame(width: 42, height: 42)
+                        Image(systemName: "doc.on.clipboard").font(.system(size: 15)).foregroundColor(.white.opacity(0.9))
+                    }
+                }
+            }
+        }
+        .padding(14)
+        .background(Color.black.opacity(0.5))
+        .cornerRadius(20)
+        .overlay(RoundedRectangle(cornerRadius: 20).stroke(Color.white.opacity(0.3), lineWidth: 1.5))
+        .shadow(color: .white.opacity(0.1), radius: 15)
+        .offset(x: shakeOffset)
+    }
+    
+    // 5. Tách phần Nút Bấm
+    private var actionButtonsSection: some View {
+        VStack(spacing: 12) {
+            Button(action: { UXFeedback.click(); verifyKeyWithServer() }) {
+                Text("KÍCH HOẠT HỆ THỐNG")
+                    .font(.system(size: 14, weight: .black, design: .monospaced))
+                    .tracking(2).foregroundColor(.black).frame(maxWidth: .infinity).padding(.vertical, 16)
+                    .background(LinearGradient(colors: [.white, Color(white: 0.7)], startPoint: .top, endPoint: .bottom))
+                    .cornerRadius(14).shadow(color: .white.opacity(0.6), radius: 10)
+            }.disabled(isLoading || isFinding)
+
+            Button(action: {
+                UXFeedback.click()
+                if let url = URL(string: "https://solitudepremium.click/ipa/proxy/key.php") { UIApplication.shared.open(url) }
+            }) {
+                HStack {
+                    Image(systemName: "globe.asia.australia.fill")
+                    Text("LẤY KEY BẢN QUYỀN MỚI")
+                }
+                .font(.system(size: 11, weight: .bold, design: .monospaced)).foregroundColor(.white).frame(maxWidth: .infinity)
+                .padding(.vertical, 14).background(Color.white.opacity(0.05)).cornerRadius(12)
+                .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.white.opacity(0.2), lineWidth: 1))
+            }
+        }
+    }
+
+    // MARK: - API LOGIC
+    private func findKeyByDeviceID() {
+        isFinding = true
+        inlineErrorMsg = nil
+        isSuccessMsg = false
+        
+        let endpoint = URL(string: "https://solitudepremium.click/ipa/proxy/api.php")!
+        var request = URLRequest(url: endpoint)
+        request.httpMethod = "POST"
+        request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
+        request.httpBody = "action=find_key&device_id=\(deviceID)".data(using: .utf8)
+
+        URLSession.shared.dataTask(with: request) { data, _, error in
+            DispatchQueue.main.async {
+                isFinding = false
+                guard let data = data, error == nil else { triggerError(msg: "⚠️ Lỗi mạng!"); return }
+                do {
+                    if let json = try JSONSerialization.jsonObject(with: data, options: []) as? [String: Any],
+                       let status = json["status"] as? String {
+                        if status == "success" {
+                            let foundKey = json["key"] as? String ?? ""
+                            self.keyCode = foundKey
+                            UXFeedback.success()
+                            self.isSuccessMsg = true
+                            self.inlineErrorMsg = "✅ Đã tìm thấy Key gắn với máy này!"
+                        } else {
+                            let msg = json["message"] as? String ?? "Không tìm thấy Key!"
+                            triggerError(msg: "❌ " + msg)
+                        }
+                    } else { triggerError(msg: "⚠️ Phản hồi bất thường!") }
+                } catch { triggerError(msg: "⚠️ Lỗi phân tích dữ liệu!") }
+            }
+        }.resume()
     }
 
     private func verifyKeyWithServer() {
         let trimmedKey = keyCode.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedKey.isEmpty else { triggerError(msg: "⚠️ Vui lòng nhập mã Key!"); return }
-        isLoading = true; inlineErrorMsg = nil
+        isLoading = true; inlineErrorMsg = nil; isSuccessMsg = false
 
         let endpoint = URL(string: "https://solitudepremium.click/ipa/proxy/api.php")!
         var request = URLRequest(url: endpoint)
@@ -346,14 +425,18 @@ private struct KeyLockView: View {
     }
     
     private func triggerError(msg: String) {
-        UXFeedback.error(); inlineErrorMsg = msg
+        UXFeedback.error()
+        isSuccessMsg = false
+        inlineErrorMsg = msg
         withAnimation(.spring(response: 0.2, dampingFraction: 0.2)) { shakeOffset = 10 }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { shakeOffset = -10 }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { shakeOffset = 0 }
     }
     
     private func triggerSuccess(expiry: String, key: String) {
-        UXFeedback.success(); inlineErrorMsg = "✅ Xác thực thành công!"
+        UXFeedback.success()
+        isSuccessMsg = true
+        inlineErrorMsg = "✅ Xác thực thành công!"
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
             savedExpiry = expiry; activeKey = key
             withAnimation(.easeInOut(duration: 0.6)) { isUnlocked = true }
@@ -361,7 +444,7 @@ private struct KeyLockView: View {
     }
 }
 
-// MARK: - WIDGET NỔI GÓC DƯỚI (HIỂN THỊ THỜI GIAN)
+// MARK: - WIDGET NỔI GÓC DƯỚI
 private struct KeyTimerFloatingWidget: View {
     let expiryDate: String
     var body: some View {
@@ -408,19 +491,18 @@ private struct SecurityLockdownView: View {
     }
 }
 
-// MARK: - HIỆU ỨNG HẠT BỤI NỀN ĐỘNG (BAY LÊN TRÊN RẤT NHANH)
+// MARK: - HIỆU ỨNG HẠT BỤI NỀN ĐỘNG
 private struct ParticleCanvasView: View {
     var body: some View {
         TimelineView(.animation) { context in
             Canvas { graphicsContext, size in
                 let time = context.date.timeIntervalSinceReferenceDate
-                for i in 0..<150 { // Số lượng hạt dày đặc hơn
+                for i in 0..<150 {
                     let seed = Double(i) * 99.0
                     let x = (sin(time * 0.15 + seed) * 0.5 + 0.5) * size.width
-                    let speed = 150.0 + fmod(seed, 100.0) // Tốc độ bay cực nhanh
-                    // Hạt bay từ dưới lên trên
+                    let speed = 150.0 + fmod(seed, 100.0)
                     let y = size.height - fmod(time * speed + seed, size.height + 50)
-                    let particleSize = CGFloat(fmod(seed, 1.5) + 0.5) // Hạt li ti
+                    let particleSize = CGFloat(fmod(seed, 1.5) + 0.5)
                     let opacity = Double(fmod(seed, 0.6) + 0.1)
                     
                     let rect = CGRect(x: x, y: y, width: particleSize, height: particleSize)
