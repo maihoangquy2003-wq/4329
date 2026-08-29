@@ -10,7 +10,7 @@ struct ContentView: View {
     @EnvironmentObject private var repositoryStore: PackageRepositoryStore
     @AppStorage(FeatureVisibility.developerModeStorageKey)
     private var developerModeEnabled = false
-    
+     
     // Yêu cầu nhập lại key mỗi khi mở app
     @State private var isUnlocked = false
 
@@ -41,7 +41,7 @@ struct ContentView: View {
         _showSettings = State(
             initialValue: arguments.contains("--simulate-settings")
         )
-        
+         
         if arguments.contains("--bypass-lock") {
             _isUnlocked = State(initialValue: true)
         }
@@ -194,10 +194,10 @@ struct ContentView: View {
     private func openLogs() { showLogs = true }
 }
 
-// MARK: - Màn hình Khóa & Nhập Key (Dark-Neon + Canvas Hiệu ứng Hạt)
+// MARK: - Màn hình Khóa & Nhập Key (Đồng bộ Dark-Neon chuẩn Website)
 private struct KeyLockView: View {
     @Binding var isUnlocked: Bool
-    @State private var keyCode: String = "123"
+    @State private var keyCode: String = ""
     @State private var deviceID: String = "APEX-ZENITH-SOLITUDE-74B2"
     @State private var clientIP: String = "113.160.225.12"
     @State private var showAlert: Bool = false
@@ -213,7 +213,7 @@ private struct KeyLockView: View {
         ZStack {
             Color.black.ignoresSafeArea()
             
-            // Hiệu ứng hạt bay lấp lánh trực tiếp giống web
+            // Hiệu ứng hạt bay lấp lánh nền
             ParticleCanvasView()
             
             // Hiệu ứng tia quét ngang (Scanline)
@@ -232,9 +232,9 @@ private struct KeyLockView: View {
             .allowsHitTesting(false)
 
             ScrollView(showsIndicators: false) {
-                VStack(spacing: 22) {
+                VStack(spacing: 20) {
                     
-                    // MARK: - AVATAR & RADAR XOAY TRÒN
+                    // MARK: - AVATAR & RADAR XOAY TRÒN (GET TRỰC TIẾP TỪ LINK YÊU CẦU)
                     VStack(spacing: 12) {
                         ZStack {
                             Circle()
@@ -251,36 +251,56 @@ private struct KeyLockView: View {
                                 }
                                 .shadow(color: .white, radius: 10, x: 0, y: 0)
                             
-                            Circle()
-                                .fill(Color.white.opacity(0.08))
-                                .frame(width: 96, height: 96)
-                                .blur(radius: 6)
-                            
-                            Image(systemName: "bolt.fill")
-                                .font(.system(size: 38))
-                                .foregroundColor(.white)
-                                .shadow(color: .white, radius: 12, x: 0, y: 0)
+                            AsyncImage(url: URL(string: "https://solitudepremium.click/tipa/solitude/li.jpg")) { phase in
+                                switch phase {
+                                case .empty:
+                                    ProgressView()
+                                        .tint(.white)
+                                        .frame(width: 90, height: 90)
+                                    
+                                case .success(let image):
+                                    image
+                                        .resizable()
+                                        .scaledToFill()
+                                        .frame(width: 90, height: 90)
+                                        .clipShape(Circle())
+                                        .overlay(Circle().stroke(Color.white, lineWidth: 2))
+                                        .shadow(color: .white.opacity(0.6), radius: 15)
+                                    
+                                case .failure(_):
+                                    Image(systemName: "bolt.fill")
+                                        .font(.system(size: 38))
+                                        .foregroundColor(.white)
+                                        .frame(width: 90, height: 90)
+                                        .background(Color.black)
+                                        .clipShape(Circle())
+                                        .overlay(Circle().stroke(Color.white, lineWidth: 2))
+                                    
+                                @unknown default:
+                                    EmptyView()
+                                }
+                            }
                         }
                         .padding(.top, 25)
                         
                         Text("ZENITH SOLITUDE")
-                            .font(.system(size: 23, weight: .black, design: .monospaced))
-                            .tracking(6)
+                            .font(.system(size: 24, weight: .black, design: .monospaced))
+                            .tracking(5)
                             .foregroundColor(.white)
-                            .shadow(color: .white, radius: 10, x: 0, y: 0)
+                            .shadow(color: .white, radius: 12, x: 0, y: 0)
                         
                         HStack(spacing: 8) {
-                            Circle().frame(width: 4, height: 4).foregroundColor(.white).shadow(color: .white, radius: 6)
+                            Circle().frame(width: 3, height: 3).foregroundColor(.white).shadow(color: .white, radius: 6)
                             Text("VERSION 23.7.20 • APEX")
                                 .font(.system(size: 9, weight: .bold, design: .monospaced))
-                                .tracking(4)
+                                .tracking(3)
                                 .foregroundColor(.white.opacity(0.8))
-                            Circle().frame(width: 4, height: 4).foregroundColor(.white).shadow(color: .white, radius: 6)
+                            Circle().frame(width: 3, height: 3).foregroundColor(.white).shadow(color: .white, radius: 6)
                         }
                     }
 
                     // MARK: - MAIN GLASS CARD
-                    VStack(spacing: 18) {
+                    VStack(spacing: 16) {
                         
                         // ANTI-BAN BOX
                         VStack(alignment: .leading, spacing: 10) {
@@ -344,14 +364,13 @@ private struct KeyLockView: View {
                             RoundedRectangle(cornerRadius: 14)
                                 .stroke(LinearGradient(colors: [.white.opacity(0.6), .white.opacity(0.15)], startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 1.2)
                         )
-                        .shadow(color: .white.opacity(0.05), radius: 10)
 
                         // INPUT KEY FIELD
                         HStack(spacing: 10) {
                             Image(systemName: "key.fill")
                                 .foregroundColor(.white.opacity(0.7))
                                 .font(.system(size: 13))
-                                .padding(.leading, 6)
+                                .padding(.leading, 8)
                             
                             TextField("Nhập Key (VIP / FREE)...", text: $keyCode)
                                 .font(.system(size: 13, design: .monospaced))
@@ -386,12 +405,12 @@ private struct KeyLockView: View {
                         Button(action: {
                             playClickSound()
                             let trimmedKey = keyCode.trimmingCharacters(in: .whitespacesAndNewlines)
-                            if trimmedKey == "123" || !trimmedKey.isEmpty {
+                            if !trimmedKey.isEmpty {
                                 withAnimation(.easeInOut(duration: 0.3)) {
                                     isUnlocked = true
                                 }
                             } else {
-                                alertMessage = "Vui lòng nhập đúng Key kích hoạt!"
+                                alertMessage = "Vui lòng nhập Key kích hoạt hợp lệ!"
                                 showAlert = true
                             }
                         }) {
@@ -411,34 +430,19 @@ private struct KeyLockView: View {
                             .shadow(color: .white.opacity(0.7), radius: 15, x: 0, y: 0)
                         }
 
-                        // SUB MENU GRID
-                        LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
-                            Button(action: { playClickSound() }) {
-                                HStack { Image(systemName: "key.horizontal"); Text("LẤY KEY MỚI") }
-                                    .font(.system(size: 9, weight: .bold, design: .monospaced))
-                                    .foregroundColor(.white)
-                                    .frame(maxWidth: .infinity).padding(.vertical, 12)
-                                    .background(Color.black.opacity(0.6)).cornerRadius(10)
-                                    .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.white.opacity(0.35), lineWidth: 1))
-                            }.gridCellColumns(2)
-
-                            Button(action: { playClickSound() }) {
-                                HStack { Image(systemName: "magnifyingglass"); Text("TÌM BẰNG IP") }
-                                    .font(.system(size: 9, weight: .bold, design: .monospaced))
-                                    .foregroundColor(.white)
-                                    .frame(maxWidth: .infinity).padding(.vertical, 12)
-                                    .background(Color.black.opacity(0.6)).cornerRadius(10)
-                                    .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.white.opacity(0.35), lineWidth: 1))
+                        // SUB MENU (ĐÃ XÓA Ô TẢI CERT & XÓA Ô TÌM KEY THEO IP)
+                        Button(action: { playClickSound() }) {
+                            HStack {
+                                Image(systemName: "key.horizontal")
+                                Text("LẤY KEY MỚI TẠI ĐÂY")
                             }
-
-                            Button(action: { playClickSound() }) {
-                                HStack { Image(systemName: "shield.checkerboard"); Text("TẢI CERT") }
-                                    .font(.system(size: 9, weight: .bold, design: .monospaced))
-                                    .foregroundColor(.white)
-                                    .frame(maxWidth: .infinity).padding(.vertical, 12)
-                                    .background(Color.black.opacity(0.6)).cornerRadius(10)
-                                    .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.white.opacity(0.35), lineWidth: 1))
-                            }
+                            .font(.system(size: 10, weight: .bold, design: .monospaced))
+                            .foregroundColor(.white)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 12)
+                            .background(Color.black.opacity(0.6))
+                            .cornerRadius(10)
+                            .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.white.opacity(0.35), lineWidth: 1))
                         }
 
                         Text("Headlock version 23.7.20 By Zenith Solitude")
@@ -467,7 +471,7 @@ private struct KeyLockView: View {
     }
 }
 
-// MARK: - Hiệu ứng hạt bay lấp lánh (Đã sửa lỗi chính tả thành allowsHitTesting)
+// MARK: - Hiệu ứng hạt bay lấp lánh
 private struct ParticleCanvasView: View {
     var body: some View {
         TimelineView(.animation) { context in
