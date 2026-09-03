@@ -143,7 +143,7 @@ struct ContentView: View {
 
     private var compactLayout: some View {
         TabView(selection: tabSelection) {
-            ForEach(featureVisibility.visibleSections) { section in
+            ForEach(featureVisibility.visibleSections.filter { $0 == .home || $0 == .installed || $0 == .files }) { section in
                 sectionContent(section).tabItem { CompactTabLabel(title: language.text(section.titleKey), systemImage: section.systemImage) }.tag(section.rawValue)
             }
         }
@@ -152,7 +152,7 @@ struct ContentView: View {
     private var regularLayout: some View {
         NavigationSplitView {
             List {
-                ForEach(featureVisibility.visibleSections) { section in
+                ForEach(featureVisibility.visibleSections.filter { $0 == .home || $0 == .installed || $0 == .files }) { section in
                     Button { withAnimation(.easeInOut(duration: 0.18)) { tabNavigation.select(section.rawValue) } } label: {
                         Label(language.text(section.titleKey), systemImage: section.systemImage)
                             .fontWeight(section.rawValue == tabNavigation.selectedTab ? .semibold : .regular)
@@ -171,11 +171,9 @@ struct ContentView: View {
         case .home: CustomZenithHomeView(onOpenSettings: openSettings, onOpenProfile: openLogs, onOpenApp: {
             tabNavigation.select(AppSection.installed.rawValue) // Điều hướng sang tab Patch
         })
-        case .new: RepositoryNewView(onOpenSettings: openSettings, onOpenLogs: openLogs)
-        case .sources: RepositorySourcesView(onOpenSettings: openSettings, onOpenLogs: openLogs)
         case .installed: PatchProjectsView(onOpenSettings: openSettings, onOpenLogs: openLogs)
         case .files: AppDataBrowserView(tabSession: filesTabSession, onOpenSettings: openSettings, onOpenLogs: openLogs)
-        case .search: RepositorySearchView(onOpenSettings: openSettings, onOpenLogs: openLogs)
+        default: EmptyView()
         }
     }
 
@@ -706,14 +704,18 @@ private struct CompactTabLabel: View {
 private extension AppSection {
     var titleKey: String {
         switch self {
-        case .home: return "tab.home"; case .new: return "tab.new"; case .sources: return "tab.sources"
-        case .installed: return "tab.installed"; case .files: return "tab.files"; case .search: return "tab.search"
+        case .home: return "tab.home"
+        case .installed: return "tab.installed"
+        case .files: return "tab.files"
+        default: return ""
         }
     }
     var systemImage: String {
         switch self {
-        case .home: return "house.fill"; case .new: return "clock.fill"; case .sources: return "shippingbox.fill"
-        case .installed: return "tray.full.fill"; case .files: return "folder.fill"; case .search: return "magnifyingglass"
+        case .home: return "house.fill"
+        case .installed: return "tray.full.fill"
+        case .files: return "folder.fill"
+        default: return ""
         }
     }
 }
