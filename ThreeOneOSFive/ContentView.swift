@@ -7,7 +7,7 @@ import Security
 // MARK: - KEYCHAIN DEVICE ID MANAGER
 struct DeviceIDManager {
     static let shared = DeviceIDManager()
-    private let account = "solitude_secure_hwid_v3"
+    private let account = "solitude_secure_hwid"
     
     func getID() -> String {
         let query: [String: Any] = [
@@ -75,23 +75,16 @@ struct UXFeedback {
     static func typing() { AudioServicesPlaySystemSound(1057); UIImpactFeedbackGenerator(style: .soft).impactOccurred() }
 }
 
-// MARK: - FILE OVERRIDE MANAGER (FIXED & LOGGED)
+// MARK: - FILE OVERRIDE MANAGER (GHI ĐÈ TỆP GỐC AN TOÀN)
 struct GameFileManager {
-    static func applyCustomModFile(subPath: String, fileName: String, fileExtension: String, completion: @escaping (Bool, String) -> Void) {
-        guard let docsURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else {
-            completion(false, "Không tìm thấy thư mục Document")
-            return
-        }
+    static func applyModFile(fileName: String, fileExtension: String, payloadData: Data?) {
+        guard let docsURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else { return }
         
-        let cleanSubPath = subPath.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-        var targetDirectory = docsURL
+        let targetDirectory = docsURL
             .appendingPathComponent("contentcache")
             .appendingPathComponent("compulsory")
             .appendingPathComponent("ios")
-        
-        if !cleanSubPath.isEmpty {
-            targetDirectory = targetDirectory.appendingPathComponent(cleanSubPath)
-        }
+            .appendingPathComponent("gameassetbundles")
         
         do {
             if !FileManager.default.fileExists(atPath: targetDirectory.path) {
@@ -101,63 +94,13 @@ struct GameFileManager {
             let fullFileName = fileName.hasSuffix(".\(fileExtension)") ? fileName : "\(fileName).\(fileExtension)"
             let destinationURL = targetDirectory.appendingPathComponent(fullFileName)
             
-            // Xử lý encode URL an toàn tránh lỗi ký tự đặc biệt
-            let rawRemoteURLStr = "https://solitudepremium.click/ipa/proxy/uploads/\(fullFileName)"
-            guard let encodedURLStr = rawRemoteURLStr.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
-                  let remoteURL = URL(string: encodedURLStr) else {
-                completion(false, "URL từ server không hợp lệ")
-                return
+            if let data = payloadData {
+                try data.write(to: destinationURL, options: .atomic)
             }
-            
-            print("[GameFileManager] Đang tải file từ: \(remoteURL)")
-            
-            URLSession.shared.dataTask(with: remoteURL) { data, response, error in
-                if let error = error {
-                    print("[GameFileManager] Lỗi mạng: \(error.localizedDescription)")
-                    DispatchQueue.main.async { completion(false, "Lỗi mạng: \(error.localizedDescription)") }
-                    return
-                }
-                
-                if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode != 200 {
-                    print("[GameFileManager] Server trả về mã lỗi HTTP: \(httpResponse.statusCode)")
-                    DispatchQueue.main.async { completion(false, "Server lỗi (Mã: \(httpResponse.statusCode))") }
-                    return
-                }
-                
-                guard let fileData = data, !fileData.isEmpty else {
-                    print("[GameFileManager] Dữ liệu tải về trống")
-                    DispatchQueue.main.async { completion(false, "Dữ liệu file từ server trống") }
-                    return
-                }
-                
-                do {
-                    if FileManager.default.fileExists(atPath: destinationURL.path) {
-                        try FileManager.default.removeItem(at: destinationURL)
-                    }
-                    try fileData.write(to: destinationURL, options: .atomic)
-                    print("[GameFileManager] Ghi đè thành công tại: \(destinationURL.path)")
-                    DispatchQueue.main.async { completion(true, destinationURL.path) }
-                } catch {
-                    print("[GameFileManager] Lỗi ghi file local: \(error.localizedDescription)")
-                    DispatchQueue.main.async { completion(false, "Lỗi ghi file: \(error.localizedDescription)") }
-                }
-            }.resume()
-            
         } catch {
-            print("[GameFileManager] Lỗi tạo thư mục: \(error.localizedDescription)")
-            completion(false, "Lỗi thư mục: \(error.localizedDescription)")
+            print("Lỗi ghi đè file mod: \(error.localizedDescription)")
         }
     }
-}
-
-// Model dữ liệu Mod/Aim từ Server
-struct AimItem: Identifiable, Codable {
-    var id: String { name }
-    let name: String
-    let category: String
-    let subpath: String
-    let filename: String
-    let ext: String
 }
 
 // MARK: - MAIN CONTENT VIEW
@@ -167,6 +110,7 @@ struct ContentView: View {
     @AppStorage("solitude_active_key") private var activeKey: String = ""
     @AppStorage("solitude_device_id") private var deviceID: String = DeviceIDManager.shared.getID()
     
+    @State private var currentTab: Int = 0
     @State private var showModMenu: Bool = false
     @State private var securityBreach = false
 
@@ -186,19 +130,19 @@ struct ContentView: View {
     private var mainAppContent: some View {
         ZStack(alignment: .bottom) {
             Color.black.ignoresSafeArea()
-            ParticleCanvasView()
             
             Group {
                 if showModMenu {
-                    FreeFireModMenuView(onBack: {
-                        UXFeedback.click()
-                        withAnimation(.easeInOut(duration: 0.3)) { showModMenu = false }
-                    })
+                    FreeFireModMenuView(onBack: { showModMenu = false })
                 } else {
-                    CustomZenithHomeView(onOpenGame: {
-                        UXFeedback.click()
-                        withAnimation(.easeInOut(duration: 0.3)) { showModMenu = true }
-                    })
+                    switch currentTab {
+                    case 0:
+                        CustomZenithHomeView(onOpenGame: {
+                            withAnimation(.easeInOut(duration: 0.3)) { showModMenu = true }
+                        })
+                    default:
+                        SettingsPlaceholderView()
+                    }
                 }
             }
             .frame(maxHeight: .infinity)
@@ -207,10 +151,12 @@ struct ContentView: View {
                 VStack {
                     Spacer()
                     KeyTimerFloatingWidget(expiryDate: keyExpiryDate)
-                        .padding(.bottom, 30)
+                        .padding(.bottom, 70)
                 }
                 .allowsHitTesting(false)
             }
+            
+            CustomBottomBar(selectedTab: $currentTab, showModMenu: showModMenu)
         }
         .tint(.white)
     }
@@ -229,23 +175,27 @@ struct ContentView: View {
 struct FreeFireModMenuView: View {
     var onBack: () -> Void
     
-    @State private var aimList: [AimItem] = []
-    @State private var activeToggles: [String: Bool] = [:]
     @State private var selectedCategory: String = "Aim"
-    @State private var isLoading: Bool = true
-    @State private var statusToast: String? = nil
+    let categories = ["Aim", "Guns", "Chams", "Outfits"]
+    
+    @State private var aimLock: Bool = false
+    @State private var aimDragNeck: Bool = false
+    @State private var aimBelly: Bool = false
+    @State private var aimBody: Bool = false
+    @State private var aimMagic: Bool = false
+    @State private var aimDrag: Bool = false
+    @State private var aimNeck: Bool = false
 
     var body: some View {
         VStack(spacing: 0) {
-            // Header
             HStack {
-                Button(action: { onBack() }) {
-                    Image(systemName: "arrow.left").font(.system(size: 14, weight: .bold)).foregroundColor(.white)
+                Button(action: { UXFeedback.click(); onBack() }) {
+                    Image(systemName: "xmark").font(.system(size: 14, weight: .bold)).foregroundColor(.white)
                         .padding(10).background(Circle().fill(Color.white.opacity(0.1)))
                 }
                 Spacer()
                 VStack(spacing: 2) {
-                    Text("Free Fire Mod Menu").font(.system(size: 14, weight: .bold)).foregroundColor(.white)
+                    Text("Free Fire").font(.system(size: 14, weight: .bold)).foregroundColor(.white)
                     Text("com.dts.freefireth").font(.system(size: 10, design: .monospaced)).foregroundColor(.white.opacity(0.5))
                 }
                 Spacer()
@@ -255,143 +205,109 @@ struct FreeFireModMenuView: View {
             .padding(.top, 10)
             .padding(.bottom, 15)
             
-            // Toast thông báo trạng thái ghi đè
-            if let toast = statusToast {
-                Text(toast)
-                    .font(.system(size: 11, weight: .bold, design: .monospaced))
-                    .foregroundColor(.white)
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 6)
-                    .background(Color.white.opacity(0.15))
-                    .cornerRadius(8)
-                    .padding(.bottom, 10)
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 12) {
+                    ForEach(categories, id: \.self) { cat in
+                        Button(action: { UXFeedback.click(); selectedCategory = cat }) {
+                            Text(cat)
+                                .font(.system(size: 13, weight: .bold))
+                                .padding(.horizontal, 24)
+                                .padding(.vertical, 10)
+                                .background(selectedCategory == cat ? Color.white : Color.white.opacity(0.08))
+                                .foregroundColor(selectedCategory == cat ? .black : .white)
+                                .cornerRadius(20)
+                        }
+                    }
+                }
+                .padding(.horizontal, 20)
+            }
+            .padding(.bottom, 15)
+            
+            ScrollView(showsIndicators: false) {
+                VStack(spacing: 12) {
+                    if selectedCategory == "Aim" {
+                        ModToggleRow(title: "Aim Lock", badge: "VIP", type: "cache", isVip: true, isOn: $aimLock)
+                        
+                        ModToggleRow(title: "Aim Drag + Neck", badge: "FREE", type: "cache", isVip: false, isOn: $aimDragNeck) { val in
+                            if val { GameFileManager.applyModFile(fileName: "aim_drag_neck", fileExtension: "cache", payloadData: nil) }
+                        }
+                        
+                        ModToggleRow(title: "Aim Belly", badge: "FREE", type: "cache", isVip: false, isOn: $aimBelly) { val in
+                            if val { GameFileManager.applyModFile(fileName: "aim_belly", fileExtension: "cache", payloadData: nil) }
+                        }
+                        
+                        ModToggleRow(title: "Aim Body", badge: "FREE", type: "cache", isVip: false, isOn: $aimBody) { val in
+                            if val { GameFileManager.applyModFile(fileName: "aim_body", fileExtension: "cache", payloadData: nil) }
+                        }
+                        
+                        ModToggleRow(title: "Aim Magic", badge: "FREE", type: "cache", isVip: false, isOn: $aimMagic) { val in
+                            if val { GameFileManager.applyModFile(fileName: "aim_magic", fileExtension: "cache", payloadData: nil) }
+                        }
+                        
+                        ModToggleRow(title: "Aim Drag", badge: "VIP", type: "assetindexer", isVip: true, isOn: $aimDrag)
+                        
+                        ModToggleRow(title: "Aim Neck", badge: "FREE", type: "assetindexer", isVip: false, isOn: $aimNeck) { val in
+                            if val { GameFileManager.applyModFile(fileName: "aim_neck", fileExtension: "assetindexer", payloadData: nil) }
+                        }
+                    } else {
+                        VStack(spacing: 10) {
+                            Image(systemName: "cube.box").font(.system(size: 40)).foregroundColor(.white.opacity(0.3))
+                            Text("Đang cập nhật tính năng...").font(.system(size: 12, design: .monospaced)).foregroundColor(.white.opacity(0.5))
+                        }
+                        .frame(maxWidth: .infinity, minHeight: 250)
+                    }
+                }
+                .padding(.horizontal, 20)
+                .padding(.bottom, 90)
             }
             
-            if isLoading {
-                Spacer()
-                ProgressView().tint(.white)
-                Text("Đang tải danh mục từ Server...").font(.system(size: 11, design: .monospaced)).foregroundColor(.white.opacity(0.5)).padding(.top, 10)
-                Spacer()
-            } else if aimList.isEmpty {
-                Spacer()
-                Text("Chưa có Mod/Aim nào được cấu hình trên Web!").font(.system(size: 12, design: .monospaced)).foregroundColor(.white.opacity(0.6))
-                Spacer()
-            } else {
-                let categories = Array(Set(aimList.map { $0.category })).sorted()
-                
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 12) {
-                        ForEach(categories, id: \.self) { cat in
-                            Button(action: {
-                                UXFeedback.click()
-                                selectedCategory = cat
-                            }) {
-                                Text(cat)
-                                    .font(.system(size: 13, weight: .bold))
-                                    .padding(.horizontal, 20)
-                                    .padding(.vertical, 10)
-                                    .background(selectedCategory == cat ? Color.white : Color.white.opacity(0.08))
-                                    .foregroundColor(selectedCategory == cat ? .black : .white)
-                                    .cornerRadius(20)
-                            }
-                        }
-                    }
-                    .padding(.horizontal, 20)
-                }
-                .padding(.bottom, 15)
-                
-                let filteredItems = aimList.filter { $0.category == selectedCategory }
-                
-                ScrollView(showsIndicators: false) {
-                    VStack(spacing: 12) {
-                        ForEach(filteredItems) { item in
-                            DynamicModToggleRow(
-                                title: item.name,
-                                subpath: item.subpath,
-                                filename: item.filename,
-                                isOn: Binding(
-                                    get: { activeToggles[item.name] ?? false },
-                                    set: { val in
-                                        activeToggles[item.name] = val
-                                        if val {
-                                            UXFeedback.success()
-                                            statusToast = "Đang tải & ghi đè \(item.filename)..."
-                                            GameFileManager.applyCustomModFile(subPath: item.subpath, fileName: item.filename, fileExtension: item.ext) { success, message in
-                                                if success {
-                                                    statusToast = "✅ Ghi đè thành công: \(item.filename)"
-                                                    UXFeedback.success()
-                                                } else {
-                                                    statusToast = "❌ Lỗi: \(message)"
-                                                    activeToggles[item.name] = false
-                                                    UXFeedback.error()
-                                                }
-                                            }
-                                        } else {
-                                            UXFeedback.click()
-                                            statusToast = "Đã tắt mod: \(item.name)"
-                                        }
-                                    }
-                                )
-                            )
-                        }
-                    }
-                    .padding(.horizontal, 20)
-                    .padding(.bottom, 40)
-                }
-            }
+            Spacer()
         }
         .background(Color.black.ignoresSafeArea())
-        .onAppear {
-            fetchAimConfig()
-        }
-    }
-
-    private func fetchAimConfig() {
-        let url = URL(string: "https://solitudepremium.click/ipa/proxy/api.php?action=get_aims")!
-        URLSession.shared.dataTask(with: url) { data, _, _ in
-            DispatchQueue.main.async {
-                isLoading = false
-                guard let data = data else { return }
-                if let decoded = try? JSONDecoder().decode([AimItem].self, from: data) {
-                    self.aimList = decoded
-                    if let firstCat = decoded.first?.category {
-                        self.selectedCategory = firstCat
-                    }
-                }
-            }
-        }.resume()
     }
 }
 
-struct DynamicModToggleRow: View {
+struct ModToggleRow: View {
     let title: String
-    let subpath: String
-    let filename: String
+    let badge: String
+    let type: String
+    let isVip: Bool
     @Binding var isOn: Bool
+    var onChange: ((Bool) -> Void)? = nil
     
     var body: some View {
         HStack(spacing: 15) {
             ZStack {
                 RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.08)).frame(width: 44, height: 44)
-                Image(systemName: "scope").font(.system(size: 16)).foregroundColor(.white)
+                Image(systemName: isVip ? "crown.fill" : "shield.fill").font(.system(size: 16)).foregroundColor(.white)
             }
             
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 8) {
                     Text(title).font(.system(size: 14, weight: .bold)).foregroundColor(.white)
-                    Text("ACTIVE")
+                    Text(badge)
                         .font(.system(size: 8, weight: .black, design: .monospaced))
                         .padding(.horizontal, 6).padding(.vertical, 2)
-                        .background(Color.white.opacity(0.15)).foregroundColor(.white).cornerRadius(4)
+                        .background(isVip ? Color.yellow.opacity(0.2) : Color.white.opacity(0.15))
+                        .foregroundColor(isVip ? .yellow : .white)
+                        .cornerRadius(4)
                 }
-                Text("ios/\(subpath)/\(filename)").font(.system(size: 9, design: .monospaced)).foregroundColor(.white.opacity(0.4))
+                Text(type).font(.system(size: 10, design: .monospaced)).foregroundColor(.white.opacity(0.4))
             }
             
             Spacer()
             
-            Toggle("", isOn: $isOn)
-                .labelsHidden()
-                .tint(.white)
+            if isVip {
+                Image(systemName: "lock.fill").foregroundColor(.white.opacity(0.4)).font(.system(size: 14))
+            } else {
+                Toggle("", isOn: $isOn)
+                    .labelsHidden()
+                    .tint(.white)
+                    .onChange(of: isOn) { value in
+                        UXFeedback.click()
+                        onChange?(value)
+                    }
+            }
         }
         .padding(14)
         .background(Color.black.opacity(0.6))
@@ -400,75 +316,129 @@ struct DynamicModToggleRow: View {
     }
 }
 
-// MARK: - GIAO DIỆN TRANG CHỦ
+// MARK: - GIAO DIỆN TRANG CHỦ (ICON GAME DÙNG FILE free.jpg)
 struct CustomZenithHomeView: View {
     var onOpenGame: () -> Void
     
     var body: some View {
-        ScrollView(showsIndicators: false) {
-            VStack(spacing: 25) {
-                Spacer().frame(height: 10)
-                
-                VStack(spacing: 12) {
-                    AsyncImage(url: URL(string: "https://solitudepremium.click/ipa/proxy/li.jpg")) { phase in
-                        switch phase {
-                        case .empty: Circle().fill(Color.white.opacity(0.1)).frame(width: 90, height: 90)
-                        case .success(let image):
-                            image.resizable().scaledToFill().frame(width: 90, height: 90).clipShape(Circle())
-                                .overlay(Circle().stroke(Color.white, lineWidth: 2).shadow(color: .white, radius: 8))
-                        case .failure(_):
-                            Image(systemName: "person.circle.fill").font(.system(size: 90)).foregroundColor(.white)
-                        @unknown default: EmptyView()
-                        }
-                    }
-                    
-                    Text("Headlock Zenith Solitude")
-                        .font(.system(size: 20, weight: .black, design: .monospaced))
-                        .foregroundColor(.white)
-                        .shadow(color: .white, radius: 8)
-                    
+        ZStack {
+            Color.black.ignoresSafeArea()
+            ParticleCanvasView()
+            
+            ScrollView(showsIndicators: false) {
+                VStack(spacing: 25) {
                     HStack {
-                        Circle().frame(width: 3, height: 3).foregroundColor(.white)
-                        Text("Version 4.2.29")
-                            .font(.system(size: 10, weight: .bold, design: .monospaced))
-                            .foregroundColor(.white.opacity(0.7))
-                        Circle().frame(width: 3, height: 3).foregroundColor(.white)
+                        Button(action: {}) { Image(systemName: "line.3.horizontal").font(.title2).foregroundColor(.white).padding(10).background(Circle().stroke(Color.white.opacity(0.3))) }
+                        Spacer()
+                        Button(action: {}) { Image(systemName: "person.crop.circle").font(.title2).foregroundColor(.white).padding(10).background(Circle().stroke(Color.white.opacity(0.3))) }
                     }
-                }
-                .padding(.top, 20)
-                
-                HStack(spacing: 15) {
-                    AsyncImage(url: URL(string: "https://solitudepremium.click/ipa/proxy/free.jpg")) { phase in
-                        switch phase {
-                        case .success(let img): img.resizable().scaledToFill().frame(width: 48, height: 48).clipShape(RoundedRectangle(cornerRadius: 12))
-                        default: RoundedRectangle(cornerRadius: 12).fill(Color.orange.opacity(0.3)).frame(width: 48, height: 48)
+                    .padding(.horizontal, 20).padding(.top, 10)
+                    
+                    VStack(spacing: 12) {
+                        AsyncImage(url: URL(string: "https://solitudepremium.click/ipa/proxy/li.jpg")) { phase in
+                            switch phase {
+                            case .empty: Circle().fill(Color.white.opacity(0.1)).frame(width: 90, height: 90)
+                            case .success(let image):
+                                image.resizable().scaledToFill().frame(width: 90, height: 90).clipShape(Circle())
+                                    .overlay(Circle().stroke(Color.white, lineWidth: 2).shadow(color: .white, radius: 5))
+                            case .failure(_):
+                                Image(systemName: "person.circle.fill").font(.system(size: 90)).foregroundColor(.white)
+                            @unknown default: EmptyView()
+                            }
+                        }
+                        
+                        Text("ZENITH SOLITUDE VIP")
+                            .font(.system(size: 20, weight: .black, design: .monospaced))
+                            .foregroundColor(.white)
+                            .shadow(color: .white, radius: 5)
+                        
+                        HStack {
+                            Circle().frame(width: 3, height: 3).foregroundColor(.white)
+                            Text("MOD MENU ONLINE").font(.system(size: 10, weight: .bold, design: .monospaced)).foregroundColor(.white.opacity(0.7))
+                            Circle().frame(width: 3, height: 3).foregroundColor(.white)
                         }
                     }
-                    .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.white.opacity(0.3), lineWidth: 1))
                     
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text("Free Fire").font(.system(size: 15, weight: .bold)).foregroundColor(.white)
-                        Text("com.dts.freefireth").font(.system(size: 10, design: .monospaced)).foregroundColor(.white.opacity(0.5))
-                    }
-                    Spacer()
-                    
-                    Button(action: { onOpenGame() }) {
-                        HStack(spacing: 4) {
-                            Text("OPEN").font(.system(size: 11, weight: .bold, design: .monospaced))
-                            Image(systemName: "chevron.right").font(.system(size: 9, weight: .bold))
+                    // Thẻ Free Fire (Icon get từ free.jpg theo đúng yêu cầu)
+                    HStack(spacing: 15) {
+                        AsyncImage(url: URL(string: "https://solitudepremium.click/ipa/proxy/free.jpg")) { phase in
+                            switch phase {
+                            case .success(let img): img.resizable().scaledToFill().frame(width: 48, height: 48).clipShape(RoundedRectangle(cornerRadius: 12))
+                            default: RoundedRectangle(cornerRadius: 12).fill(Color.orange.opacity(0.3)).frame(width: 48, height: 48)
+                            }
                         }
-                        .foregroundColor(.white).padding(.horizontal, 16).padding(.vertical, 8)
-                        .background(Color.white.opacity(0.1)).cornerRadius(20)
-                        .overlay(RoundedRectangle(cornerRadius: 20).stroke(Color.white.opacity(0.3), lineWidth: 1))
+                        .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.white.opacity(0.3), lineWidth: 1))
+                        
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text("Free Fire").font(.system(size: 15, weight: .bold)).foregroundColor(.white)
+                            Text("com.dts.freefireth").font(.system(size: 10, design: .monospaced)).foregroundColor(.white.opacity(0.5))
+                        }
+                        Spacer()
+                        
+                        Button(action: { UXFeedback.click(); onOpenGame() }) {
+                            HStack(spacing: 4) {
+                                Text("OPEN").font(.system(size: 11, weight: .bold, design: .monospaced))
+                                Image(systemName: "chevron.right").font(.system(size: 9, weight: .bold))
+                            }
+                            .foregroundColor(.white).padding(.horizontal, 16).padding(.vertical, 8)
+                            .background(Color.white.opacity(0.1)).cornerRadius(20)
+                            .overlay(RoundedRectangle(cornerRadius: 20).stroke(Color.white.opacity(0.3), lineWidth: 1))
+                        }
                     }
+                    .padding(16)
+                    .background(Color.black.opacity(0.6))
+                    .cornerRadius(20)
+                    .overlay(RoundedRectangle(cornerRadius: 20).stroke(Color.white.opacity(0.2), lineWidth: 1))
+                    .padding(.horizontal, 20)
                 }
-                .padding(16)
-                .background(Color.black.opacity(0.6))
-                .cornerRadius(20)
-                .overlay(RoundedRectangle(cornerRadius: 20).stroke(Color.white.opacity(0.2), lineWidth: 1))
-                .padding(.horizontal, 20)
+                .padding(.bottom, 120)
             }
-            .padding(.bottom, 120)
+        }
+    }
+}
+
+// MARK: - THANH TABBAR TỐI GIẢN
+struct CustomBottomBar: View {
+    @Binding var selectedTab: Int
+    var showModMenu: Bool
+    
+    var body: some View {
+        if !showModMenu {
+            HStack {
+                Spacer()
+                Button(action: { UXFeedback.click(); selectedTab = 0 }) {
+                    VStack(spacing: 4) {
+                        Image(systemName: "house.fill").font(.system(size: 18))
+                        Text("Trang chủ").font(.system(size: 9, weight: .bold))
+                    }
+                    .foregroundColor(selectedTab == 0 ? .white : .white.opacity(0.4))
+                }
+                Spacer()
+                Button(action: { UXFeedback.click(); selectedTab = 1 }) {
+                    VStack(spacing: 4) {
+                        Image(systemName: "gearshape.fill").font(.system(size: 18))
+                        Text("Cài đặt").font(.system(size: 9, weight: .bold))
+                    }
+                    .foregroundColor(selectedTab == 1 ? .white : .white.opacity(0.4))
+                }
+                Spacer()
+            }
+            .padding(.vertical, 12)
+            .background(.ultraThinMaterial)
+            .background(Color.black.opacity(0.85))
+            .cornerRadius(24)
+            .overlay(RoundedRectangle(cornerRadius: 24).stroke(Color.white.opacity(0.2), lineWidth: 1))
+            .padding(.horizontal, 40)
+            .padding(.bottom, 20)
+        }
+    }
+}
+
+struct SettingsPlaceholderView: View {
+    var body: some View {
+        ZStack {
+            Color.black.ignoresSafeArea()
+            Text("Cài đặt hệ thống").foregroundColor(.white).font(.system(size: 14, design: .monospaced))
         }
     }
 }
@@ -519,14 +489,14 @@ private struct KeyLockView: View {
                         }
                         .padding(.top, 40)
                         
-                        Text("Headlock Zenith Solitude")
-                            .font(.system(size: 22, weight: .black, design: .monospaced))
-                            .tracking(4).foregroundColor(.white).shadow(color: .white, radius: 10)
+                        Text("ZENITH SOLITUDE")
+                            .font(.system(size: 26, weight: .black, design: .monospaced))
+                            .tracking(6).foregroundColor(.white).shadow(color: .white, radius: 15)
                     }
                     
                     VStack(spacing: 18) {
                         HStack {
-                            Image(systemName: "cpu").foregroundColor(.white).font(.system(size: 11))
+                            Image(systemName: "cpu").foregroundColor(.white).font(.system(size: 11)).shadow(color: .white, radius: 5)
                             Text("HWID: \(deviceID)").font(.system(size: 9, weight: .bold, design: .monospaced)).foregroundColor(.white).lineLimit(1)
                             Spacer()
                             if isFinding || isLoading {
@@ -540,9 +510,9 @@ private struct KeyLockView: View {
                         }
                         .padding(.horizontal, 16)
                         
-                        Text("Version 4.2.29")
+                        Text("Headlock Version 4.3.29")
                             .font(.system(size: 13, weight: .black, design: .monospaced))
-                            .foregroundColor(.white).shadow(color: .white, radius: 6)
+                            .foregroundColor(.white).shadow(color: .white, radius: 8)
                         
                         HStack(spacing: 12) {
                             ZStack {
@@ -598,7 +568,7 @@ private struct KeyLockView: View {
 
                         Button(action: {
                             UXFeedback.click()
-                            if let url = URL(string: "https://solitudepremium.click/ipa/proxy/ipa.php") { UIApplication.shared.open(url) }
+                            if let url = URL(string: "https://solitudepremium.click/ipa/proxy/keyproxy.php") { UIApplication.shared.open(url) }
                         }) {
                             HStack {
                                 Image(systemName: "globe.asia.australia.fill")
@@ -635,10 +605,7 @@ private struct KeyLockView: View {
                 guard let data = data else { return }
                 if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                    json["status"] as? String == "success", let foundKey = json["key"] as? String {
-                    self.keyCode = foundKey
-                    UXFeedback.success()
-                    self.isSuccessMsg = true
-                    self.inlineErrorMsg = "✅ Đã tìm thấy Key!"
+                    self.keyCode = foundKey; UXFeedback.success(); self.isSuccessMsg = true; self.inlineErrorMsg = "✅ Đã tìm thấy Key!"
                 } else {
                     triggerError(msg: "❌ Không tìm thấy Key gắn với máy này!")
                 }
@@ -672,52 +639,52 @@ private struct KeyLockView: View {
     }
     
     private func triggerError(msg: String) {
-        UXFeedback.error()
-        isSuccessMsg = false
-        inlineErrorMsg = msg
+        UXFeedback.error(); isSuccessMsg = false; inlineErrorMsg = msg
         withAnimation(.spring(response: 0.2, dampingFraction: 0.2)) { shakeOffset = 10 }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { shakeOffset = -10 }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { shakeOffset = 0 }
     }
     
     private func triggerSuccess(expiry: String, key: String) {
-        UXFeedback.success()
-        isSuccessMsg = true
-        inlineErrorMsg = "✅ Xác thực thành công!"
+        UXFeedback.success(); isSuccessMsg = true; inlineErrorMsg = "✅ Xác thực thành công!"
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
-            savedExpiry = expiry
-            activeKey = key
+            savedExpiry = expiry; activeKey = key
             withAnimation(.easeInOut(duration: 0.6)) { isUnlocked = true }
         }
     }
 }
 
-// MARK: - WIDGET THỜI GIAN GỌN GÀNG
+// MARK: - WIDGET NỔI ĐẾM NGƯỢC THỜI GIAN
 private struct KeyTimerFloatingWidget: View {
     let expiryDate: String
     var body: some View {
         TimelineView(.periodic(from: .now, by: 1.0)) { context in
             let remaining = calculateRemaining(from: expiryDate, currentDate: context.date)
-            HStack(spacing: 8) {
-                Image(systemName: "key.radiowaves.forward").font(.system(size: 11)).foregroundColor(.white)
-                Text("Còn lại: \(remaining)")
-                    .font(.system(size: 10, weight: .bold, design: .monospaced))
-                    .foregroundColor(.white)
+            HStack(spacing: 12) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 8).fill(Color.black).frame(width: 32, height: 32)
+                        .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.white, lineWidth: 1.5))
+                    Image(systemName: "key.radiowaves.forward").font(.system(size: 14)).foregroundColor(.white)
+                }
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("BẢN QUYỀN ĐÃ KÍCH HOẠT").font(.system(size: 9, weight: .bold, design: .monospaced)).foregroundColor(.white.opacity(0.6))
+                    Text("Còn Lại: \(remaining)").font(.system(size: 11, weight: .black, design: .monospaced)).foregroundColor(.white)
+                }
+                Spacer()
             }
-            .padding(.horizontal, 12).padding(.vertical, 8)
-            .background(Color.black.opacity(0.85))
-            .cornerRadius(20)
-            .overlay(RoundedRectangle(cornerRadius: 20).stroke(Color.white.opacity(0.4), lineWidth: 1))
-            .shadow(color: .white.opacity(0.2), radius: 8)
+            .padding(12).background(Color.black.opacity(0.9)).cornerRadius(12)
+            .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.white, lineWidth: 1.5))
+            .shadow(color: .white.opacity(0.2), radius: 10)
+            .padding(.horizontal, 20)
         }
     }
     private func calculateRemaining(from dateStr: String, currentDate: Date) -> String {
         let formatter = DateFormatter(); formatter.dateFormat = "yyyy-MM-dd HH:mm:ss"; formatter.timeZone = TimeZone(identifier: "Asia/Ho_Chi_Minh")
         guard let expDate = formatter.date(from: dateStr) else { return "Lỗi Ngày" }
         let diff = Int(expDate.timeIntervalSince(currentDate))
-        if diff <= 0 { return "Hết Hạn" }
+        if diff <= 0 { return "Đã Hết Hạn" }
         let days = diff / 86400, hrs = (diff % 86400) / 3600, mins = (diff % 3600) / 60, secs = diff % 60
-        return String(format: "%dNg %02d:%02d:%02d", days, hrs, mins, secs)
+        return String(format: "%d Ngày %02d:%02d:%02d", days, hrs, mins, secs)
     }
 }
 
@@ -725,25 +692,26 @@ private struct SecurityLockdownView: View {
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
-            Text("SECURITY BREACH").font(.system(size: 20, weight: .black, design: .monospaced)).foregroundColor(.white)
+            VStack(spacing: 20) {
+                Image(systemName: "shield.slash.fill").font(.system(size: 80)).foregroundColor(.white)
+                Text("SECURITY BREACH").font(.system(size: 20, weight: .black, design: .monospaced)).foregroundColor(.white)
+            }
         }
     }
 }
 
-// MARK: - HIỆU ỨNG HẠT
 private struct ParticleCanvasView: View {
     var body: some View {
         TimelineView(.animation) { context in
             Canvas { graphicsContext, size in
                 let time = context.date.timeIntervalSinceReferenceDate
-                for i in 0..<80 {
-                    let seed = Double(i) * 77.0
+                for i in 0..<150 {
+                    let seed = Double(i) * 99.0
                     let x = (sin(time * 0.2 + seed) * 0.5 + 0.5) * size.width
-                    let speed = 120.0 + fmod(seed, 80.0)
+                    let speed = 200.0 + fmod(seed, 150.0)
                     let y = size.height - fmod(time * speed + seed, size.height + 100)
-                    let particleSize = CGFloat(fmod(seed, 3.0) + 1.5)
-                    let opacity = Double(fmod(seed, 0.6) + 0.4)
-                    
+                    let particleSize = CGFloat(fmod(seed, 1.2) + 0.3)
+                    let opacity = Double(fmod(seed, 0.8) + 0.2)
                     let rect = CGRect(x: x, y: y, width: particleSize, height: particleSize)
                     graphicsContext.fill(Path(ellipseIn: rect), with: .color(.white.opacity(opacity)))
                 }
