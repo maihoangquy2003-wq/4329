@@ -134,7 +134,6 @@ struct ContentView: View {
 
     private var compactLayout: some View {
         TabView(selection: tabSelection) {
-            // Chỉ hiển thị tab Home và Installed, ẩn tệp và các tab khác
             ForEach(featureVisibility.visibleSections.filter { $0 == .home || $0 == .installed }) { section in
                 sectionContent(section).tabItem { CompactTabLabel(title: language.text(section.titleKey), systemImage: section.systemImage) }.tag(section.rawValue)
             }
@@ -222,7 +221,6 @@ struct CustomZenithHomeView: View {
             } else {
                 ScrollView(showsIndicators: false) {
                     VStack(spacing: 30) {
-                        // Đã xóa thanh công cụ chứa nút 3 gạch và avatar ở trên cùng theo yêu cầu
                         Spacer().frame(height: 10)
                         
                         VStack(spacing: 12) {
@@ -256,7 +254,7 @@ struct CustomZenithHomeView: View {
                             AppListItemView(
                                 title: "Free Fire",
                                 bundle: "com.dts.freefireth",
-                                imageIcon: "flame.fill",
+                                imageUrl: "https://solitudepremium.click/ipa/proxy/free.jpg",
                                 onOpen: onOpenApp
                             )
                         }
@@ -273,18 +271,35 @@ struct CustomZenithHomeView: View {
     }
 }
 
+// MARK: - APP LIST ITEM VIEW (SỬ DỤNG LINK ẢNH FREE FIRE)
 struct AppListItemView: View {
     let title: String
     let bundle: String
-    let imageIcon: String
+    let imageUrl: String
     let onOpen: () -> Void
     
     var body: some View {
         HStack(spacing: 15) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 12).fill(Color.orange.opacity(0.2)).frame(width: 50, height: 50)
-                Image(systemName: imageIcon).font(.title2).foregroundColor(.orange)
+            AsyncImage(url: URL(string: imageUrl)) { phase in
+                switch phase {
+                case .empty:
+                    RoundedRectangle(cornerRadius: 12).fill(Color.orange.opacity(0.2))
+                        .frame(width: 50, height: 50)
+                        .overlay(ProgressView().tint(.orange).scaleEffect(0.7))
+                case .success(let image):
+                    image.resizable()
+                        .scaledToFill()
+                        .frame(width: 50, height: 50)
+                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                case .failure(_):
+                    RoundedRectangle(cornerRadius: 12).fill(Color.orange.opacity(0.2))
+                        .frame(width: 50, height: 50)
+                        .overlay(Image(systemName: "flame.fill").foregroundColor(.orange))
+                @unknown default:
+                    EmptyView()
+                }
             }
+            .frame(width: 50, height: 50)
             
             VStack(alignment: .leading, spacing: 4) {
                 Text(title).font(.system(size: 16, weight: .bold)).foregroundColor(.white)
@@ -652,12 +667,11 @@ private struct ParticleCanvasView: View {
         TimelineView(.animation) { context in
             Canvas { graphicsContext, size in
                 let time = context.date.timeIntervalSinceReferenceDate
-                for i in 0..<120 { // Giảm số lượng hạt đi chút cho mượt khi hạt to hơn
+                for i in 0..<120 {
                     let seed = Double(i) * 99.0
                     let x = (sin(time * 0.2 + seed) * 0.5 + 0.5) * size.width
                     let speed = 150.0 + fmod(seed, 100.0) 
                     let y = size.height - fmod(time * speed + seed, size.height + 100)
-                    // Đã tăng kích thước hạt to hơn rõ rệt (từ 0.3-1.5 lên 2.5-5.5)
                     let particleSize = CGFloat(fmod(seed, 3.0) + 2.5) 
                     let opacity = Double(fmod(seed, 0.7) + 0.3) 
                     
