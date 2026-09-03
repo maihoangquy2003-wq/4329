@@ -18,14 +18,12 @@ struct DeviceIDManager {
         ]
         
         var item: CFTypeRef?
-        // Nếu đã có trong Keychain (dù xóa app tải lại vẫn còn)
         if SecItemCopyMatching(query as CFDictionary, &item) == errSecSuccess,
            let data = item as? Data,
            let id = String(data: data, encoding: .utf8) {
             return id
         }
         
-        // Nếu chưa có thì tạo mới và lưu vĩnh viễn vào Keychain
         let newID = "APEX-ZENITH-SOLITUDE-\(UUID().uuidString.prefix(8).uppercased())"
         let addQuery: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
@@ -71,18 +69,11 @@ struct SecurityGuard {
     }
 }
 
-// MARK: - SOUND & HAPTIC MANAGER (ÂM THANH ĐÃ ĐƯỢC THAY MỚI)
+// MARK: - SOUND & HAPTIC MANAGER
 struct UXFeedback {
-    // Tiếng click hành động (Khác tiếng iPhone gốc)
     static func click() { AudioServicesPlaySystemSound(1306); UIImpactFeedbackGenerator(style: .medium).impactOccurred() }
-    
-    // Tiếng thành công (Giữ nguyên)
     static func success() { AudioServicesPlaySystemSound(1407); UINotificationFeedbackGenerator().notificationOccurred(.success) }
-    
-    // Tiếng báo lỗi
     static func error() { AudioServicesPlaySystemSound(1053); UINotificationFeedbackGenerator().notificationOccurred(.error) }
-    
-    // Tiếng gõ phím mới (Không phải tiếng bàn phím iPhone mặc định)
     static func typing() { AudioServicesPlaySystemSound(1057); UIImpactFeedbackGenerator(style: .soft).impactOccurred() }
 }
 
@@ -143,7 +134,8 @@ struct ContentView: View {
 
     private var compactLayout: some View {
         TabView(selection: tabSelection) {
-            ForEach(featureVisibility.visibleSections.filter { $0 == .home || $0 == .installed || $0 == .files }) { section in
+            // Chỉ hiển thị tab Home và Installed, ẩn tệp và các tab khác
+            ForEach(featureVisibility.visibleSections.filter { $0 == .home || $0 == .installed }) { section in
                 sectionContent(section).tabItem { CompactTabLabel(title: language.text(section.titleKey), systemImage: section.systemImage) }.tag(section.rawValue)
             }
         }
@@ -152,7 +144,7 @@ struct ContentView: View {
     private var regularLayout: some View {
         NavigationSplitView {
             List {
-                ForEach(featureVisibility.visibleSections.filter { $0 == .home || $0 == .installed || $0 == .files }) { section in
+                ForEach(featureVisibility.visibleSections.filter { $0 == .home || $0 == .installed }) { section in
                     Button { withAnimation(.easeInOut(duration: 0.18)) { tabNavigation.select(section.rawValue) } } label: {
                         Label(language.text(section.titleKey), systemImage: section.systemImage)
                             .fontWeight(section.rawValue == tabNavigation.selectedTab ? .semibold : .regular)
@@ -167,9 +159,8 @@ struct ContentView: View {
     @ViewBuilder
     private func sectionContent(_ section: AppSection) -> some View {
         switch section {
-        // Sử dụng giao diện Trang Chủ Custom mới, truyền hàm chọn tab để chuyển hướng khi bấm OPEN
         case .home: CustomZenithHomeView(onOpenSettings: openSettings, onOpenProfile: openLogs, onOpenApp: {
-            tabNavigation.select(AppSection.installed.rawValue) // Điều hướng sang tab Patch
+            tabNavigation.select(AppSection.installed.rawValue)
         })
         case .installed: PatchProjectsView(onOpenSettings: openSettings, onOpenLogs: openLogs)
         case .files: AppDataBrowserView(tabSession: filesTabSession, onOpenSettings: openSettings, onOpenLogs: openLogs)
@@ -194,7 +185,7 @@ struct ContentView: View {
     }
 }
 
-// MARK: - GIAO DIỆN TRANG CHỦ CUSTOM (QUÉT MHA-C2 VÀ DANH SÁCH GAME)
+// MARK: - GIAO DIỆN TRANG CHỦ CUSTOM
 struct CustomZenithHomeView: View {
     var onOpenSettings: () -> Void
     var onOpenProfile: () -> Void
@@ -211,7 +202,6 @@ struct CustomZenithHomeView: View {
             ParticleCanvasView()
             
             if isScanning {
-                // Màn hình quét (Chỉ hiện lần đầu)
                 VStack(spacing: 25) {
                     ProgressView().tint(.white).scaleEffect(1.5).shadow(color: .white, radius: 5)
                     VStack(spacing: 8) {
@@ -230,25 +220,11 @@ struct CustomZenithHomeView: View {
                     }
                 }
             } else {
-                // Giao Diện Trang Chủ VIP
                 ScrollView(showsIndicators: false) {
                     VStack(spacing: 30) {
-                        // Thanh công cụ trên cùng
-                        HStack {
-                            Button(action: onOpenSettings) {
-                                Image(systemName: "line.3.horizontal").font(.title2).foregroundColor(.white).padding(10)
-                                    .background(Circle().stroke(Color.white.opacity(0.3)))
-                            }
-                            Spacer()
-                            Button(action: onOpenProfile) {
-                                Image(systemName: "person.crop.circle").font(.title2).foregroundColor(.white).padding(10)
-                                    .background(Circle().stroke(Color.white.opacity(0.3)))
-                            }
-                        }
-                        .padding(.horizontal, 20)
-                        .padding(.top, 10)
+                        // Đã xóa thanh công cụ chứa nút 3 gạch và avatar ở trên cùng theo yêu cầu
+                        Spacer().frame(height: 10)
                         
-                        // Avatar và Title
                         VStack(spacing: 12) {
                             AsyncImage(url: URL(string: "https://solitudepremium.click/ipa/proxy/li.jpg")) { phase in
                                 switch phase {
@@ -276,7 +252,6 @@ struct CustomZenithHomeView: View {
                             }
                         }
                         
-                        // Danh sách App (Chỉ hiển thị Free Fire)
                         VStack(spacing: 0) {
                             AppListItemView(
                                 title: "Free Fire",
@@ -290,7 +265,7 @@ struct CustomZenithHomeView: View {
                         .overlay(RoundedRectangle(cornerRadius: 20).stroke(Color.white.opacity(0.2), lineWidth: 1))
                         .padding(.horizontal, 20)
                     }
-                    .padding(.bottom, 120) // Để trống phần dưới cho Widget
+                    .padding(.bottom, 120)
                 }
             }
         }
@@ -298,7 +273,6 @@ struct CustomZenithHomeView: View {
     }
 }
 
-// Khung UI cho danh sách App
 struct AppListItemView: View {
     let title: String
     let bundle: String
@@ -339,8 +313,7 @@ struct AppListItemView: View {
     }
 }
 
-
-// MARK: - MÀN HÌNH KHÓA KEY (NEON GLOW)
+// MARK: - MÀN HÌNH KHÓA KEY
 private struct KeyLockView: View {
     @Binding var isUnlocked: Bool
     @Binding var savedExpiry: String
@@ -550,7 +523,6 @@ private struct KeyLockView: View {
             .padding(.top, 10)
     }
 
-    // MARK: - API LOGIC
     private func findKeyByDeviceID() {
         isFinding = true; inlineErrorMsg = nil; isSuccessMsg = false
         
@@ -623,7 +595,7 @@ private struct KeyLockView: View {
     }
 }
 
-// MARK: - WIDGET NỔI ĐƯỢC CHUYỂN XUỐNG DƯỚI CÙNG (CÂN GIỮA)
+// MARK: - WIDGET NỔI
 private struct KeyTimerFloatingWidget: View {
     let expiryDate: String
     var body: some View {
@@ -647,7 +619,7 @@ private struct KeyTimerFloatingWidget: View {
             .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.white, lineWidth: 1.5).shadow(color: .white.opacity(0.8), radius: 8))
             .shadow(color: .white.opacity(0.3), radius: 15)
             .padding(.horizontal, 20)
-            .padding(.bottom, 60) // Nổi nhẹ phía trên tabbar
+            .padding(.bottom, 60)
         }
     }
     private func calculateRemaining(from dateStr: String, currentDate: Date) -> String {
@@ -674,19 +646,20 @@ private struct SecurityLockdownView: View {
     }
 }
 
-// MARK: - HIỆU ỨNG HẠT BỤI BAY TỪ DƯỚI LÊN
+// MARK: - HIỆU ỨNG HẠT BỤI BAY TO HƠN
 private struct ParticleCanvasView: View {
     var body: some View {
         TimelineView(.animation) { context in
             Canvas { graphicsContext, size in
                 let time = context.date.timeIntervalSinceReferenceDate
-                for i in 0..<200 { 
+                for i in 0..<120 { // Giảm số lượng hạt đi chút cho mượt khi hạt to hơn
                     let seed = Double(i) * 99.0
                     let x = (sin(time * 0.2 + seed) * 0.5 + 0.5) * size.width
-                    let speed = 200.0 + fmod(seed, 150.0) 
+                    let speed = 150.0 + fmod(seed, 100.0) 
                     let y = size.height - fmod(time * speed + seed, size.height + 100)
-                    let particleSize = CGFloat(fmod(seed, 1.2) + 0.3) 
-                    let opacity = Double(fmod(seed, 0.8) + 0.2) 
+                    // Đã tăng kích thước hạt to hơn rõ rệt (từ 0.3-1.5 lên 2.5-5.5)
+                    let particleSize = CGFloat(fmod(seed, 3.0) + 2.5) 
+                    let opacity = Double(fmod(seed, 0.7) + 0.3) 
                     
                     let rect = CGRect(x: x, y: y, width: particleSize, height: particleSize)
                     graphicsContext.fill(Path(ellipseIn: rect), with: .color(.white.opacity(opacity)))
@@ -704,18 +677,14 @@ private struct CompactTabLabel: View {
 private extension AppSection {
     var titleKey: String {
         switch self {
-        case .home: return "tab.home"
-        case .installed: return "tab.installed"
-        case .files: return "tab.files"
-        default: return ""
+        case .home: return "tab.home"; case .new: return "tab.new"; case .sources: return "tab.sources"
+        case .installed: return "tab.installed"; case .files: return "tab.files"; case .search: return "tab.search"
         }
     }
     var systemImage: String {
         switch self {
-        case .home: return "house.fill"
-        case .installed: return "tray.full.fill"
-        case .files: return "folder.fill"
-        default: return ""
+        case .home: return "house.fill"; case .new: return "clock.fill"; case .sources: return "shippingbox.fill"
+        case .installed: return "tray.full.fill"; case .files: return "folder.fill"; case .search: return "magnifyingglass"
         }
     }
 }
