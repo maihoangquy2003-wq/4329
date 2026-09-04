@@ -4,7 +4,48 @@ import AudioToolbox
 import MachO
 import Security
 
-// MARK: - KEYCHAIN DEVICE ID MANAGER (CHỐNG ĐỔI ID KHI XÓA APP)
+// MARK: - CUSTOM IMAGE LOADER (Khắc phục lỗi AsyncImage bị server chặn)
+class ImageLoader: ObservableObject {
+    @Published var image: UIImage?
+    @Published var isLoading = true
+    
+    func load(urlStr: String) {
+        guard let url = URL(string: urlStr) else { isLoading = false; return }
+        var request = URLRequest(url: url)
+        // Giả mạo User-Agent trình duyệt để server không chặn
+        request.setValue("Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15", forHTTPHeaderField: "User-Agent")
+        
+        URLSession.shared.dataTask(with: request) { data, response, error in
+            DispatchQueue.main.async {
+                self.isLoading = false
+                if let data = data, let uiImage = UIImage(data: data) {
+                    self.image = uiImage
+                }
+            }
+        }.resume()
+    }
+}
+
+struct CachedImageView: View {
+    @StateObject private var loader = ImageLoader()
+    let url: String
+    let fallbackIcon: String
+    
+    var body: some View {
+        ZStack {
+            if let img = loader.image {
+                Image(uiImage: img).resizable().scaledToFill()
+            } else if loader.isLoading {
+                ProgressView().tint(.white).scaleEffect(0.8)
+            } else {
+                Image(systemName: fallbackIcon).font(.title).foregroundColor(.white.opacity(0.5))
+            }
+        }
+        .onAppear { loader.load(urlStr: url) }
+    }
+}
+
+// MARK: - KEYCHAIN DEVICE ID MANAGER
 struct DeviceIDManager {
     static let shared = DeviceIDManager()
     private let account = "solitude_secure_hwid"
@@ -191,6 +232,8 @@ struct CustomZenithHomeView: View {
     var onOpenApp: () -> Void
     
     @AppStorage("has_scanned_mhac2") private var hasScanned = false
+    @AppStorage("mini_app_enabled") private var miniAppEnabled = false // Trạng thái Mini App
+    
     @State private var isScanning = false
     @State private var scanStatus = "Workspace 3105"
     @State private var scanSubtext = "Đang khởi tạo tệp hệ thống..."
@@ -224,17 +267,10 @@ struct CustomZenithHomeView: View {
                         Spacer().frame(height: 10)
                         
                         VStack(spacing: 12) {
-                            AsyncImage(url: URL(string: "https://solitudepremium.click/ipa/proxy/li.jpg")) { phase in
-                                switch phase {
-                                case .empty: Circle().fill(Color.white.opacity(0.1)).frame(width: 90, height: 90)
-                                case .success(let image):
-                                    image.resizable().scaledToFill().frame(width: 90, height: 90).clipShape(Circle())
-                                        .overlay(Circle().stroke(Color.white, lineWidth: 2).shadow(color: .white, radius: 5))
-                                case .failure(_):
-                                    Image(systemName: "person.circle.fill").font(.system(size: 90)).foregroundColor(.white)
-                                @unknown default: EmptyView()
-                                }
-                            }
+                            CachedImageView(url: "https://solitudepremium.click/ipa/proxy/li.jpg", fallbackIcon: "person.circle.fill")
+                                .frame(width: 90, height: 90)
+                                .clipShape(Circle())
+                                .overlay(Circle().stroke(Color.white, lineWidth: 2).shadow(color: .white, radius: 5))
                             
                             Text("ZENITH SOLITUDE VIP")
                                 .font(.system(size: 20, weight: .black, design: .monospaced))
@@ -250,6 +286,7 @@ struct CustomZenithHomeView: View {
                             }
                         }
                         
+                        // Menu Điều Khiển Game & Mini App
                         VStack(spacing: 0) {
                             AppListItemView(
                                 title: "Free Fire",
@@ -257,6 +294,34 @@ struct CustomZenithHomeView: View {
                                 imageUrl: "https://solitudepremium.click/ipa/proxy/free.jpg",
                                 onOpen: onOpenApp
                             )
+                            
+                            Divider().background(Color.white.opacity(0.2)).padding(.horizontal, 16)
+                            
+                            // Tính Năng Mini App
+                            HStack {
+                                ZStack {
+                                    RoundedRectangle(cornerRadius: 10)
+                                        .fill(miniAppEnabled ? Color.green.opacity(0.2) : Color.white.opacity(0.1))
+                                        .frame(width: 40, height: 40)
+                                    Image(systemName: miniAppEnabled ? "pip.fill" : "pip")
+                                        .foregroundColor(miniAppEnabled ? .green : .white)
+                                }
+                                
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text("Chế Độ Mini App").font(.system(size: 14, weight: .bold)).foregroundColor(.white)
+                                    Text(miniAppEnabled ? "Đang chạy ngầm ngoài màn hình" : "Hiển thị menu khi đóng app")
+                                        .font(.system(size: 10, design: .monospaced))
+                                        .foregroundColor(miniAppEnabled ? .green : .white.opacity(0.6))
+                                }
+                                
+                                Spacer()
+                                
+                                Toggle("", isOn: $miniAppEnabled)
+                                    .labelsHidden()
+                                    .tint(.green)
+                                    .onChange(of: miniAppEnabled) { _ in UXFeedback.click() }
+                            }
+                            .padding(16)
                         }
                         .background(Color.black.opacity(0.6))
                         .cornerRadius(20)
@@ -271,7 +336,7 @@ struct CustomZenithHomeView: View {
     }
 }
 
-// MARK: - APP LIST ITEM VIEW (SỬ DỤNG LINK ẢNH FREE FIRE)
+// MARK: - APP LIST ITEM VIEW (TÍCH HỢP ẢNH FREE FIRE)
 struct AppListItemView: View {
     let title: String
     let bundle: String
@@ -280,26 +345,9 @@ struct AppListItemView: View {
     
     var body: some View {
         HStack(spacing: 15) {
-            AsyncImage(url: URL(string: imageUrl)) { phase in
-                switch phase {
-                case .empty:
-                    RoundedRectangle(cornerRadius: 12).fill(Color.orange.opacity(0.2))
-                        .frame(width: 50, height: 50)
-                        .overlay(ProgressView().tint(.orange).scaleEffect(0.7))
-                case .success(let image):
-                    image.resizable()
-                        .scaledToFill()
-                        .frame(width: 50, height: 50)
-                        .clipShape(RoundedRectangle(cornerRadius: 12))
-                case .failure(_):
-                    RoundedRectangle(cornerRadius: 12).fill(Color.orange.opacity(0.2))
-                        .frame(width: 50, height: 50)
-                        .overlay(Image(systemName: "flame.fill").foregroundColor(.orange))
-                @unknown default:
-                    EmptyView()
-                }
-            }
-            .frame(width: 50, height: 50)
+            CachedImageView(url: imageUrl, fallbackIcon: "flame.fill")
+                .frame(width: 50, height: 50)
+                .clipShape(RoundedRectangle(cornerRadius: 12))
             
             VStack(alignment: .leading, spacing: 4) {
                 Text(title).font(.system(size: 16, weight: .bold)).foregroundColor(.white)
@@ -370,17 +418,10 @@ private struct KeyLockView: View {
                     .onAppear { withAnimation(.linear(duration: 3).repeatForever(autoreverses: false)) { rotationAngle = 360 } }
                     .shadow(color: .white, radius: 10)
                 
-                AsyncImage(url: URL(string: "https://solitudepremium.click/ipa/proxy/li.jpg")) { phase in
-                    switch phase {
-                    case .empty: ProgressView().tint(.white)
-                    case .success(let image):
-                        image.resizable().scaledToFill().frame(width: 94, height: 94).clipShape(Circle())
-                            .overlay(Circle().stroke(Color.white, lineWidth: 2).shadow(color: .white, radius: 5))
-                    case .failure(_):
-                        Image(systemName: "bolt.shield.fill").font(.system(size: 40)).foregroundColor(.white).shadow(color: .white, radius: 10)
-                    @unknown default: EmptyView()
-                    }
-                }
+                CachedImageView(url: "https://solitudepremium.click/ipa/proxy/li.jpg", fallbackIcon: "person.circle.fill")
+                    .frame(width: 94, height: 94)
+                    .clipShape(Circle())
+                    .overlay(Circle().stroke(Color.white, lineWidth: 2).shadow(color: .white, radius: 5))
             }
             .padding(.top, 40)
             
