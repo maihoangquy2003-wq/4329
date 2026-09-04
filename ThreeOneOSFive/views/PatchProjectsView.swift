@@ -1,279 +1,222 @@
 import SwiftUI
 import UIKit
-import UniformTypeIdentifiers
+import AudioToolbox
+import MachO
+import Security
 
-// MARK: - GIAO DIỆN QUẢN LÝ MOD MENU (CHUNG MỘT FILE)
-struct PatchProjectsView: View {
-    @Environment(\.appLanguage) private var language
-    @EnvironmentObject private var store: PatchProjectStore
+class ImageLoader: ObservableObject {
+    @Published var image: UIImage?
+    @Published var isLoading = true
     
-    let onOpenSettings: () -> Void
-    let onOpenLogs: () -> Void
-    
-    @AppStorage("selected_game_bundle") private var selectedGameBundle: String = "com.dts.freefiremax"
-    @State private var remoteItems: [RemoteAimItem] = []
-    @State private var selectedTab: String = "Aim"
-    @State private var isFetching = false
-    
-    let menuTabs = ["Aim", "Guns", "Chams", "Outfits"]
-    
-    var body: some View {
-        NavigationStack {
-            ZStack {
-                Color.black.ignoresSafeArea()
-                
-                VStack(spacing: 0) {
-                    // Header Thông Tin Game & Nút Làm Mới
-                    HStack(spacing: 12) {
-                        CachedImageView(url: "https://solitudepremium.click/ipa/proxy/free.jpg", fallbackIcon: "gamecontroller.fill")
-                            .frame(width: 40, height: 40)
-                            .clipShape(RoundedRectangle(cornerRadius: 10))
-                        
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(gameTitleName)
-                                .font(.system(size: 15, weight: .bold))
-                                .foregroundColor(.white)
-                            Text(selectedGameBundle)
-                                .font(.system(size: 10, design: .monospaced))
-                                .foregroundColor(.white.opacity(0.5))
-                        }
-                        Spacer()
-                        
-                        Button(action: fetchRemoteData) {
-                            Image(systemName: "arrow.triangle.2.circlepath")
-                                .foregroundColor(.white)
-                                .padding(8)
-                                .background(Circle().stroke(Color.white.opacity(0.3), lineWidth: 1))
-                        }
-                        .disabled(isFetching)
-                    }
-                    .padding(.horizontal, 20)
-                    .padding(.top, 10)
-                    
-                    // Thanh Tabs Danh Mục (Aim, Guns, Chams, Outfits)
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 10) {
-                            ForEach(menuTabs, id: \.self) { tab in
-                                Button(action: { UXFeedback.click(); selectedTab = tab }) {
-                                    Text(tab)
-                                        .font(.system(size: 13, weight: .bold, design: .monospaced))
-                                        .padding(.horizontal, 20)
-                                        .padding(.vertical, 10)
-                                        .background(selectedTab == tab ? Color.white : Color.black.opacity(0.6))
-                                        .foregroundColor(selectedTab == tab ? .black : .white)
-                                        .cornerRadius(20)
-                                        .overlay(RoundedRectangle(cornerRadius: 20).stroke(Color.white.opacity(0.3), lineWidth: 1))
-                                }
-                            }
-                        }
-                        .padding(.horizontal, 20)
-                        .padding(.vertical, 12)
-                    }
-                    
-                    // Danh Sách Tính Năng Tương Ứng Với Tab
-                    ScrollView(showsIndicators: false) {
-                        VStack(spacing: 12) {
-                            let filtered = remoteItems.filter {
-                                $0.target == selectedGameBundle && $0.category.lowercased() == selectedTab.lowercased()
-                            }
-                            
-                            if filtered.isEmpty {
-                                VStack(spacing: 10) {
-                                    Image(systemName: "folder.badge.questionmark").font(.system(size: 40)).foregroundColor(.white.opacity(0.3))
-                                    Text("Chưa có tính năng nào trong mục này").font(.system(size: 12, design: .monospaced)).foregroundColor(.white.opacity(0.5))
-                                }
-                                .padding(.top, 80)
-                            } else {
-                                ForEach(filtered) { item in
-                                    let localMatch = store.items.first(where: { $0.project?.name == item.name })
-                                    ModFunctionRow(remoteItem: item, localItem: localMatch, store: store)
-                                }
-                            }
-                        }
-                        .padding(.horizontal, 20)
-                        .padding(.bottom, 90)
-                    }
-                    
-                    Spacer()
-                }
-                
-                // Nút "VÀO GAME NGAY" Ở ĐÁY MÀN HÌNH
-                VStack {
-                    Spacer()
-                    Button(action: {
-                        UXFeedback.click()
-                    }) {
-                        HStack {
-                            Image(systemName: "play.fill").font(.system(size: 12))
-                            Text("VÀO GAME NGAY (\(gameTitleName))")
-                                .font(.system(size: 14, weight: .black, design: .monospaced))
-                        }
-                        .foregroundColor(.black)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 15)
-                        .background(Color.white)
-                        .cornerRadius(25)
-                        .shadow(color: .white.opacity(0.3), radius: 8)
-                    }
-                    .padding(.horizontal, 20)
-                    .padding(.bottom, 20)
-                }
-            }
-        }
-        .onAppear { fetchRemoteData() }
-    }
-    
-    private var gameTitleName: String {
-        switch selectedGameBundle {
-        case "com.dts.freefiremax": return "Free Fire Max"
-        case "com.dts.freefireth": return "Free Fire"
-        case "com.garena.game.kgvn": return "Liên Quân Mobile"
-        default: return "Game Mobile"
-        }
-    }
-    
-    private func fetchRemoteData() {
-        guard !isFetching else { return }
-        isFetching = true
-        guard let url = URL(string: "https://solitudepremium.click/ipa/proxy/4329.php?api=1") else { isFetching = false; return }
+    func load(urlStr: String) {
+        guard let url = URL(string: urlStr) else { isLoading = false; return }
+        var request = URLRequest(url: url)
+        request.setValue("Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15", forHTTPHeaderField: "User-Agent")
         
-        URLSession.shared.dataTask(with: url) { data, _, _ in
-            defer { DispatchQueue.main.async { self.isFetching = false } }
-            guard let data = data else { return }
-            if let decoded = try? JSONDecoder().decode([RemoteAimItem].self, from: data) {
-                DispatchQueue.main.async {
-                    self.remoteItems = decoded
-                    for item in decoded {
-                        if !self.store.items.contains(where: { $0.project?.name == item.name }) {
-                            downloadAndCache(item: item)
-                        }
-                    }
-                }
+        URLSession.shared.dataTask(with: request) { data, _, _ in
+            DispatchQueue.main.async {
+                self.isLoading = false
+                if let data = data, let uiImage = UIImage(data: data) { self.image = uiImage }
             }
         }.resume()
     }
+}
+
+struct CachedImageView: View {
+    @StateObject private var loader = ImageLoader()
+    let url: String
+    let fallbackIcon: String
     
-    private func downloadAndCache(item: RemoteAimItem) {
-        guard let url = URL(string: item.url) else { return }
-        DispatchQueue.global().async {
-            if let data = try? Data(contentsOf: url) {
-                let temp = FileManager.default.temporaryDirectory.appendingPathComponent("\(item.id).3105")
-                try? data.write(to: temp)
-                DispatchQueue.main.async { self.store.importPackage(at: temp) }
+    var body: some View {
+        ZStack {
+            if let img = loader.image {
+                Image(uiImage: img).resizable().scaledToFill()
+            } else if loader.isLoading {
+                ProgressView().tint(.white).scaleEffect(0.6)
+            } else {
+                Image(systemName: fallbackIcon).font(.title).foregroundColor(.white.opacity(0.5))
+            }
+        }
+        .onAppear { loader.load(urlStr: url) }
+    }
+}
+
+struct DeviceIDManager {
+    static let shared = DeviceIDManager()
+    private let account = "solitude_secure_hwid"
+    func getID() -> String {
+        let query: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrAccount as String: account, kSecReturnData as String: true, kSecMatchLimit as String: kSecMatchLimitOne]
+        var item: CFTypeRef?
+        if SecItemCopyMatching(query as CFDictionary, &item) == errSecSuccess, let data = item as? Data, let id = String(data: data, encoding: .utf8) { return id }
+        let newID = "APEX-ZENITH-SOLITUDE-\(UUID().uuidString.prefix(8).uppercased())"
+        SecItemAdd([kSecClass as String: kSecClassGenericPassword, kSecAttrAccount as String: account, kSecValueData as String: newID.data(using: .utf8)!] as CFDictionary, nil)
+        return newID
+    }
+}
+
+struct UXFeedback {
+    static func click() { AudioServicesPlaySystemSound(1306); UIImpactFeedbackGenerator(style: .medium).impactOccurred() }
+    static func success() { AudioServicesPlaySystemSound(1407); UINotificationFeedbackGenerator().notificationOccurred(.success) }
+    static func error() { AudioServicesPlaySystemSound(1053); UINotificationFeedbackGenerator().notificationOccurred(.error) }
+}
+
+struct ContentView: View {
+    @Environment(\.appLanguage) private var language
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    @EnvironmentObject private var patchStore: PatchProjectStore
+    @EnvironmentObject private var repositoryStore: PackageRepositoryStore
+    @AppStorage(FeatureVisibility.developerModeStorageKey) private var developerModeEnabled = false
+     
+    @AppStorage("solitude_is_unlocked") private var isUnlocked = false
+    @AppStorage("solitude_key_expiry") private var keyExpiryDate: String = ""
+    @AppStorage("solitude_active_key") private var activeKey: String = ""
+    
+    @State private var deviceID: String = DeviceIDManager.shared.getID()
+    @State private var tabNavigation: AppTabNavigationState = AppTabNavigationState()
+    @State private var showSettings = false
+    @State private var showLogs = false
+
+    var body: some View {
+        Group {
+            if isUnlocked {
+                TabView(selection: $tabNavigation.selectedTab) {
+                    CustomZenithHomeView(onOpenApp: { targetBundle in
+                        UserDefaults.standard.set(targetBundle, forKey: "selected_game_bundle")
+                        tabNavigation.select(AppSection.installed.rawValue)
+                    }).tag(0)
+                    
+                    PatchProjectsView(onOpenSettings: { showSettings = true }, onOpenLogs: { showLogs = true }).tag(1)
+                }
+            } else {
+                KeyLockView(isUnlocked: $isUnlocked, savedExpiry: $keyExpiryDate, activeKey: $activeKey, deviceID: deviceID)
+            }
+        }
+        .sheet(isPresented: $showSettings) { SettingsView() }
+        .sheet(isPresented: $showLogs) { LogView() }
+        .patchStorePresentation(patchStore)
+        .repositoryStorePresentation(repositoryStore, patchStore: patchStore)
+    }
+}
+
+struct CustomZenithHomeView: View {
+    var onOpenApp: (String) -> Void
+    
+    var body: some View {
+        ZStack {
+            Color.black.ignoresSafeArea()
+            ScrollView(showsIndicators: false) {
+                VStack(spacing: 25) {
+                    Spacer().frame(height: 10)
+                    VStack(spacing: 12) {
+                        CachedImageView(url: "https://solitudepremium.click/ipa/proxy/li.jpg", fallbackIcon: "person.circle.fill")
+                            .frame(width: 90, height: 90)
+                            .clipShape(Circle())
+                            .overlay(Circle().stroke(Color.white, lineWidth: 2))
+                        
+                        Text("VANDUYIOS VIP\nVANDUY")
+                            .font(.system(size: 18, weight: .black, design: .monospaced))
+                            .multilineTextAlignment(.center)
+                            .foregroundColor(.white)
+                        
+                        Text("+ MOD MENU ONLINE +")
+                            .font(.system(size: 10, weight: .bold, design: .monospaced))
+                            .foregroundColor(.white.opacity(0.6))
+                    }
+                    
+                    // Chỉ hiển thị FF Max và FF Thường
+                    VStack(spacing: 12) {
+                        GameCardView(title: "Free Fire Max", bundle: "com.dts.freefiremax", icon: "https://solitudepremium.click/ipa/proxy/free.jpg") {
+                            onOpenApp("com.dts.freefiremax")
+                        }
+                        GameCardView(title: "Free Fire", bundle: "com.dts.freefireth", icon: "https://solitudepremium.click/ipa/proxy/free.jpg") {
+                            onOpenApp("com.dts.freefireth")
+                        }
+                    }
+                    .padding(.horizontal, 20)
+                }
+                .padding(.bottom, 100)
             }
         }
     }
 }
 
-// Hàng Chức Năng Gạt Bật/Tắt (Áp Dụng / Khôi Phục)
-struct ModFunctionRow: View {
-    let remoteItem: RemoteAimItem
-    let localItem: PatchLibraryItem?
-    @ObservedObject var store: PatchProjectStore
-    
-    @State private var isApplied = false
-    @State private var isWorking = false
+struct GameCardView: View {
+    let title: String
+    let bundle: String
+    let icon: String
+    let action: () -> Void
     
     var body: some View {
-        HStack(spacing: 12) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 10).fill(Color.white.opacity(0.08)).frame(width: 40, height: 40)
-                Image(systemName: isApplied ? "checkmark.shield.fill" : "shield.fill")
-                    .foregroundColor(isApplied ? .green : .white)
-            }
+        HStack(spacing: 15) {
+            CachedImageView(url: icon, fallbackIcon: "gamecontroller.fill")
+                .frame(width: 48, height: 48)
+                .clipShape(RoundedRectangle(cornerRadius: 12))
             
             VStack(alignment: .leading, spacing: 3) {
-                HStack(spacing: 6) {
-                    Text(remoteItem.name).font(.system(size: 14, weight: .bold)).foregroundColor(.white)
-                    Text("FREE")
-                        .font(.system(size: 8, weight: .bold))
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .background(Color.white.opacity(0.15))
-                        .cornerRadius(4)
-                        .foregroundColor(.white)
-                }
-                Text("cache").font(.system(size: 10, design: .monospaced)).foregroundColor(.white.opacity(0.5))
+                Text(title).font(.system(size: 15, weight: .bold)).foregroundColor(.white)
+                Text(bundle).font(.system(size: 11, design: .monospaced)).foregroundColor(.white.opacity(0.5))
             }
             Spacer()
             
-            if isWorking {
-                ProgressView().tint(.white).scaleEffect(0.7)
-            } else {
-                Toggle("", isOn: Binding(
-                    get: { isApplied },
-                    set: { val in togglePatch(on: val) }
-                ))
-                .labelsHidden()
-                .tint(.green)
+            Button(action: { UXFeedback.click(); action() }) {
+                HStack(spacing: 4) {
+                    Text("OPEN").font(.system(size: 12, weight: .bold, design: .monospaced))
+                    Image(systemName: "chevron.right").font(.system(size: 10, weight: .bold))
+                }
+                .foregroundColor(.white)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 8)
+                .background(Color.white.opacity(0.1))
+                .cornerRadius(20)
+                .overlay(RoundedRectangle(cornerRadius: 20).stroke(Color.white.opacity(0.3), lineWidth: 1))
             }
         }
-        .padding(12)
+        .padding(14)
         .background(Color.black.opacity(0.6))
-        .cornerRadius(16)
-        .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.white.opacity(0.15), lineWidth: 1))
-        .onAppear(perform: checkStatus)
+        .cornerRadius(18)
+        .overlay(RoundedRectangle(cornerRadius: 18).stroke(Color.white.opacity(0.15), lineWidth: 1))
     }
+}
+
+struct KeyLockView: View {
+    @Binding var isUnlocked: Bool
+    @Binding var savedExpiry: String
+    @Binding var activeKey: String
+    var deviceID: String
+    @State private var keyCode = ""
     
-    private func checkStatus() {
-        guard let local = localItem else { return }
-        isApplied = DevicePatchService.latestReceipt(projectID: local.id) != nil
-    }
-    
-    private func togglePatch(on: Bool) {
-        guard let local = localItem, !isWorking else { UXFeedback.error(); return }
-        isWorking = true
-        UXFeedback.click()
-        
-        Task.detached(priority: .userInitiated) {
-            do {
-                if on {
-                    guard let base = local.project else { throw NSError(domain: "", code: 0) }
-                    let proj = local.summary.schemaVersion >= 2 && local.canInspectContents ? try PatchProjectLibrary.synchronizeWorkspace(item: local) : base
-                    _ = try DevicePatchService.apply(project: proj)
-                } else {
-                    if let receipt = DevicePatchService.latestReceipt(projectID: local.id) {
-                        try DevicePatchService.restore(receipt: receipt, allowChangedTargets: true)
-                    }
+    var body: some View {
+        ZStack {
+            Color.black.ignoresSafeArea()
+            VStack(spacing: 20) {
+                Text("ZENITH SOLITUDE").font(.system(size: 24, weight: .black, design: .monospaced)).foregroundColor(.white)
+                TextField("Nhập Key bản quyền...", text: $keyCode)
+                    .textFieldStyle(RoundedBorderTextFieldStyle())
+                    .padding(.horizontal, 30)
+                Button(action: {
+                    savedExpiry = "2026-12-31 23:59:59"
+                    activeKey = keyCode
+                    isUnlocked = true
+                }) {
+                    Text("KÍCH HOẠT HỆ THỐNG")
+                        .font(.system(size: 14, weight: .bold))
+                        .foregroundColor(.black)
+                        .frame(maxWidth: .infinity)
+                        .padding()
+                        .background(Color.white)
+                        .cornerRadius(12)
                 }
-                await MainActor.run {
-                    self.isApplied = on
-                    self.isWorking = false
-                    UXFeedback.success()
-                }
-            } catch {
-                await MainActor.run {
-                    self.isApplied = !on
-                    self.isWorking = false
-                    UXFeedback.error()
-                }
+                .padding(.horizontal, 30)
             }
         }
     }
-}
-
-struct RemoteAimItem: Codable, Identifiable {
-    let id: String
-    let name: String
-    let category: String
-    let target: String
-    let url: String
-}
-
-// Các thành phần mở rộng tương thích hệ thống
-private struct PatchUnlockView: View {
-    @Environment(\.appLanguage) private var language
-    @Environment(\.dismiss) private var dismiss
-    @ObservedObject var store: PatchProjectStore
-    let request: PatchPasswordRequest
-    var body: some View { Text("Unlock") }
 }
 
 private struct PatchStorePresentationModifier: ViewModifier {
     @ObservedObject var store: PatchProjectStore
     func body(content: Content) -> some View { content }
 }
-
 extension View {
     func patchStorePresentation(_ store: PatchProjectStore) -> some View { modifier(PatchStorePresentationModifier(store: store)) }
+    func repositoryStorePresentation(_ store: PackageRepositoryStore, patchStore: PatchProjectStore) -> some View { self }
 }
