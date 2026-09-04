@@ -7,8 +7,11 @@ struct PatchProjectsView: View {
     @Environment(\.appLanguage) private var language
     @EnvironmentObject private var store: PatchProjectStore
     
+    // FIX LỖI 1: Khai báo lại 2 tham số để ContentView.swift không bị lỗi khi gọi
+    let onOpenSettings: () -> Void
+    let onOpenLogs: () -> Void
+    
     @State private var isFetchingRemote = false
-    @State private var fetchMessage: String? = nil
     
     var body: some View {
         NavigationStack {
@@ -149,7 +152,6 @@ private struct PatchProjectToggleRow: View {
         .onAppear(perform: loadCurrentStatus)
     }
     
-    // Kiểm tra xem máy đã apply patch này chưa
     private func loadCurrentStatus() {
         if let currentReceipt = DevicePatchService.latestReceipt(projectID: item.id) {
             self.receipt = currentReceipt
@@ -160,23 +162,30 @@ private struct PatchProjectToggleRow: View {
         }
     }
     
-    // Xử lý Gạt Công Tắc
     private func handleToggle(turnOn: Bool) {
         guard !isWorking else { return }
         isWorking = true
         
         Task.detached(priority: .userInitiated) {
             if turnOn {
-                // HÀNH ĐỘNG 1: BẬT (ÁP DỤNG PATCH)
                 do {
-                    guard let baseProject = item.project else { throw PatchPackageError.invalidFormat }
+                    // FIX LỖI 3: Tránh lỗi invalidFormat, xử lý trả về (return) luôn nếu project nil
+                    guard let baseProject = item.project else {
+                        await MainActor.run {
+                            self.isApplied = false
+                            self.isWorking = false
+                            UXFeedback.error()
+                        }
+                        return
+                    }
+                    
                     let project = item.summary.schemaVersion >= 2 && item.canInspectContents ? try PatchProjectLibrary.synchronizeWorkspace(item: item) : baseProject
                     
                     _ = try DevicePatchService.apply(project: project)
                     
                     await MainActor.run {
                         self.isApplied = true
-                        self.loadCurrentStatus() // Cập nhật lại receipt
+                        self.loadCurrentStatus()
                         self.isWorking = false
                         UXFeedback.success()
                     }
@@ -188,7 +197,6 @@ private struct PatchProjectToggleRow: View {
                     }
                 }
             } else {
-                // HÀNH ĐỘNG 2: TẮT (KHÔI PHỤC FILE GỐC)
                 do {
                     if let validReceipt = self.receipt {
                         try DevicePatchService.restore(receipt: validReceipt, allowChangedTargets: true)
@@ -209,5 +217,79 @@ private struct PatchProjectToggleRow: View {
                 }
             }
         }
+    }
+}
+
+// ====================================================================================
+// FIX LỖI 2: KHÔI PHỤC LẠI CÁC EXTENSION MỞ RỘNG MÀ CONTENTVIEW ĐANG CẦN (ĐỂ TRÁNH LỖI BIÊN DỊCH)
+// ====================================================================================
+struct PatchUnlockView: View {
+    @Environment(\.appLanguage) private var language
+    @Environment(\.dismiss) private var dismiss
+    @ObservedObject var store: PatchProjectStore
+    let request: PatchPasswordRequest
+    @State private var password = ""
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    SecureField(language.text("patch.password"), text: $password)
+                        .textContentType(.password)
+                        .submitLabel(.done)
+                        .onSubmit(unlock)
+                        .onChange(of: password) { _ in
+                            store.clearUnlockError()
+                        }
+                    if let errorKey = store.unlockErrorKey {
+                        Text(language.text(errorKey))
+                            .font(.footnote)
+                            .foregroundStyle(.red)
+                    }
+                } footer: {
+                    if let origin = request.origin {
+                        Text(language.text(
+                            "patch.password_repo_contact",
+                            origin.repositoryName
+                        ))
+                    } else {
+                        Text(language.text("patch.password_once_message"))
+                    }
+                }
+            }
+            .navigationTitle(language.text("patch.unlock"))
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button(language.text("common.cancel")) { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button(language.text("patch.unlock"), action: unlock)
+                        .disabled(password.isEmpty || store.isBusy)
+                }
+            }
+        }
+    }
+
+    private func unlock() {
+        guard !password.isEmpty else { return }
+        store.unlock(password: password)
+    }
+}
+
+private struct PatchStorePresentationModifier: ViewModifier {
+    @ObservedObject var store: PatchProjectStore
+
+    func body(content: Content) -> some View {
+        content
+            .sheet(item: $store.passwordRequest, onDismiss: store.cancelUnlock) { request in
+                PatchUnlockView(store: store, request: request)
+            }
+    }
+}
+
+extension View {
+    func patchStorePresentation(_ store: PatchProjectStore) -> some View {
+        modifier(PatchStorePresentationModifier(store: store))
     }
 }
