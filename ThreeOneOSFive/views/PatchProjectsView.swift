@@ -2,7 +2,7 @@ import SwiftUI
 import UIKit
 import UniformTypeIdentifiers
 
-// MARK: - MÀN HÌNH QUẢN LÝ MOD MENU (CYBERPUNK & PHÂN LOẠI THƯ MỤC)
+// MARK: - MÀN HÌNH QUẢN LÝ MOD MENU (PHÂN LOẠI THƯ MỤC)
 struct PatchProjectsView: View {
     @Environment(\.appLanguage) private var language
     @EnvironmentObject private var store: PatchProjectStore
@@ -18,7 +18,6 @@ struct PatchProjectsView: View {
         NavigationStack {
             ZStack {
                 Color.black.ignoresSafeArea()
-                ParticleCanvasView() // Hiệu ứng hạt bụi bay nền đồng bộ với ContentView
                 
                 VStack(spacing: 0) {
                     // Tiêu đề & Nút đồng bộ thủ công từ máy chủ
