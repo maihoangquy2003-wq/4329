@@ -2,7 +2,7 @@ import SwiftUI
 import UIKit
 import UniformTypeIdentifiers
 
-// MARK: - MÀN HÌNH QUẢN LÝ MOD MENU (GIAO DIỆN CYBERPUNK GIỐNG CONTENTVIEW)
+// MARK: - MÀN HÌNH QUẢN LÝ MOD MENU (CYBERPUNK & PHÂN LOẠI THƯ MỤC)
 struct PatchProjectsView: View {
     @Environment(\.appLanguage) private var language
     @EnvironmentObject private var store: PatchProjectStore
@@ -15,118 +15,119 @@ struct PatchProjectsView: View {
     @State private var selectedGameTab: String = "com.dts.freefireth" // Mặc định FF Thường
     
     var body: some View {
-        ZStack {
-            Color.black.ignoresSafeArea()
-            ParticleCanvasView() // Hiệu ứng hạt bụi bay nền
-            
-            VStack(spacing: 0) {
-                // Tiêu đề & Nút làm mới dữ liệu từ server
-                HStack {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("TRUNG TÂM AIM & MOD")
-                            .font(.system(size: 18, weight: .black, design: .monospaced))
-                            .foregroundColor(.white)
-                            .shadow(color: .white, radius: 5)
-                        Text("Đồng bộ trực tuyến từ máy chủ")
-                            .font(.system(size: 10, design: .monospaced))
-                            .foregroundColor(.white.opacity(0.6))
-                    }
-                    Spacer()
-                    
-                    Button(action: fetchRemoteAim) {
-                        Image(systemName: isFetchingRemote ? "arrow.clockwise" : "arrow.triangle.2.circlepath")
-                            .font(.system(size: 16, weight: .bold))
-                            .foregroundColor(.white)
-                            .rotationEffect(.degrees(isFetchingRemote ? 360 : 0))
-                            .animation(isFetchingRemote ? Animation.linear(duration: 1).repeatForever(autoreverses: false) : .default, value: isFetchingRemote)
-                            .padding(10)
-                            .background(Circle().stroke(Color.white.opacity(0.3), lineWidth: 1))
-                    }
-                    .disabled(isFetchingRemote)
-                }
-                .padding(.horizontal, 20)
-                .padding(.top, 15)
+        NavigationStack {
+            ZStack {
+                Color.black.ignoresSafeArea()
+                ParticleCanvasView() // Hiệu ứng hạt bụi bay nền đồng bộ với ContentView
                 
-                // THANH CHỌN GAME (FF THƯỜNG / FF MAX) DÙNG CHUNG LOGO
-                HStack(spacing: 15) {
-                    GameTabButton(
-                        title: "Free Fire Thường",
-                        bundle: "com.dts.freefireth",
-                        iconUrl: "https://solitudepremium.click/ipa/proxy/free.jpg",
-                        isSelected: selectedGameTab == "com.dts.freefireth"
-                    ) {
-                        UXFeedback.click()
-                        selectedGameTab = "com.dts.freefireth"
-                    }
-                    
-                    GameTabButton(
-                        title: "Free Fire Max",
-                        bundle: "com.dts.freefiremax",
-                        iconUrl: "https://solitudepremium.click/ipa/proxy/free.jpg",
-                        isSelected: selectedGameTab == "com.dts.freefiremax"
-                    ) {
-                        UXFeedback.click()
-                        selectedGameTab = "com.dts.freefiremax"
-                    }
-                }
-                .padding(.horizontal, 20)
-                .padding(.vertical, 15)
-                
-                // DANH SÁCH CHỨC NĂNG PHÂN THEO THƯ MỤC
-                ScrollView(showsIndicators: false) {
-                    VStack(spacing: 20) {
-                        let filteredRemoteItems = remoteItems.filter { $0.target == selectedGameTab }
-                        let groupedItems = Dictionary(grouping: filteredRemoteItems, by: { $0.category })
+                VStack(spacing: 0) {
+                    // Tiêu đề & Nút đồng bộ thủ công từ máy chủ
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("TRUNG TÂM AIM & MOD")
+                                .font(.system(size: 18, weight: .black, design: .monospaced))
+                                .foregroundColor(.white)
+                                .shadow(color: .white, radius: 5)
+                            Text("Đồng bộ trực tuyến từ máy chủ")
+                                .font(.system(size: 10, design: .monospaced))
+                                .foregroundColor(.white.opacity(0.6))
+                        }
+                        Spacer()
                         
-                        if groupedItems.isEmpty {
-                            VStack(spacing: 12) {
-                                Image(systemName: "folder.badge.questionmark")
-                                    .font(.system(size: 50))
-                                    .foregroundColor(.white.opacity(0.3))
-                                Text("Chưa có tính năng nào cho bản này")
-                                    .font(.system(size: 13, design: .monospaced))
-                                    .foregroundColor(.white.opacity(0.6))
-                            }
-                            .frame(maxWidth: .infinity)
-                            .padding(.top, 60)
-                        } else {
-                            ForEach(groupedItems.keys.sorted(), id: \.self) { category in
-                                VStack(alignment: .leading, spacing: 10) {
-                                    // Tên Thư Mục (VD: Aim, Mod Skin)
-                                    HStack {
-                                        Image(systemName: "folder.fill").foregroundColor(.orange)
-                                        Text(category.uppercased())
-                                            .font(.system(size: 12, weight: .bold, design: .monospaced))
-                                            .foregroundColor(.white.opacity(0.8))
-                                    }
-                                    .padding(.horizontal, 4)
-                                    
-                                    // Các item bên trong thư mục
-                                    VStack(spacing: 0) {
-                                        ForEach(groupedItems[category] ?? [], id: \.id) { remoteItem in
-                                            // Tìm item tương ứng trong store local nếu đã tải
-                                            let localItem = store.items.first(where: { $0.project?.name == remoteItem.name })
-                                            
-                                            RemotePatchToggleRow(
-                                                remoteItem: remoteItem,
-                                                localItem: localItem,
-                                                store: store,
-                                                language: language
-                                            )
-                                            if remoteItem.id != groupedItems[category]?.last?.id {
-                                                Divider().background(Color.white.opacity(0.1))
-                                            }
-                                        }
-                                    }
-                                    .background(Color.black.opacity(0.7))
-                                    .cornerRadius(16)
-                                    .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.white.opacity(0.2), lineWidth: 1))
-                                }
-                            }
+                        Button(action: fetchRemoteAim) {
+                            Image(systemName: isFetchingRemote ? "arrow.clockwise" : "arrow.triangle.2.circlepath")
+                                .font(.system(size: 16, weight: .bold))
+                                .foregroundColor(.white)
+                                .rotationEffect(.degrees(isFetchingRemote ? 360 : 0))
+                                .animation(isFetchingRemote ? Animation.linear(duration: 1).repeatForever(autoreverses: false) : .default, value: isFetchingRemote)
+                                .padding(10)
+                                .background(Circle().stroke(Color.white.opacity(0.3), lineWidth: 1))
+                        }
+                        .disabled(isFetchingRemote)
+                    }
+                    .padding(.horizontal, 20)
+                    .padding(.top, 15)
+                    
+                    // THANH CHỌN GAME (FF THƯỜNG / FF MAX) DÙNG CHUNG LOGO FREE FIRE
+                    HStack(spacing: 15) {
+                        GameTabButton(
+                            title: "Free Fire Thường",
+                            bundle: "com.dts.freefireth",
+                            iconUrl: "https://solitudepremium.click/ipa/proxy/free.jpg",
+                            isSelected: selectedGameTab == "com.dts.freefireth"
+                        ) {
+                            UXFeedback.click()
+                            selectedGameTab = "com.dts.freefireth"
+                        }
+                        
+                        GameTabButton(
+                            title: "Free Fire Max",
+                            bundle: "com.dts.freefiremax",
+                            iconUrl: "https://solitudepremium.click/ipa/proxy/free.jpg",
+                            isSelected: selectedGameTab == "com.dts.freefiremax"
+                        ) {
+                            UXFeedback.click()
+                            selectedGameTab = "com.dts.freefiremax"
                         }
                     }
                     .padding(.horizontal, 20)
-                    .padding(.bottom, 100)
+                    .padding(.vertical, 15)
+                    
+                    // DANH SÁCH CHỨC NĂNG PHÂN THEO THƯ MỤC
+                    ScrollView(showsIndicators: false) {
+                        VStack(spacing: 20) {
+                            let filteredRemoteItems = remoteItems.filter { $0.target == selectedGameTab }
+                            let groupedItems = Dictionary(grouping: filteredRemoteItems, by: { $0.category })
+                            
+                            if groupedItems.isEmpty {
+                                VStack(spacing: 12) {
+                                    Image(systemName: "folder.badge.questionmark")
+                                        .font(.system(size: 50))
+                                        .foregroundColor(.white.opacity(0.3))
+                                    Text("Chưa có tính năng nào cho phiên bản này")
+                                        .font(.system(size: 12, design: .monospaced))
+                                        .foregroundColor(.white.opacity(0.6))
+                                }
+                                .frame(maxWidth: .infinity)
+                                .padding(.top, 80)
+                            } else {
+                                ForEach(groupedItems.keys.sorted(), id: \.self) { category in
+                                    VStack(alignment: .leading, spacing: 10) {
+                                        // Tiêu đề Thư Mục (VD: AIM, MOD SKIN)
+                                        HStack {
+                                            Image(systemName: "folder.fill").foregroundColor(.orange)
+                                            Text(category.uppercased())
+                                                .font(.system(size: 12, weight: .bold, design: .monospaced))
+                                                .foregroundColor(.white.opacity(0.8))
+                                        }
+                                        .padding(.horizontal, 4)
+                                        
+                                        // Danh sách item trong thư mục
+                                        VStack(spacing: 0) {
+                                            ForEach(groupedItems[category] ?? [], id: \.id) { remoteItem in
+                                                let localItem = store.items.first(where: { $0.project?.name == remoteItem.name })
+                                                
+                                                RemotePatchToggleRow(
+                                                    remoteItem: remoteItem,
+                                                    localItem: localItem,
+                                                    store: store,
+                                                    language: language
+                                                )
+                                                if remoteItem.id != groupedItems[category]?.last?.id {
+                                                    Divider().background(Color.white.opacity(0.1))
+                                                }
+                                            }
+                                        }
+                                        .background(Color.black.opacity(0.7))
+                                        .cornerRadius(16)
+                                        .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.white.opacity(0.2), lineWidth: 1))
+                                    }
+                                }
+                            }
+                        }
+                        .padding(.horizontal, 20)
+                        .padding(.bottom, 100)
+                    }
                 }
             }
         }
@@ -135,7 +136,7 @@ struct PatchProjectsView: View {
         }
     }
     
-    // Tải danh sách cấu hình từ PHP Server
+    // Tải cấu hình tự động từ PHP Server
     private func fetchRemoteAim() {
         guard !isFetchingRemote else { return }
         isFetchingRemote = true
@@ -153,7 +154,6 @@ struct PatchProjectsView: View {
                 let decoded = try JSONDecoder().decode([RemoteAimItem].self, from: data)
                 DispatchQueue.main.async {
                     self.remoteItems = decoded
-                    // Tự động tải ngầm các file chưa có về máy app
                     for item in decoded {
                         if !self.store.items.contains(where: { $0.project?.name == item.name }) {
                             self.downloadAndImport(item: item)
@@ -161,7 +161,7 @@ struct PatchProjectsView: View {
                     }
                 }
             } catch {
-                print("Lỗi giải mã JSON từ server")
+                print("Lỗi phân tích dữ liệu cấu hình từ server.")
             }
         }.resume()
     }
@@ -180,7 +180,7 @@ struct PatchProjectsView: View {
     }
 }
 
-// Model cấu trúc dữ liệu từ server trả về
+// Cấu trúc dữ liệu phản hồi từ API PHP
 struct RemoteAimItem: Codable, Identifiable {
     let id: String
     let name: String
@@ -189,7 +189,7 @@ struct RemoteAimItem: Codable, Identifiable {
     let url: String
 }
 
-// Nút chọn Game (Thường / Max)
+// Nút Tab chuyển đổi Game Thường / Max
 struct GameTabButton: View {
     let title: String
     let bundle: String
@@ -223,7 +223,7 @@ struct GameTabButton: View {
     }
 }
 
-// Hàng từng chức năng kèm nút gạt Áp dụng / Khôi phục
+// Hàng tùy chỉnh tính năng kèm công tắc Áp dụng / Khôi phục
 private struct RemotePatchToggleRow: View {
     let remoteItem: RemoteAimItem
     let localItem: PatchLibraryItem?
@@ -290,7 +290,9 @@ private struct RemotePatchToggleRow: View {
         Task.detached(priority: .userInitiated) {
             if turnOn {
                 do {
-                    guard let baseProject = local.project else { throw PatchPackageError.invalidFormat }
+                    guard let baseProject = local.project else {
+                        throw NSError(domain: "ZenithSolitude", code: -1, userInfo: [NSLocalizedDescriptionKey: "Invalid project"])
+                    }
                     let project = local.summary.schemaVersion >= 2 && local.canInspectContents ? try PatchProjectLibrary.synchronizeWorkspace(item: local) : baseProject
                     _ = try DevicePatchService.apply(project: project)
                     
@@ -328,7 +330,7 @@ private struct RemotePatchToggleRow: View {
     }
 }
 
-// Các extension bắt buộc để tương thích hệ thống cũ của bạn
+// Các thành phần mở rộng tương thích hệ thống mã nguồn gốc
 private struct PatchUnlockView: View {
     @Environment(\.appLanguage) private var language
     @Environment(\.dismiss) private var dismiss
