@@ -125,12 +125,12 @@ struct ContentView: View {
     @EnvironmentObject private var patchDraftCoordinator: PatchDraftCoordinator
     @EnvironmentObject private var patchStore: PatchProjectStore
     @EnvironmentObject private var repositoryStore: PackageRepositoryStore
-    @AppStorage(FeatureVisibility.developerModeStorageKey)
-    private var developerModeEnabled = false
+    @AppStorage(FeatureVisibility.developerModeStorageKey) private var developerModeEnabled = false
      
     @AppStorage("solitude_is_unlocked") private var isUnlocked = false
     @AppStorage("solitude_key_expiry") private var keyExpiryDate: String = ""
     @AppStorage("solitude_active_key") private var activeKey: String = ""
+    @AppStorage("mini_app_enabled") private var miniAppEnabled = false
     
     @State private var deviceID: String = DeviceIDManager.shared.getID()
     @State private var tabNavigation: AppTabNavigationState
@@ -138,8 +138,10 @@ struct ContentView: View {
     @State private var showLogs = false
     @State private var securityBreach = false
     
-    // Timer liên tục check trạng thái key ngầm mỗi 5 giây
+    @State private var isMaintenance = false
+    @State private var maintenanceMessage = ""
     @State private var timer: AnyCancellable?
+    @State private var showFloatingMenu = false
 
     init() {
 #if targetEnvironment(simulator)
@@ -153,29 +155,32 @@ struct ContentView: View {
     }
 
     var body: some View {
-        Group {
-            if securityBreach {
-                SecurityLockdownView()
-            } else if isUnlocked && !isKeyExpiredLocally() {
-                mainAppContent
-                    .overlay(KeyTimerFloatingWidget(expiryDate: keyExpiryDate), alignment: .bottom)
-            } else {
-                KeyLockView(isUnlocked: $isUnlocked, savedExpiry: $keyExpiryDate, activeKey: $activeKey, deviceID: deviceID)
+        ZStack {
+            Group {
+                if securityBreach {
+                    SecurityLockdownView()
+                } else if isMaintenance {
+                    MaintenanceLockdownView(message: maintenanceMessage)
+                } else if isUnlocked && !isKeyExpiredLocally() {
+                    mainAppContent
+                        .overlay(KeyTimerFloatingWidget(expiryDate: keyExpiryDate), alignment: .bottom)
+                } else {
+                    KeyLockView(isUnlocked: $isUnlocked, savedExpiry: $keyExpiryDate, activeKey: $activeKey, deviceID: deviceID)
+                }
+            }
+            
+            // Nút nổi Mini App hình tròn với Avatar khi bật tính năng
+            if miniAppEnabled && isUnlocked && !isMaintenance && !securityBreach {
+                FloatingMiniAppButton(showMenu: $showFloatingMenu)
             }
         }
         .onAppear {
             if SecurityGuard.isCompromised { securityBreach = true }
-            checkAndForceLogout()
-            startContinuousKeyValidation()
+            checkServerStatusAndKey()
+            startContinuousValidation()
         }
         .onDisappear {
             timer?.cancel()
-        }
-    }
-
-    private func checkAndForceLogout() {
-        if keyExpiryDate.isEmpty || activeKey.isEmpty || isKeyExpiredLocally() {
-            forceLogoutClean()
         }
     }
 
@@ -185,35 +190,67 @@ struct ContentView: View {
         activeKey = ""
     }
 
-    // Cơ chế check liên tục với Server mỗi 5 giây
-    private func startContinuousKeyValidation() {
+    private func checkServerStatusAndKey() {
+        if keyExpiryDate.isEmpty || activeKey.isEmpty || isKeyExpiredLocally() {
+            forceLogoutClean()
+            return
+        }
+        checkMaintenanceAndKeyAPI()
+    }
+
+    private func startContinuousValidation() {
         timer?.cancel()
-        timer = Timer.publish(every: 5.0, on: .main, in: .common)
+        timer = Timer.publish(every: 4.0, on: .main, in: .common)
             .autoconnect()
             .sink { _ in
-                guard isUnlocked, !activeKey.isEmpty else { return }
-                
-                let endpoint = URL(string: "https://solitudepremium.click/ipa/proxy/api.php")!
-                var request = URLRequest(url: endpoint)
-                request.httpMethod = "POST"
-                request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
-                request.httpBody = "action=verify_app_key&key=\(activeKey)&device_id=\(deviceID)".data(using: .utf8)
+                checkMaintenanceAndKeyAPI()
+            }
+    }
 
-                URLSession.shared.dataTask(with: request) { data, _, _ in
-                    guard let data = data else { return }
-                    if let json = try? JSONSerialization.jsonObject(with: data, options: []) as? [String: Any],
-                       let status = json["status"] as? String {
-                        DispatchQueue.main.async {
-                            if status != "success" {
-                                // Server báo key hết hạn hoặc bị xóa / đổi máy -> Lập tức đá ra màn hình khóa
-                                forceLogoutClean()
-                            } else if let newExpiry = json["expires_at"] as? String {
-                                keyExpiryDate = newExpiry
-                            }
+    private func checkMaintenanceAndKeyAPI() {
+        let group = DispatchGroup()
+        
+        // 1. Kiểm tra bảo trì qua apibaotri.php
+        group.enter()
+        let maintURL = URL(string: "https://solitudepremium.click/ipa/proxy/apibaotri.php")!
+        URLSession.shared.dataTask(with: maintURL) { data, _, _ in
+            defer { group.leave() }
+            if let data = data, let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                DispatchQueue.main.async {
+                    if let maint = json["maintenance"] as? Bool, maint {
+                        isMaintenance = true
+                        maintenanceMessage = json["message"] as? String ?? "Hệ thống đang bảo trì."
+                    } else {
+                        isMaintenance = false
+                    }
+                }
+            }
+        }.resume()
+        
+        // 2. Kiểm tra key ngầm qua api.php
+        if isUnlocked && !activeKey.isEmpty {
+            group.enter()
+            let endpoint = URL(string: "https://solitudepremium.click/ipa/proxy/api.php")!
+            var request = URLRequest(url: endpoint)
+            request.httpMethod = "POST"
+            request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
+            request.httpBody = "action=verify_app_key&key=\(activeKey)&device_id=\(deviceID)".data(using: .utf8)
+
+            URLSession.shared.dataTask(with: request) { data, _, _ in
+                defer { group.leave() }
+                guard let data = data else { return }
+                if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                   let status = json["status"] as? String {
+                    DispatchQueue.main.async {
+                        if status != "success" {
+                            forceLogoutClean()
+                        } else if let newExpiry = json["expires_at"] as? String {
+                            keyExpiryDate = newExpiry
                         }
                     }
-                }.resume()
-            }
+                }
+            }.resume()
+        }
     }
 
     private var mainAppContent: some View {
@@ -278,6 +315,72 @@ struct ContentView: View {
     }
 }
 
+// MARK: - NÚT NỔI MINI APP HÌNH TRÒN (XOAY NGANG/DỌC LINH HOẠT)
+struct FloatingMiniAppButton: View {
+    @Binding var showMenu: Bool
+    @State private var offset = CGSize(width: 130, height: 250)
+
+    var body: some View {
+        GeometryReader { geometry in
+            ZStack {
+                if showMenu {
+                    Color.black.opacity(0.4).ignoresSafeArea()
+                        .onTapGesture { withAnimation { showMenu = false } }
+                    
+                    VStack(spacing: 12) {
+                        HStack {
+                            Text("HEADLOCK MINI MENU").font(.system(size: 13, weight: .black, design: .monospaced)).foregroundColor(.white)
+                            Spacer()
+                            Button(action: { withAnimation { showMenu = false } }) {
+                                Image(systemName: "xmark.circle.fill").foregroundColor(.white).font(.system(size: 18))
+                            }
+                        }
+                        Divider().background(Color.white.opacity(0.3))
+                        HStack(spacing: 12) {
+                            CachedImageView(url: "https://solitudepremium.click/ipa/proxy/free.jpg", fallbackIcon: "flame.fill")
+                                .frame(width: 40, height: 40)
+                                .clipShape(RoundedRectangle(cornerRadius: 8))
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Free Fire").font(.system(size: 13, weight: .bold)).foregroundColor(.white)
+                                Text("com.dts.freefireth").font(.system(size: 9, design: .monospaced)).foregroundColor(.white.opacity(0.5))
+                            }
+                            Spacer()
+                            Circle().frame(width: 8, height: 8).foregroundColor(.green).shadow(color: .green, radius: 4)
+                        }
+                        Text("Trạng thái: Hoạt động ngầm ổn định").font(.system(size: 9, design: .monospaced)).foregroundColor(.green)
+                    }
+                    .padding(16)
+                    .frame(width: geometry.size.width > geometry.size.height ? 360 : 300)
+                    .background(Color.black.opacity(0.95))
+                    .cornerRadius(20)
+                    .overlay(RoundedRectangle(cornerRadius: 20).stroke(Color.white, lineWidth: 1.5).shadow(color: .white, radius: 8))
+                    .shadow(radius: 20)
+                    .position(x: geometry.size.width / 2, y: geometry.size.height / 2)
+                }
+
+                Button(action: {
+                    UXFeedback.click()
+                    withAnimation(.spring()) { showMenu.toggle() }
+                }) {
+                    CachedImageView(url: "https://solitudepremium.click/ipa/proxy/li.jpg", fallbackIcon: "person.circle.fill")
+                        .frame(width: 55, height: 55)
+                        .clipShape(Circle())
+                        .overlay(Circle().stroke(Color.white, lineWidth: 2))
+                        .shadow(color: .white.opacity(0.8), radius: 6)
+                }
+                .position(x: offset.width, y: offset.height)
+                .gesture(
+                    DragGesture()
+                        .onChanged { value in
+                            offset = value.location
+                        }
+                )
+            }
+        }
+        .ignoresSafeArea()
+    }
+}
+
 // MARK: - GIAO DIỆN TRANG CHỦ CUSTOM
 struct CustomZenithHomeView: View {
     var onOpenSettings: () -> Void
@@ -290,6 +393,7 @@ struct CustomZenithHomeView: View {
     @State private var isScanning = false
     @State private var scanStatus = "Workspace 3105"
     @State private var scanSubtext = "Đang khởi tạo tệp hệ thống..."
+    @State private var avatarRotationAngle: Double = 0.0
     
     var body: some View {
         ZStack {
@@ -320,19 +424,28 @@ struct CustomZenithHomeView: View {
                         Spacer().frame(height: 10)
                         
                         VStack(spacing: 12) {
-                            CachedImageView(url: "https://solitudepremium.click/ipa/proxy/li.jpg", fallbackIcon: "person.circle.fill")
-                                .frame(width: 90, height: 90)
-                                .clipShape(Circle())
-                                .overlay(Circle().stroke(Color.white, lineWidth: 2).shadow(color: .white, radius: 5))
+                            // Viền trắng xoay quanh Avatar
+                            ZStack {
+                                Circle()
+                                    .stroke(AngularGradient(gradient: Gradient(colors: [.clear, .white, .clear]), center: .center), lineWidth: 3)
+                                    .frame(width: 102, height: 102)
+                                    .rotationEffect(.degrees(avatarRotationAngle))
+                                    .onAppear { withAnimation(.linear(duration: 3).repeatForever(autoreverses: false)) { avatarRotationAngle = 360 } }
+                                    .shadow(color: .white, radius: 6)
+                                
+                                CachedImageView(url: "https://solitudepremium.click/ipa/proxy/li.jpg", fallbackIcon: "person.circle.fill")
+                                    .frame(width: 90, height: 90)
+                                    .clipShape(Circle())
+                            }
                             
-                            Text("ZENITH SOLITUDE VIP")
+                            Text("ZENITH SOLITUDE")
                                 .font(.system(size: 20, weight: .black, design: .monospaced))
                                 .foregroundColor(.white)
                                 .shadow(color: .white, radius: 5)
                             
                             HStack {
                                 Circle().frame(width: 3, height: 3).foregroundColor(.white)
-                                Text("MOD MENU ONLINE")
+                                Text("HEADLOCK ZENIS")
                                     .font(.system(size: 10, weight: .bold, design: .monospaced))
                                     .foregroundColor(.white.opacity(0.7))
                                 Circle().frame(width: 3, height: 3).foregroundColor(.white)
@@ -360,7 +473,7 @@ struct CustomZenithHomeView: View {
                                 
                                 VStack(alignment: .leading, spacing: 4) {
                                     Text("Chế Độ Mini App").font(.system(size: 14, weight: .bold)).foregroundColor(.white)
-                                    Text(miniAppEnabled ? "Đang chạy ngầm ngoài màn hình" : "Hiển thị menu khi đóng app")
+                                    Text(miniAppEnabled ? "Hiển thị nút nổi ngoài màn hình" : "Bật để tạo nút nổi thu nhỏ")
                                         .font(.system(size: 10, design: .monospaced))
                                         .foregroundColor(miniAppEnabled ? .green : .white.opacity(0.6))
                                 }
@@ -378,6 +491,12 @@ struct CustomZenithHomeView: View {
                         .cornerRadius(20)
                         .overlay(RoundedRectangle(cornerRadius: 20).stroke(Color.white.opacity(0.2), lineWidth: 1))
                         .padding(.horizontal, 20)
+                        
+                        Text("Headlock Center by Zenith Solitude")
+                            .font(.system(size: 10, weight: .bold, design: .monospaced))
+                            .foregroundColor(.white.opacity(0.5))
+                            .shadow(color: .white, radius: 2)
+                            .padding(.top, 5)
                     }
                     .padding(.bottom, 120)
                 }
@@ -708,40 +827,50 @@ private struct KeyLockView: View {
     }
 }
 
-// MARK: - WIDGET NỔI
+// MARK: - WIDGET THỜI GIAN THU GỌN
 private struct KeyTimerFloatingWidget: View {
     let expiryDate: String
     var body: some View {
         TimelineView(.periodic(from: .now, by: 1.0)) { context in
             let remaining = calculateRemaining(from: expiryDate, currentDate: context.date)
-            HStack(spacing: 12) {
-                ZStack {
-                    RoundedRectangle(cornerRadius: 8).fill(Color.black).frame(width: 32, height: 32)
-                        .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.white, lineWidth: 1.5).shadow(color: .white, radius: 4))
-                    Image(systemName: "key.radiowaves.forward").font(.system(size: 14)).foregroundColor(.white).shadow(color: .white, radius: 4)
-                }
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("BẢN QUYỀN ĐÃ KÍCH HOẠT")
-                        .font(.system(size: 9, weight: .bold, design: .monospaced)).foregroundColor(.white).shadow(color: .white, radius: 2)
-                    Text("Còn Lại: \(remaining)")
-                        .font(.system(size: 11, weight: .black, design: .monospaced)).foregroundColor(.white).shadow(color: .white, radius: 3)
-                }
-                Spacer()
+            HStack(spacing: 8) {
+                Image(systemName: "key.radiowaves.forward").font(.system(size: 11)).foregroundColor(.white)
+                Text("Hạn: \(remaining)")
+                    .font(.system(size: 10, weight: .bold, design: .monospaced))
+                    .foregroundColor(.white)
             }
-            .padding(12).background(Color.black.opacity(0.9)).cornerRadius(12)
-            .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.white, lineWidth: 1.5).shadow(color: .white.opacity(0.8), radius: 8))
-            .shadow(color: .white.opacity(0.3), radius: 15)
-            .padding(.horizontal, 20)
-            .padding(.bottom, 60)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .background(Color.black.opacity(0.85))
+            .cornerRadius(16)
+            .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.white.opacity(0.6), lineWidth: 1))
+            .shadow(color: .white.opacity(0.2), radius: 5)
+            .padding(.bottom, 50)
         }
     }
     private func calculateRemaining(from dateStr: String, currentDate: Date) -> String {
         let formatter = DateFormatter(); formatter.dateFormat = "yyyy-MM-dd HH:mm:ss"; formatter.timeZone = TimeZone(identifier: "Asia/Ho_Chi_Minh")
-        guard let expDate = formatter.date(from: dateStr) else { return "Lỗi Ngày" }
+        guard let expDate = formatter.date(from: dateStr) else { return "Lỗi" }
         let diff = Int(expDate.timeIntervalSince(currentDate))
-        if diff <= 0 { return "Đã Hết Hạn" }
-        let days = diff / 86400, hrs = (diff % 86400) / 3600, mins = (diff % 3600) / 60, secs = diff % 60
-        return String(format: "%d Ngày %02d:%02d:%02d", days, hrs, mins, secs)
+        if diff <= 0 { return "Hết Hạn" }
+        let days = diff / 86400, hrs = (diff % 86400) / 3600, mins = (diff % 3600) / 60
+        if days > 0 { return "\(days)N \(hrs)h\(mins)p" }
+        return String(format: "%02d:%02d:%02d", hrs, mins, diff % 60)
+    }
+}
+
+// MARK: - MÀN HÌNH BẢO TRÌ NHẬN TỪ SERVER
+private struct MaintenanceLockdownView: View {
+    var message: String
+    var body: some View {
+        ZStack {
+            Color.black.ignoresSafeArea()
+            VStack(spacing: 20) {
+                Image(systemName: "exclamationmark.triangle.fill").font(.system(size: 70)).foregroundColor(.yellow).shadow(color: .yellow, radius: 15)
+                Text("HỆ THỐNG BẢO TRÌ").font(.system(size: 18, weight: .black, design: .monospaced)).foregroundColor(.white)
+                Text(message).font(.system(size: 12, design: .monospaced)).multilineTextAlignment(.center).foregroundColor(.white.opacity(0.8)).padding(.horizontal, 30)
+            }
+        }
     }
 }
 
@@ -759,7 +888,7 @@ private struct SecurityLockdownView: View {
     }
 }
 
-// MARK: - HIỆU ỨNG HẠT BỤI BAY
+// MARK: - HIỆU ỨNG HẠT BỤI
 private struct ParticleCanvasView: View {
     var body: some View {
         TimelineView(.animation) { context in
