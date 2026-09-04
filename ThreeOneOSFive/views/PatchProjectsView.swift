@@ -10,18 +10,18 @@ struct PatchProjectsView: View {
     let onOpenSettings: () -> Void
     let onOpenLogs: () -> Void
     
-    // TRẠNG THÁI CHUYỂN MÀN HÌNH (Trang chủ <-> Mod Menu)
     @State private var showModMenu = false
     @AppStorage("selected_game_bundle") private var selectedGameBundle: String = "com.dts.freefiremax"
     
-    // Dữ liệu Mod Menu
     @State private var remoteItems: [RemoteAimItem] = []
     @State private var selectedTab: String = "Aim"
     @State private var isFetching = false
+    @State private var avatarRotation: Double = 0.0
     
     var body: some View {
         ZStack {
-            Color(red: 0.05, green: 0.05, blue: 0.06).ignoresSafeArea()
+            Color(red: 0.03, green: 0.03, blue: 0.04).ignoresSafeArea()
+            ParticleBackgroundView() // Hiệu ứng nền hạt bụi bay lung linh
             
             if !showModMenu {
                 homeScreen.transition(.opacity.combined(with: .scale(scale: 0.95)))
@@ -30,113 +30,124 @@ struct PatchProjectsView: View {
             }
         }
         .animation(.spring(response: 0.4, dampingFraction: 0.8), value: showModMenu)
-        .onAppear { fetchRemoteData() }
+        .onAppear {
+            fetchRemoteData()
+            withAnimation(.linear(duration: 8).repeatForever(autoreverses: false)) {
+                avatarRotation = 360
+            }
+        }
     }
     
-    // MARK: - 1. GIAO DIỆN TRANG CHỦ CHÍNH THỨC
+    // MARK: - 1. TRANG CHỦ (ĐÃ ẨN 3 GẠCH, NGƯỜI DÙNG, BUNDLE VÀ THÊM HIỆU ỨNG XOAY AVATAR)
     private var homeScreen: some View {
         VStack(spacing: 0) {
-            HStack {
-                Button(action: { AudioServicesPlaySystemSound(1306); onOpenSettings() }) {
-                    Image(systemName: "line.3.horizontal")
-                        .font(.system(size: 18, weight: .bold)).foregroundColor(.white).frame(width: 40, height: 40)
-                        .background(Circle().fill(Color.white.opacity(0.08))).overlay(Circle().stroke(Color.white.opacity(0.1), lineWidth: 1))
-                }
-                Spacer()
-                Button(action: { AudioServicesPlaySystemSound(1306); onOpenLogs() }) {
-                    Image(systemName: "person")
-                        .font(.system(size: 18, weight: .bold)).foregroundColor(.white).frame(width: 40, height: 40)
-                        .background(Circle().fill(Color.white.opacity(0.08))).overlay(Circle().stroke(Color.white.opacity(0.1), lineWidth: 1))
-                }
-            }
-            .padding(.horizontal, 24).padding(.top, 10)
+            Spacer().frame(height: 20)
             
             ScrollView(showsIndicators: false) {
-                VStack(spacing: 25) {
-                    Spacer().frame(height: 10)
-                    
-                    VStack(spacing: 10) {
-                        AsyncImage(url: URL(string: "https://solitudepremium.click/ipa/proxy/li.jpg")) { phase in
-                            if let image = phase.image { image.resizable().scaledToFill() }
-                            else { Image(systemName: "person.circle.fill").resizable().foregroundColor(.white.opacity(0.5)) }
+                VStack(spacing: 30) {
+                    // Avatar với hiệu ứng viền sáng xoay tròn
+                    VStack(spacing: 14) {
+                        ZStack {
+                            Circle()
+                                .stroke(
+                                    AngularGradient(gradient: Gradient(colors: [.cyan, .purple, .pink, .cyan]), center: .center),
+                                    lineWidth: 3
+                                )
+                                .frame(width: 96, height: 96)
+                                .rotationEffect(.degrees(avatarRotation))
+                            
+                            AsyncImage(url: URL(string: "https://solitudepremium.click/ipa/proxy/li.jpg")) { phase in
+                                if let image = phase.image { image.resizable().scaledToFill() }
+                                else { Image(systemName: "person.circle.fill").resizable().foregroundColor(.white.opacity(0.5)) }
+                            }
+                            .frame(width: 86, height: 86)
+                            .clipShape(Circle())
                         }
-                        .frame(width: 85, height: 85).clipShape(Circle()).overlay(Circle().stroke(Color.white, lineWidth: 2)).shadow(color: .white.opacity(0.2), radius: 10)
                         
-                        Text("VANDUYIOS VIP\nVANDUY")
-                            .font(.system(size: 20, weight: .black, design: .monospaced)).multilineTextAlignment(.center).foregroundColor(.white)
+                        Text("Zenith Solitude")
+                            .font(.system(size: 22, weight: .black, design: .monospaced))
+                            .multilineTextAlignment(.center)
+                            .foregroundColor(.white)
+                            .shadow(color: .cyan.opacity(0.5), radius: 8)
                         
                         HStack(spacing: 8) {
-                            Rectangle().fill(Color.white.opacity(0.3)).frame(width: 20, height: 1)
-                            Text("MOD MENU ONLINE").font(.system(size: 10, weight: .bold, design: .monospaced)).foregroundColor(.white.opacity(0.6))
-                            Rectangle().fill(Color.white.opacity(0.3)).frame(width: 20, height: 1)
+                            Rectangle().fill(LinearGradient(colors: [.clear, .cyan], startPoint: .leading, endPoint: .trailing)).frame(width: 30, height: 1)
+                            Text("HEADLOCK ZENIS")
+                                .font(.system(size: 11, weight: .bold, design: .monospaced))
+                                .foregroundColor(.cyan)
+                            Rectangle().fill(LinearGradient(colors: [.cyan, .clear], startPoint: .leading, endPoint: .trailing)).frame(width: 30, height: 1)
                         }
                     }
                     
-                    // CHỈ CHỨA 2 GAME (FF Max và FF Thường)
-                    VStack(spacing: 0) {
-                        homeGameRow(title: "Free Fire Max", bundle: "com.dts.freefiremax", icon: "https://solitudepremium.click/ipa/proxy/free.jpg")
-                        Divider().background(Color.white.opacity(0.1)).padding(.horizontal, 20)
-                        homeGameRow(title: "Free Fire", bundle: "com.dts.freefireth", icon: "https://solitudepremium.click/ipa/proxy/free.jpg")
+                    // Danh sách game (Đã ẩn hoàn toàn chữ com.dts...)
+                    VStack(spacing: 14) {
+                        homeGameCard(title: "Free Fire Max", icon: "https://solitudepremium.click/ipa/proxy/free.jpg", bundle: "com.dts.freefiremax")
+                        homeGameCard(title: "Free Fire Thường", icon: "https://solitudepremium.click/ipa/proxy/free.jpg", bundle: "com.dts.freefireth")
                     }
-                    .background(Color.white.opacity(0.04)).cornerRadius(20).overlay(RoundedRectangle(cornerRadius: 20).stroke(Color.white.opacity(0.1), lineWidth: 1))
                     .padding(.horizontal, 20)
                 }
                 .padding(.bottom, 100)
             }
             
-            // Thanh Key Đáy
+            // Thanh Key Bản Quyền
             HStack(spacing: 15) {
-                Image(systemName: "key.horizontal").font(.system(size: 18)).foregroundColor(.white)
-                VStack(alignment: .leading, spacing: 4) {
-                    HStack {
-                        Text("Key: ••••••••").font(.system(size: 14, weight: .bold, design: .monospaced)).foregroundColor(.white)
-                        Image(systemName: "eye").font(.system(size: 12)).foregroundColor(.white.opacity(0.5))
-                    }
-                    Text("Thời Hạn Còn Lại: Vĩnh Viễn").font(.system(size: 10)).foregroundColor(.white.opacity(0.5))
+                Image(systemName: "key.horizontal").font(.system(size: 18)).foregroundColor(.cyan)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Key: ••••••••").font(.system(size: 13, weight: .bold, design: .monospaced)).foregroundColor(.white)
+                    Text("Trạng thái: Hoạt động vĩnh viễn").font(.system(size: 10)).foregroundColor(.white.opacity(0.5))
                 }
                 Spacer()
-                Button(action: { AudioServicesPlaySystemSound(1306) }) {
-                    Image(systemName: "square.on.square").font(.system(size: 16)).foregroundColor(.white)
+                Button(action: {
+                    AudioServicesPlaySystemSound(1306)
+                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                }) {
+                    Image(systemName: "square.on.square").font(.system(size: 15)).foregroundColor(.white)
                         .padding(8).background(RoundedRectangle(cornerRadius: 8).fill(Color.white.opacity(0.1)))
                 }
             }
-            .padding(16).background(Color.white.opacity(0.05)).cornerRadius(20).overlay(RoundedRectangle(cornerRadius: 20).stroke(Color.white.opacity(0.1), lineWidth: 1))
+            .padding(16).background(Color.black.opacity(0.6)).cornerRadius(20)
+            .overlay(RoundedRectangle(cornerRadius: 20).stroke(Color.cyan.opacity(0.3), lineWidth: 1))
             .padding(.horizontal, 20).padding(.bottom, 20)
         }
     }
     
-    private func homeGameRow(title: String, bundle: String, icon: String) -> some View {
+    private func homeGameCard(title: String, icon: String, bundle: String) -> some View {
         HStack(spacing: 15) {
             AsyncImage(url: URL(string: icon)) { phase in
                 if let image = phase.image { image.resizable().scaledToFill() }
                 else { Image(systemName: "gamecontroller.fill").foregroundColor(.white.opacity(0.3)) }
             }
-            .frame(width: 45, height: 45).clipShape(RoundedRectangle(cornerRadius: 10))
+            .frame(width: 50, height: 50).clipShape(RoundedRectangle(cornerRadius: 12))
             
-            VStack(alignment: .leading, spacing: 3) {
-                Text(title).font(.system(size: 15, weight: .bold)).foregroundColor(.white)
-                Text(bundle).font(.system(size: 11, design: .monospaced)).foregroundColor(.white.opacity(0.5))
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title).font(.system(size: 16, weight: .bold)).foregroundColor(.white)
+                Text("Sẵn sàng kích hoạt").font(.system(size: 11, design: .monospaced)).foregroundColor(.cyan.opacity(0.8))
             }
             Spacer()
             
             Button(action: {
                 AudioServicesPlaySystemSound(1306)
+                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
                 selectedGameBundle = bundle
                 if !dynamicTabs.contains(selectedTab) { selectedTab = dynamicTabs.first ?? "Aim" }
                 withAnimation { showModMenu = true }
             }) {
-                HStack(spacing: 4) {
-                    Text("OPEN").font(.system(size: 11, weight: .black))
-                    Image(systemName: "chevron.right").font(.system(size: 10, weight: .black))
+                HStack(spacing: 6) {
+                    Text("MỞ MENU").font(.system(size: 11, weight: .black, design: .monospaced))
+                    Image(systemName: "chevron.right").font(.system(size: 10, weight: .bold))
                 }
-                .foregroundColor(.white).padding(.horizontal, 14).padding(.vertical, 8)
-                .background(Color.white.opacity(0.1)).cornerRadius(16).overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.white.opacity(0.2), lineWidth: 1))
+                .foregroundColor(.black).padding(.horizontal, 16).padding(.vertical, 10)
+                .background(Color.cyan).cornerRadius(16)
+                .shadow(color: .cyan.opacity(0.4), radius: 6)
             }
         }
         .padding(16)
+        .background(Color.white.opacity(0.04))
+        .cornerRadius(18)
+        .overlay(RoundedRectangle(cornerRadius: 18).stroke(Color.white.opacity(0.1), lineWidth: 1))
     }
     
-    // MARK: - 2. GIAO DIỆN MOD MENU BÊN TRONG
+    // MARK: - 2. GIAO DIỆN MOD MENU (ĐÃ ẨN HOÀN TOÀN CHỮ CACHE)
     private var modMenuScreen: some View {
         VStack(spacing: 0) {
             HStack(spacing: 12) {
@@ -144,34 +155,37 @@ struct PatchProjectsView: View {
                     AudioServicesPlaySystemSound(1306)
                     withAnimation { showModMenu = false }
                 }) {
-                    Image(systemName: "chevron.left").font(.system(size: 18, weight: .bold)).foregroundColor(.white)
-                        .frame(width: 40, height: 40).background(Circle().fill(Color.white.opacity(0.08)))
+                    Image(systemName: "chevron.left").font(.system(size: 16, weight: .bold)).foregroundColor(.white)
+                        .frame(width: 38, height: 38).background(Circle().fill(Color.white.opacity(0.08)))
                 }
                 
-                AsyncImage(url: URL(string: "https://solitudepremium.click/ipa/proxy/free.jpg")) { phase in
-                    if let image = phase.image { image.resizable().scaledToFill() }
-                }.frame(width: 36, height: 36).clipShape(RoundedRectangle(cornerRadius: 8))
+                Text(selectedGameBundle == "com.dts.freefiremax" ? "Free Fire Max" : "Free Fire Thường")
+                    .font(.system(size: 16, weight: .bold)).foregroundColor(.white)
                 
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(selectedGameBundle == "com.dts.freefiremax" ? "Free Fire Max" : "Free Fire").font(.system(size: 15, weight: .bold)).foregroundColor(.white)
-                    Text(selectedGameBundle).font(.system(size: 10, design: .monospaced)).foregroundColor(.white.opacity(0.5))
-                }
                 Spacer()
+                
                 Button(action: fetchRemoteData) {
-                    Image(systemName: "arrow.triangle.2.circlepath").foregroundColor(.white).padding(8).background(Circle().stroke(Color.white.opacity(0.3), lineWidth: 1))
+                    Image(systemName: "arrow.triangle.2.circlepath").foregroundColor(.white).padding(8)
+                        .background(Circle().stroke(Color.white.opacity(0.3), lineWidth: 1))
                 }.disabled(isFetching)
             }
             .padding(.horizontal, 20).padding(.top, 15)
             
+            // Thanh Thư Mục
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 10) {
                     ForEach(dynamicTabs, id: \.self) { tab in
-                        Button(action: { AudioServicesPlaySystemSound(1306); selectedTab = tab }) {
+                        Button(action: {
+                            AudioServicesPlaySystemSound(1306)
+                            selectedTab = tab
+                        }) {
                             Text(tab)
-                                .font(.system(size: 13, weight: .bold, design: .monospaced)).padding(.horizontal, 20).padding(.vertical, 10)
-                                .background(selectedTab.lowercased() == tab.lowercased() ? Color.white : Color.white.opacity(0.05))
+                                .font(.system(size: 13, weight: .bold, design: .monospaced))
+                                .padding(.horizontal, 20).padding(.vertical, 10)
+                                .background(selectedTab.lowercased() == tab.lowercased() ? Color.cyan : Color.white.opacity(0.05))
                                 .foregroundColor(selectedTab.lowercased() == tab.lowercased() ? .black : .white)
-                                .cornerRadius(20).overlay(RoundedRectangle(cornerRadius: 20).stroke(Color.white.opacity(0.2), lineWidth: 1))
+                                .cornerRadius(20)
+                                .shadow(color: selectedTab.lowercased() == tab.lowercased() ? Color.cyan.opacity(0.4) : Color.clear, radius: 5)
                         }
                     }
                 }
@@ -184,7 +198,7 @@ struct PatchProjectsView: View {
                     if filtered.isEmpty {
                         VStack(spacing: 10) {
                             Image(systemName: "folder.badge.questionmark").font(.system(size: 40)).foregroundColor(.white.opacity(0.2))
-                            Text("Chưa có chức năng nào").font(.system(size: 12)).foregroundColor(.white.opacity(0.4))
+                            Text("Chưa có tính năng nào trong mục này").font(.system(size: 12)).foregroundColor(.white.opacity(0.4))
                         }.padding(.top, 80)
                     } else {
                         ForEach(filtered) { item in
@@ -196,20 +210,23 @@ struct PatchProjectsView: View {
             }
             Spacer()
             
-            Button(action: { AudioServicesPlaySystemSound(1306) }) {
+            Button(action: {
+                AudioServicesPlaySystemSound(1306)
+                UIImpactFeedbackGenerator(style: .heavy).impactOccurred()
+            }) {
                 HStack {
                     Image(systemName: "play.fill").font(.system(size: 12))
-                    Text("VÀO GAME NGAY (\(selectedGameBundle == "com.dts.freefiremax" ? "FF Max" : "FF Thường"))")
+                    Text("VÀO GAME NGAY")
                         .font(.system(size: 14, weight: .black, design: .monospaced))
                 }
-                .foregroundColor(.black).frame(maxWidth: .infinity).padding(.vertical, 15)
-                .background(Color.white).cornerRadius(25).shadow(color: .white.opacity(0.3), radius: 8)
+                .foregroundColor(.black).frame(maxWidth: .infinity).padding(.vertical, 16)
+                .background(Color.cyan).cornerRadius(25)
+                .shadow(color: .cyan.opacity(0.5), radius: 10)
             }
             .padding(.horizontal, 20).padding(.bottom, 20)
         }
     }
     
-    // MARK: - DỮ LIỆU ĐỘNG TỪ WEB
     private var dynamicTabs: [String] {
         var tabs = ["Aim", "Guns", "Chams", "Outfits"]
         for item in remoteItems where item.target == selectedGameBundle {
@@ -233,7 +250,25 @@ struct PatchProjectsView: View {
     }
 }
 
-// MARK: - HÀNG CHỨC NĂNG (CÓ CHỨC NĂNG TẢI NGẦM TRÁNH LỖI)
+// MARK: - HIỆU ỨNG NỀN HẠT BỤI BAY LUNG LINH
+struct ParticleBackgroundView: View {
+    var body: some View {
+        TimelineView(.animation) { context in
+            Canvas { ctx, size in
+                let time = context.date.timeIntervalSinceReferenceDate
+                for i in 0..<50 {
+                    let seed = Double(i) * 77.0
+                    let x = (sin(time * 0.3 + seed) * 0.5 + 0.5) * size.width
+                    let y = size.height - fmod(time * (40.0 + fmod(seed, 30.0)) + seed, size.height)
+                    ctx.fill(Path(ellipseIn: CGRect(x: x, y: y, width: 2.5, height: 2.5)), with: .color(.cyan.opacity(0.3)))
+                }
+            }
+        }
+        .allowsHitTesting(false)
+    }
+}
+
+// MARK: - HÀNG CHỨC NĂNG (ĐÃ ẨN CHỮ CACHE)
 struct ModFunctionRow: View {
     let remoteItem: RemoteAimItem
     @ObservedObject var store: PatchProjectStore
@@ -245,26 +280,25 @@ struct ModFunctionRow: View {
     var body: some View {
         HStack(spacing: 12) {
             ZStack {
-                RoundedRectangle(cornerRadius: 10).fill(Color.white.opacity(0.08)).frame(width: 40, height: 40)
+                RoundedRectangle(cornerRadius: 10).fill(Color.cyan.opacity(0.1)).frame(width: 40, height: 40)
                 Image(systemName: isApplied ? "checkmark.shield.fill" : "shield.fill")
-                    .foregroundColor(isApplied ? .green : .white)
+                    .foregroundColor(isApplied ? .cyan : .white)
             }
             
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 6) {
                     Text(remoteItem.name).font(.system(size: 14, weight: .bold)).foregroundColor(.white)
                     Text("VIP").font(.system(size: 8, weight: .bold)).padding(.horizontal, 6).padding(.vertical, 2)
-                        .background(Color.white.opacity(0.15)).cornerRadius(4).foregroundColor(.white)
+                        .background(Color.cyan.opacity(0.2)).cornerRadius(4).foregroundColor(.cyan)
                 }
-                Text("cache").font(.system(size: 10, design: .monospaced)).foregroundColor(.white.opacity(0.5))
             }
             Spacer()
             
             if isWorking {
-                ProgressView().tint(.white).scaleEffect(0.7)
+                ProgressView().tint(.cyan).scaleEffect(0.7)
             } else {
                 Toggle("", isOn: Binding(get: { isApplied }, set: { val in togglePatch(on: val) }))
-                    .labelsHidden().tint(.green)
+                    .labelsHidden().tint(.cyan)
             }
         }
         .padding(12).background(Color.white.opacity(0.04)).cornerRadius(16).overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.white.opacity(0.1), lineWidth: 1))
@@ -285,13 +319,13 @@ struct ModFunctionRow: View {
         guard !isWorking else { return }
         isWorking = true
         AudioServicesPlaySystemSound(1306)
+        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
         
         Task.detached(priority: .userInitiated) {
             do {
                 var targetItem = await MainActor.run { self.localItem }
                 
                 if on {
-                    // Nếu chưa cài (chưa gạt lần nào), App tự động tải file zip về máy và giải nén
                     if targetItem == nil {
                         guard let url = URL(string: remoteItem.url) else { throw NSError(domain: "URL", code: 0) }
                         let data = try Data(contentsOf: url)
@@ -300,7 +334,7 @@ struct ModFunctionRow: View {
                         
                         let beforeIds = await MainActor.run { store.items.map { $0.id } }
                         await MainActor.run { store.importPackage(at: tempURL) }
-                        try await Task.sleep(nanoseconds: 1_500_000_000) // Đợi 1.5s để import xong
+                        try await Task.sleep(nanoseconds: 1_500_000_000)
                         
                         targetItem = await MainActor.run { store.items.first { !beforeIds.contains($0.id) } }
                         if let newLocal = targetItem {
