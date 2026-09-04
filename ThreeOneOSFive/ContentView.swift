@@ -160,23 +160,37 @@ struct ContentView: View {
                 KeyLockView(isUnlocked: $isUnlocked, savedExpiry: $keyExpiryDate, activeKey: $activeKey, deviceID: deviceID)
             }
         }
-        .onAppear { if SecurityGuard.isCompromised { securityBreach = true } }
+        .onAppear {
+            if SecurityGuard.isCompromised {
+                securityBreach = true
+            }
+            // Kiểm tra ngay khi app hiển thị: Nếu key hết hạn hoặc dữ liệu bị trống/xóa thì tự động reset và đăng xuất
+            checkAndForceLogoutIfNeeded()
+        }
+    }
+
+    private func checkAndForceLogoutIfNeeded() {
+        if keyExpiryDate.isEmpty || activeKey.isEmpty || isKeyExpired() {
+            isUnlocked = false
+            keyExpiryDate = ""
+            activeKey = ""
+        }
     }
 
     private var mainAppContent: some View {
         Group { if horizontalSizeClass == .regular { regularLayout } else { compactLayout } }
-        .tint(AppTheme.accent)
-        .imageScale(.small)
-        .sheet(isPresented: $showSettings) { SettingsView() }
-        .sheet(isPresented: $showLogs) { LogView() }
-        .patchStorePresentation(patchStore)
-        .repositoryStorePresentation(repositoryStore, patchStore: patchStore)
+            .tint(AppTheme.accent)
+            .imageScale(.small)
+            .sheet(isPresented: $showSettings) { SettingsView() }
+            .sheet(isPresented: $showLogs) { LogView() }
+            .patchStorePresentation(patchStore)
+            .repositoryStorePresentation(repositoryStore, patchStore: patchStore)
     }
 
     private var compactLayout: some View {
         TabView(selection: tabSelection) {
             ForEach(featureVisibility.visibleSections.filter { $0 == .home || $0 == .installed }) { section in
-                sectionContent(section).tabItem { CompactTabLabel(title: language.text(section.titleKey), systemImage: section.systemImage) }.tag(section.rawValue)
+                sectionContent(section).tabItem { CompactTabLabel(title: section == .installed ? "HEADLOCK" : language.text(section.titleKey), systemImage: section.systemImage) }.tag(section.rawValue)
             }
         }
     }
@@ -186,13 +200,13 @@ struct ContentView: View {
             List {
                 ForEach(featureVisibility.visibleSections.filter { $0 == .home || $0 == .installed }) { section in
                     Button { withAnimation(.easeInOut(duration: 0.18)) { tabNavigation.select(section.rawValue) } } label: {
-                        Label(language.text(section.titleKey), systemImage: section.systemImage)
+                        Label(section == .installed ? "HEADLOCK" : language.text(section.titleKey), systemImage: section.systemImage)
                             .fontWeight(section.rawValue == tabNavigation.selectedTab ? .semibold : .regular)
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .contentShape(Rectangle())
                     }.buttonStyle(.plain)
                 }
-            }.navigationTitle("3105")
+            }.navigationTitle("HEADLOCK")
         } detail: { sectionContent(selectedVisibleSection) }
     }
 
@@ -405,6 +419,12 @@ private struct KeyLockView: View {
                 }
                 .padding(.bottom, 40)
             }
+        }
+        .onAppear {
+            // Đảm bảo khi xuất hiện ở màn hình khóa, mọi dữ liệu bộ nhớ cũ liên quan đến key/unlock đều được reset sạch sẽ
+            isUnlocked = false
+            savedExpiry = ""
+            activeKey = ""
         }
     }
 
@@ -644,8 +664,10 @@ private struct KeyLockView: View {
     
     private func triggerSuccess(expiry: String, key: String) {
         UXFeedback.success(); isSuccessMsg = true; inlineErrorMsg = "✅ Xác thực thành công!"
+        // Lưu thẳng vào @AppStorage và bật trạng thái mở khóa ngay lập tức
+        savedExpiry = expiry
+        activeKey = key
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
-            savedExpiry = expiry; activeKey = key
             withAnimation(.easeInOut(duration: 0.6)) { isUnlocked = true }
         }
     }
