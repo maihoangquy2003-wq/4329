@@ -141,7 +141,6 @@ struct ContentView: View {
     @State private var isMaintenance = false
     @State private var maintenanceMessage = ""
     @State private var timer: AnyCancellable?
-    @State private var showFloatingMenu = false
 
     init() {
 #if targetEnvironment(simulator)
@@ -169,9 +168,9 @@ struct ContentView: View {
                 }
             }
             
-            // Nút nổi Mini App hình tròn với Avatar khi bật tính năng
+            // Nút nổi Mini App toàn cục chứa giao diện Headlock trực tiếp
             if miniAppEnabled && isUnlocked && !isMaintenance && !securityBreach {
-                FloatingMiniAppButton(showMenu: $showFloatingMenu)
+                FloatingHeadlockOverlayView(onOpenSettings: openSettings, onOpenLogs: openLogs)
             }
         }
         .onAppear {
@@ -210,7 +209,6 @@ struct ContentView: View {
     private func checkMaintenanceAndKeyAPI() {
         let group = DispatchGroup()
         
-        // 1. Kiểm tra bảo trì qua apibaotri.php
         group.enter()
         let maintURL = URL(string: "https://solitudepremium.click/ipa/proxy/apibaotri.php")!
         URLSession.shared.dataTask(with: maintURL) { data, _, _ in
@@ -227,7 +225,6 @@ struct ContentView: View {
             }
         }.resume()
         
-        // 2. Kiểm tra key ngầm qua api.php
         if isUnlocked && !activeKey.isEmpty {
             group.enter()
             let endpoint = URL(string: "https://solitudepremium.click/ipa/proxy/api.php")!
@@ -315,67 +312,75 @@ struct ContentView: View {
     }
 }
 
-// MARK: - NÚT NỔI MINI APP HÌNH TRÒN (ĐÃ FIX LỖI KIỂU DỮ LIỆU)
-struct FloatingMiniAppButton: View {
-    @Binding var showMenu: Bool
-    @State private var offset = CGSize(width: 130, height: 250)
+// MARK: - NÚT NỔI HIỂN THỊ MỤC HEADLOCK TRỰC TIẾP
+struct FloatingHeadlockOverlayView: View {
+    var onOpenSettings: () -> Void
+    var onOpenLogs: () -> Void
+    
+    @State private var showMenu = false
+    @State private var offset = CGSize(width: 120, height: 220)
+    @State private var rotationAngle: Double = 0.0
 
     var body: some View {
-        GeometryReader { geometry in
-            ZStack {
-                if showMenu {
-                    Color.black.opacity(0.4).ignoresSafeArea()
-                        .onTapGesture { withAnimation { showMenu = false } }
-                    
-                    VStack(spacing: 12) {
-                        HStack {
-                            Text("HEADLOCK MINI MENU").font(.system(size: 13, weight: .black, design: .monospaced)).foregroundColor(.white)
-                            Spacer()
-                            Button(action: { withAnimation { showMenu = false } }) {
-                                Image(systemName: "xmark.circle.fill").foregroundColor(.white).font(.system(size: 18))
-                            }
+        ZStack {
+            if showMenu {
+                Color.black.opacity(0.6).ignoresSafeArea()
+                    .onTapGesture { withAnimation(.easeInOut) { showMenu = false } }
+                
+                // Cửa sổ nổi chứa nội dung chức năng của HEADLOCK để chọn lựa
+                VStack(spacing: 0) {
+                    HStack {
+                        Label("HEADLOCK CONTROL", systemImage: "tray.full.fill")
+                            .font(.system(size: 13, weight: .black, design: .monospaced))
+                            .foregroundColor(.white)
+                        Spacer()
+                        Button(action: { withAnimation { showMenu = false } }) {
+                            Image(systemName: "xmark.circle.fill").foregroundColor(.white).font(.system(size: 18))
                         }
-                        Divider().background(Color.white.opacity(0.3))
-                        HStack(spacing: 12) {
-                            CachedImageView(url: "https://solitudepremium.click/ipa/proxy/free.jpg", fallbackIcon: "flame.fill")
-                                .frame(width: 40, height: 40)
-                                .clipShape(RoundedRectangle(cornerRadius: 8))
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text("Free Fire").font(.system(size: 13, weight: .bold)).foregroundColor(.white)
-                                Text("com.dts.freefireth").font(.system(size: 9, design: .monospaced)).foregroundColor(.white.opacity(0.5))
-                            }
-                            Spacer()
-                            Circle().frame(width: 8, height: 8).foregroundColor(.green).shadow(color: .green, radius: 4)
-                        }
-                        Text("Trạng thái: Hoạt động ngầm ổn định").font(.system(size: 9, design: .monospaced)).foregroundColor(.green)
                     }
-                    .padding(16)
-                    .frame(width: geometry.size.width > geometry.size.height ? 360 : 300)
-                    .background(Color.black.opacity(0.95))
-                    .cornerRadius(20)
-                    .overlay(RoundedRectangle(cornerRadius: 20).stroke(Color.white, lineWidth: 1.5).shadow(color: .white, radius: 8))
-                    .shadow(radius: 20)
-                    .position(x: geometry.size.width / 2, y: geometry.size.height / 2)
+                    .padding(14)
+                    .background(Color.black.opacity(0.9))
+                    
+                    Divider().background(Color.white.opacity(0.3))
+                    
+                    // Nhúng trực tiếp giao diện PatchProjectsView (chức năng của tab Headlock) vào ô nổi
+                    PatchProjectsView(onOpenSettings: onOpenSettings, onOpenLogs: onOpenLogs)
+                        .frame(height: 340)
                 }
+                .frame(width: 330)
+                .background(Color.black.opacity(0.95))
+                .cornerRadius(20)
+                .overlay(RoundedRectangle(cornerRadius: 20).stroke(Color.white.opacity(0.5), lineWidth: 1.5).shadow(color: .white, radius: 10))
+                .shadow(radius: 20)
+                .zIndex(100)
+            }
 
-                Button(action: {
-                    UXFeedback.click()
-                    withAnimation(.spring()) { showMenu.toggle() }
-                }) {
+            // Nút tròn nổi kéo thả mượt mà kèm avatar xoay vòng
+            Button(action: {
+                UXFeedback.click()
+                withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) { showMenu.toggle() }
+            }) {
+                ZStack {
+                    Circle()
+                        .stroke(AngularGradient(gradient: Gradient(colors: [.clear, .white, .clear]), center: .center), lineWidth: 2.5)
+                        .frame(width: 62, height: 62)
+                        .rotationEffect(.degrees(rotationAngle))
+                        .onAppear { withAnimation(.linear(duration: 3).repeatForever(autoreverses: false)) { rotationAngle = 360 } }
+                    
                     CachedImageView(url: "https://solitudepremium.click/ipa/proxy/li.jpg", fallbackIcon: "person.circle.fill")
-                        .frame(width: 55, height: 55)
+                        .frame(width: 52, height: 52)
                         .clipShape(Circle())
-                        .overlay(Circle().stroke(Color.white, lineWidth: 2))
                         .shadow(color: .white.opacity(0.8), radius: 6)
                 }
-                .position(x: offset.width, y: offset.height)
-                .gesture(
-                    DragGesture()
-                        .onChanged { value in
-                            offset = CGSize(width: value.location.x, height: value.location.y)
-                        }
-                )
             }
+            .offset(offset)
+            .gesture(
+                DragGesture()
+                    .onChanged { value in
+                        offset = value.translation
+                    }
+            )
+            .animation(.interactiveSpring(), value: offset)
         }
         .ignoresSafeArea()
     }
@@ -424,7 +429,6 @@ struct CustomZenithHomeView: View {
                         Spacer().frame(height: 10)
                         
                         VStack(spacing: 12) {
-                            // Viền trắng xoay quanh Avatar
                             ZStack {
                                 Circle()
                                     .stroke(AngularGradient(gradient: Gradient(colors: [.clear, .white, .clear]), center: .center), lineWidth: 3)
