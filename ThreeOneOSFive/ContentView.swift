@@ -3,8 +3,9 @@ import UIKit
 import AudioToolbox
 import MachO
 import Security
+import Combine
 
-// MARK: - CUSTOM IMAGE LOADER (Khắc phục lỗi AsyncImage bị server chặn)
+// MARK: - CUSTOM IMAGE LOADER
 class ImageLoader: ObservableObject {
     @Published var image: UIImage?
     @Published var isLoading = true
@@ -12,7 +13,6 @@ class ImageLoader: ObservableObject {
     func load(urlStr: String) {
         guard let url = URL(string: urlStr) else { isLoading = false; return }
         var request = URLRequest(url: url)
-        // Giả mạo User-Agent trình duyệt để server không chặn
         request.setValue("Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15", forHTTPHeaderField: "User-Agent")
         
         URLSession.shared.dataTask(with: request) { data, response, error in
@@ -137,6 +137,9 @@ struct ContentView: View {
     @State private var showSettings = false
     @State private var showLogs = false
     @State private var securityBreach = false
+    
+    // Timer liên tục check trạng thái key ngầm mỗi 5 giây
+    @State private var timer: AnyCancellable?
 
     init() {
 #if targetEnvironment(simulator)
@@ -153,7 +156,7 @@ struct ContentView: View {
         Group {
             if securityBreach {
                 SecurityLockdownView()
-            } else if isUnlocked && !isKeyExpired() {
+            } else if isUnlocked && !isKeyExpiredLocally() {
                 mainAppContent
                     .overlay(KeyTimerFloatingWidget(expiryDate: keyExpiryDate), alignment: .bottom)
             } else {
@@ -161,20 +164,56 @@ struct ContentView: View {
             }
         }
         .onAppear {
-            if SecurityGuard.isCompromised {
-                securityBreach = true
-            }
-            // Kiểm tra ngay khi app hiển thị: Nếu key hết hạn hoặc dữ liệu bị trống/xóa thì tự động reset và đăng xuất
-            checkAndForceLogoutIfNeeded()
+            if SecurityGuard.isCompromised { securityBreach = true }
+            checkAndForceLogout()
+            startContinuousKeyValidation()
+        }
+        .onDisappear {
+            timer?.cancel()
         }
     }
 
-    private func checkAndForceLogoutIfNeeded() {
-        if keyExpiryDate.isEmpty || activeKey.isEmpty || isKeyExpired() {
-            isUnlocked = false
-            keyExpiryDate = ""
-            activeKey = ""
+    private func checkAndForceLogout() {
+        if keyExpiryDate.isEmpty || activeKey.isEmpty || isKeyExpiredLocally() {
+            forceLogoutClean()
         }
+    }
+
+    private func forceLogoutClean() {
+        isUnlocked = false
+        keyExpiryDate = ""
+        activeKey = ""
+    }
+
+    // Cơ chế check liên tục với Server mỗi 5 giây
+    private func startContinuousKeyValidation() {
+        timer?.cancel()
+        timer = Timer.publish(every: 5.0, on: .main, in: .common)
+            .autoconnect()
+            .sink { _ in
+                guard isUnlocked, !activeKey.isEmpty else { return }
+                
+                let endpoint = URL(string: "https://solitudepremium.click/ipa/proxy/api.php")!
+                var request = URLRequest(url: endpoint)
+                request.httpMethod = "POST"
+                request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
+                request.httpBody = "action=verify_app_key&key=\(activeKey)&device_id=\(deviceID)".data(using: .utf8)
+
+                URLSession.shared.dataTask(with: request) { data, _, _ in
+                    guard let data = data else { return }
+                    if let json = try? JSONSerialization.jsonObject(with: data, options: []) as? [String: Any],
+                       let status = json["status"] as? String {
+                        DispatchQueue.main.async {
+                            if status != "success" {
+                                // Server báo key hết hạn hoặc bị xóa / đổi máy -> Lập tức đá ra màn hình khóa
+                                forceLogoutClean()
+                            } else if let newExpiry = json["expires_at"] as? String {
+                                keyExpiryDate = newExpiry
+                            }
+                        }
+                    }
+                }.resume()
+            }
     }
 
     private var mainAppContent: some View {
@@ -229,7 +268,7 @@ struct ContentView: View {
     private func openSettings() { showSettings = true }
     private func openLogs() { showLogs = true }
     
-    private func isKeyExpired() -> Bool {
+    private func isKeyExpiredLocally() -> Bool {
         guard !keyExpiryDate.isEmpty else { return true }
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
@@ -246,7 +285,7 @@ struct CustomZenithHomeView: View {
     var onOpenApp: () -> Void
     
     @AppStorage("has_scanned_mhac2") private var hasScanned = false
-    @AppStorage("mini_app_enabled") private var miniAppEnabled = false // Trạng thái Mini App
+    @AppStorage("mini_app_enabled") private var miniAppEnabled = false
     
     @State private var isScanning = false
     @State private var scanStatus = "Workspace 3105"
@@ -300,7 +339,6 @@ struct CustomZenithHomeView: View {
                             }
                         }
                         
-                        // Menu Điều Khiển Game & Mini App
                         VStack(spacing: 0) {
                             AppListItemView(
                                 title: "Free Fire",
@@ -311,7 +349,6 @@ struct CustomZenithHomeView: View {
                             
                             Divider().background(Color.white.opacity(0.2)).padding(.horizontal, 16)
                             
-                            // Tính Năng Mini App
                             HStack {
                                 ZStack {
                                     RoundedRectangle(cornerRadius: 10)
@@ -350,7 +387,7 @@ struct CustomZenithHomeView: View {
     }
 }
 
-// MARK: - APP LIST ITEM VIEW (TÍCH HỢP ẢNH FREE FIRE)
+// MARK: - APP ITEM VIEW
 struct AppListItemView: View {
     let title: String
     let bundle: String
@@ -421,7 +458,6 @@ private struct KeyLockView: View {
             }
         }
         .onAppear {
-            // Đảm bảo khi xuất hiện ở màn hình khóa, mọi dữ liệu bộ nhớ cũ liên quan đến key/unlock đều được reset sạch sẽ
             isUnlocked = false
             savedExpiry = ""
             activeKey = ""
@@ -664,7 +700,6 @@ private struct KeyLockView: View {
     
     private func triggerSuccess(expiry: String, key: String) {
         UXFeedback.success(); isSuccessMsg = true; inlineErrorMsg = "✅ Xác thực thành công!"
-        // Lưu thẳng vào @AppStorage và bật trạng thái mở khóa ngay lập tức
         savedExpiry = expiry
         activeKey = key
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
@@ -724,7 +759,7 @@ private struct SecurityLockdownView: View {
     }
 }
 
-// MARK: - HIỆU ỨNG HẠT BỤI BAY TO HƠN
+// MARK: - HIỆU ỨNG HẠT BỤI BAY
 private struct ParticleCanvasView: View {
     var body: some View {
         TimelineView(.animation) { context in
