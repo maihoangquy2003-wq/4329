@@ -315,7 +315,7 @@ struct ContentView: View {
     }
 }
 
-// MARK: - NÚT NỔI MINI APP HÌNH TRÒN (XOAY NGANG/DỌC LINH HOẠT)
+// MARK: - NÚT NỔI MINI APP HÌNH TRÒN (ĐÃ FIX LỖI KIỂU DỮ LIỆU)
 struct FloatingMiniAppButton: View {
     @Binding var showMenu: Bool
     @State private var offset = CGSize(width: 130, height: 250)
@@ -372,7 +372,7 @@ struct FloatingMiniAppButton: View {
                 .gesture(
                     DragGesture()
                         .onChanged { value in
-                            offset = value.location
+                            offset = CGSize(width: value.location.x, height: value.location.y)
                         }
                 )
             }
