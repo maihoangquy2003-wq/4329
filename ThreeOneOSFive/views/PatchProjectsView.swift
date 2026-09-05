@@ -3,16 +3,6 @@ import UIKit
 import UniformTypeIdentifiers
 import AudioToolbox
 
-// MARK: - HIỆU ỨNG CHẠM NEON (BẤM NHÚN & PHÁT SÁNG)
-struct NeonScaleButtonStyle: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .scaleEffect(configuration.isPressed ? 0.95 : 1.0)
-            .shadow(color: configuration.isPressed ? .white.opacity(0.8) : .clear, radius: configuration.isPressed ? 10 : 0)
-            .animation(.spring(response: 0.3, dampingFraction: 0.6), value: configuration.isPressed)
-    }
-}
-
 struct PatchProjectsView: View {
     @Environment(\.appLanguage) private var language
     @EnvironmentObject private var store: PatchProjectStore
@@ -299,7 +289,7 @@ struct NeonParticleBackgroundView: View {
     }
 }
 
-// MARK: - HÀNG CHỨC NĂNG (LOGIC GẠT NÚT ĐỒNG BỘ CHUẨN XÁC)
+// MARK: - HÀNG CHỨC NĂNG (ĐÃ FIX LỖI CHECK STATUS)
 struct ModFunctionRow: View {
     let remoteItem: RemoteAimItem
     @ObservedObject var store: PatchProjectStore
@@ -364,7 +354,7 @@ struct ModFunctionRow: View {
         if let savedId = UserDefaults.standard.string(forKey: "mod_\(remoteItem.id)"),
            let match = store.items.first(where: { $0.id.uuidString == savedId }) {
             self.localItem = match
-        } else if let match = store.items.first(where: { $0.packageName == remoteItem.id || $0.summary.displayName == remoteItem.name }) {
+        } else if let match = store.items.first(where: { $0.summary.displayName == remoteItem.name }) {
             self.localItem = match
             UserDefaults.standard.set(match.id.uuidString, forKey: "mod_\(remoteItem.id)")
         }
