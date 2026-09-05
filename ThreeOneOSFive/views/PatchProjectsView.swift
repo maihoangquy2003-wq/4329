@@ -3,6 +3,16 @@ import UIKit
 import UniformTypeIdentifiers
 import AudioToolbox
 
+// MARK: - HIỆU ỨNG CHẠM NEON (BẤM NHÚN & PHÁT SÁNG)
+struct NeonScaleButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed ? 0.95 : 1.0)
+            .shadow(color: configuration.isPressed ? .white.opacity(0.8) : .clear, radius: configuration.isPressed ? 10 : 0)
+            .animation(.spring(response: 0.3, dampingFraction: 0.6), value: configuration.isPressed)
+    }
+}
+
 struct PatchProjectsView: View {
     @Environment(\.appLanguage) private var language
     @EnvironmentObject private var store: PatchProjectStore
@@ -46,7 +56,6 @@ struct PatchProjectsView: View {
             ScrollView(showsIndicators: false) {
                 VStack(spacing: 35) {
                     
-                    // Phần Header Avatar Neon
                     VStack(spacing: 16) {
                         ZStack {
                             Circle()
@@ -80,7 +89,6 @@ struct PatchProjectsView: View {
                         }
                     }
                     
-                    // Phần Danh Sách Game
                     VStack(spacing: 16) {
                         homeGameCard(title: "Free Fire Max", icon: "https://solitudepremium.click/ipa/proxy/free.jpg", bundle: "com.dts.freefiremax")
                         homeGameCard(title: "Free Fire Thường", icon: "https://solitudepremium.click/ipa/proxy/free.jpg", bundle: "com.dts.freefireth")
@@ -151,7 +159,6 @@ struct PatchProjectsView: View {
     // MARK: - 2. GIAO DIỆN MOD MENU
     private var modMenuScreen: some View {
         VStack(spacing: 0) {
-            // Header Mod Menu
             HStack(spacing: 12) {
                 Button(action: {
                     AudioServicesPlaySystemSound(1306)
@@ -195,7 +202,6 @@ struct PatchProjectsView: View {
             }
             .padding(.horizontal, 20).padding(.top, 15).padding(.bottom, 10)
             
-            // Thanh Thư Mục
             if !dynamicTabs.isEmpty {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 12) {
@@ -222,7 +228,6 @@ struct PatchProjectsView: View {
                 }
             }
             
-            // Danh sách Tính năng
             ScrollView(showsIndicators: false) {
                 VStack(spacing: 16) {
                     let filtered = remoteItems.filter { $0.target == selectedGameBundle && $0.category.lowercased() == selectedTab.lowercased() }
@@ -294,6 +299,7 @@ struct NeonParticleBackgroundView: View {
     }
 }
 
+// MARK: - HÀNG CHỨC NĂNG (LOGIC GẠT NÚT ĐỒNG BỘ CHUẨN XÁC)
 struct ModFunctionRow: View {
     let remoteItem: RemoteAimItem
     @ObservedObject var store: PatchProjectStore
@@ -351,15 +357,22 @@ struct ModFunctionRow: View {
         .overlay(RoundedRectangle(cornerRadius: 20).stroke(isApplied ? Color.white : Color.white.opacity(0.2), lineWidth: isApplied ? 1.5 : 1))
         .shadow(color: isApplied ? .white.opacity(0.25) : .clear, radius: 10)
         .onAppear(perform: checkStatus)
+        .onChange(of: store.items.count) { _ in checkStatus() }
     }
     
     private func checkStatus() {
         if let savedId = UserDefaults.standard.string(forKey: "mod_\(remoteItem.id)"),
            let match = store.items.first(where: { $0.id.uuidString == savedId }) {
             self.localItem = match
+        } else if let match = store.items.first(where: { $0.packageName == remoteItem.id || $0.summary.displayName == remoteItem.name }) {
+            self.localItem = match
+            UserDefaults.standard.set(match.id.uuidString, forKey: "mod_\(remoteItem.id)")
         }
+        
         if let local = localItem {
             isApplied = DevicePatchService.latestReceipt(projectID: local.id) != nil
+        } else {
+            isApplied = false
         }
     }
     
