@@ -3,15 +3,6 @@ import UIKit
 import UniformTypeIdentifiers
 import AudioToolbox
 
-// Hiệu ứng bấm nhún neon
-struct NeonScaleButtonStyle: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .scaleEffect(configuration.isPressed ? 0.96 : 1.0)
-            .animation(.spring(response: 0.3, dampingFraction: 0.6), value: configuration.isPressed)
-    }
-}
-
 struct PatchProjectsView: View {
     @Environment(\.appLanguage) private var language
     @EnvironmentObject private var store: PatchProjectStore
@@ -47,14 +38,13 @@ struct PatchProjectsView: View {
         }
     }
     
-    // MARK: - 1. TRANG CHỦ (Đã xóa khung hiển thị Key, tinh chỉnh bố cục cực đẹp)
+    // MARK: - 1. TRANG CHỦ
     private var homeScreen: some View {
         VStack(spacing: 0) {
             Spacer().frame(height: 30)
             
             ScrollView(showsIndicators: false) {
                 VStack(spacing: 30) {
-                    // Phần Avatar Neon xoay vòng
                     VStack(spacing: 16) {
                         ZStack {
                             Circle()
@@ -85,7 +75,6 @@ struct PatchProjectsView: View {
                         }
                     }
                     
-                    // Danh sách thẻ Game
                     VStack(spacing: 16) {
                         homeGameCard(title: "Free Fire Max", icon: "https://solitudepremium.click/ipa/proxy/free.jpg", bundle: "com.dts.freefiremax")
                         homeGameCard(title: "Free Fire Thường", icon: "https://solitudepremium.click/ipa/proxy/free.jpg", bundle: "com.dts.freefireth")
@@ -184,7 +173,6 @@ struct PatchProjectsView: View {
             }
             .padding(.horizontal, 20).padding(.top, 15)
             
-            // Thanh Thư Mục
             if !dynamicTabs.isEmpty {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 10) {
@@ -277,7 +265,6 @@ struct NeonParticleBackgroundView: View {
     }
 }
 
-// Giữ nguyên hoàn toàn logic gốc của hàng chức năng
 struct ModFunctionRow: View {
     let remoteItem: RemoteAimItem
     @ObservedObject var store: PatchProjectStore
