@@ -3,16 +3,6 @@ import UIKit
 import UniformTypeIdentifiers
 import AudioToolbox
 
-// MARK: - HIỆU ỨNG CHẠM NEON (BẤM NHÚN & PHÁT SÁNG)
-struct NeonScaleButtonStyle: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .scaleEffect(configuration.isPressed ? 0.95 : 1.0)
-            .shadow(color: configuration.isPressed ? .white.opacity(0.8) : .clear, radius: configuration.isPressed ? 10 : 0)
-            .animation(.spring(response: 0.3, dampingFraction: 0.6), value: configuration.isPressed)
-    }
-}
-
 struct PatchProjectsView: View {
     @Environment(\.appLanguage) private var language
     @EnvironmentObject private var store: PatchProjectStore
@@ -48,7 +38,7 @@ struct PatchProjectsView: View {
         }
     }
     
-    // MARK: - 1. TRANG CHỦ (ĐÃ XÓA HIỂN THỊ KEY VÀ LÀM ĐẸP BỐ CỤC)
+    // MARK: - 1. TRANG CHỦ
     private var homeScreen: some View {
         VStack(spacing: 0) {
             Spacer().frame(height: 40)
@@ -155,7 +145,7 @@ struct PatchProjectsView: View {
             .overlay(RoundedRectangle(cornerRadius: 22).stroke(Color.white.opacity(0.3), lineWidth: 1.5))
             .shadow(color: .white.opacity(0.15), radius: 10, x: 0, y: 5)
         }
-        .buttonStyle(NeonScaleButtonStyle()) // Thêm hiệu ứng chạm Neon
+        .buttonStyle(NeonScaleButtonStyle())
     }
     
     // MARK: - 2. GIAO DIỆN MOD MENU
@@ -253,7 +243,6 @@ struct PatchProjectsView: View {
         }
     }
     
-    // Tự động quét chỉ hiển thị các thư mục có chứa dữ liệu tương ứng với game đang chọn
     private var dynamicTabs: [String] {
         var tabs: [String] = []
         for item in remoteItems where item.target == selectedGameBundle {
@@ -284,7 +273,6 @@ struct PatchProjectsView: View {
     }
 }
 
-// MARK: - HIỆU ỨNG HẠT BỤI NEON
 struct NeonParticleBackgroundView: View {
     var body: some View {
         TimelineView(.animation) { context in
@@ -297,7 +285,6 @@ struct NeonParticleBackgroundView: View {
                     let glowRect = CGRect(x: x - 1, y: y - 1, width: 4, height: 4)
                     let rect = CGRect(x: x, y: y, width: 2, height: 2)
                     
-                    // Tạo độ glow nhẹ cho từng hạt bụi
                     ctx.fill(Path(ellipseIn: glowRect), with: .color(.white.opacity(0.15)))
                     ctx.fill(Path(ellipseIn: rect), with: .color(.white.opacity(0.6)))
                 }
@@ -307,7 +294,6 @@ struct NeonParticleBackgroundView: View {
     }
 }
 
-// MARK: - HÀNG CHỨC NĂNG (BẬT LÀ PHÁT SÁNG)
 struct ModFunctionRow: View {
     let remoteItem: RemoteAimItem
     @ObservedObject var store: PatchProjectStore
@@ -356,13 +342,12 @@ struct ModFunctionRow: View {
             } else {
                 Toggle("", isOn: Binding(get: { isApplied }, set: { val in togglePatch(on: val) }))
                     .labelsHidden()
-                    .tint(.white) // Toggle màu trắng chuẩn tone
+                    .tint(.white)
             }
         }
         .padding(14)
         .background(Color(white: 0.04))
         .cornerRadius(20)
-        // Viền sáng lên khi bật chức năng
         .overlay(RoundedRectangle(cornerRadius: 20).stroke(isApplied ? Color.white : Color.white.opacity(0.2), lineWidth: isApplied ? 1.5 : 1))
         .shadow(color: isApplied ? .white.opacity(0.25) : .clear, radius: 10)
         .onAppear(perform: checkStatus)
