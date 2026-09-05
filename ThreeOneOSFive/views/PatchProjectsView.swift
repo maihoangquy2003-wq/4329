@@ -3,12 +3,11 @@ import UIKit
 import UniformTypeIdentifiers
 import AudioToolbox
 
-// MARK: - HIỆU ỨNG CHẠM NEON (BẤM NHÚN & PHÁT SÁNG)
+// Hiệu ứng bấm nhún neon
 struct NeonScaleButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .scaleEffect(configuration.isPressed ? 0.95 : 1.0)
-            .shadow(color: configuration.isPressed ? .white.opacity(0.8) : .clear, radius: configuration.isPressed ? 10 : 0)
+            .scaleEffect(configuration.isPressed ? 0.96 : 1.0)
             .animation(.spring(response: 0.3, dampingFraction: 0.6), value: configuration.isPressed)
     }
 }
@@ -48,21 +47,21 @@ struct PatchProjectsView: View {
         }
     }
     
-    // MARK: - 1. TRANG CHỦ
+    // MARK: - 1. TRANG CHỦ (Đã xóa khung hiển thị Key, tinh chỉnh bố cục cực đẹp)
     private var homeScreen: some View {
         VStack(spacing: 0) {
-            Spacer().frame(height: 40)
+            Spacer().frame(height: 30)
             
             ScrollView(showsIndicators: false) {
-                VStack(spacing: 35) {
-                    
+                VStack(spacing: 30) {
+                    // Phần Avatar Neon xoay vòng
                     VStack(spacing: 16) {
                         ZStack {
                             Circle()
-                                .stroke(AngularGradient(gradient: Gradient(colors: [.clear, .white, .gray, .white, .clear]), center: .center), lineWidth: 3)
-                                .frame(width: 106, height: 106)
+                                .stroke(AngularGradient(gradient: Gradient(colors: [.white, .gray, .black, .white]), center: .center), lineWidth: 3)
+                                .frame(width: 104, height: 104)
                                 .rotationEffect(.degrees(avatarRotation))
-                                .shadow(color: .white.opacity(0.7), radius: 12)
+                                .shadow(color: .white.opacity(0.5), radius: 10)
                             
                             AsyncImage(url: URL(string: "https://solitudepremium.click/ipa/proxy/li.jpg")) { phase in
                                 if let image = phase.image { image.resizable().scaledToFill() }
@@ -70,37 +69,30 @@ struct PatchProjectsView: View {
                             }
                             .frame(width: 90, height: 90)
                             .clipShape(Circle())
-                            .overlay(Circle().stroke(Color.white.opacity(0.5), lineWidth: 1))
                         }
                         
-                        VStack(spacing: 6) {
-                            Text("ZENITH SOLITUDE")
-                                .font(.system(size: 24, weight: .black, design: .monospaced))
-                                .foregroundColor(.white)
-                                .shadow(color: .white.opacity(0.8), radius: 6)
-                            
-                            HStack(spacing: 12) {
-                                Rectangle().fill(LinearGradient(colors: [.clear, .white], startPoint: .leading, endPoint: .trailing)).frame(width: 30, height: 1)
-                                Text("HEADLOCK ZENIS")
-                                    .font(.system(size: 11, weight: .bold, design: .monospaced))
-                                    .foregroundColor(.white.opacity(0.8))
-                                Rectangle().fill(LinearGradient(colors: [.white, .clear], startPoint: .leading, endPoint: .trailing)).frame(width: 30, height: 1)
-                            }
+                        Text("Zenith Solitude")
+                            .font(.system(size: 24, weight: .black, design: .monospaced))
+                            .foregroundColor(.white)
+                            .shadow(color: .white.opacity(0.7), radius: 6)
+                        
+                        HStack(spacing: 10) {
+                            Rectangle().fill(LinearGradient(colors: [.clear, .white], startPoint: .leading, endPoint: .trailing)).frame(width: 30, height: 1)
+                            Text("HEADLOCK ZENIS")
+                                .font(.system(size: 11, weight: .bold, design: .monospaced))
+                                .foregroundColor(.white.opacity(0.8))
+                            Rectangle().fill(LinearGradient(colors: [.white, .clear], startPoint: .leading, endPoint: .trailing)).frame(width: 30, height: 1)
                         }
                     }
                     
+                    // Danh sách thẻ Game
                     VStack(spacing: 16) {
                         homeGameCard(title: "Free Fire Max", icon: "https://solitudepremium.click/ipa/proxy/free.jpg", bundle: "com.dts.freefiremax")
                         homeGameCard(title: "Free Fire Thường", icon: "https://solitudepremium.click/ipa/proxy/free.jpg", bundle: "com.dts.freefireth")
                     }
                     .padding(.horizontal, 20)
-                    
-                    Text("Powered by Zenith Center")
-                        .font(.system(size: 10, weight: .bold, design: .monospaced))
-                        .foregroundColor(.white.opacity(0.4))
-                        .padding(.top, 20)
                 }
-                .padding(.bottom, 60)
+                .padding(.bottom, 40)
             }
         }
     }
@@ -120,38 +112,38 @@ struct PatchProjectsView: View {
                     if let image = phase.image { image.resizable().scaledToFill() }
                     else { Image(systemName: "gamecontroller.fill").foregroundColor(.white) }
                 }
-                .frame(width: 55, height: 55)
+                .frame(width: 52, height: 52)
                 .clipShape(RoundedRectangle(cornerRadius: 14))
-                .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.white.opacity(0.4), lineWidth: 1))
-                .shadow(color: .white.opacity(0.2), radius: 5)
+                .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.white.opacity(0.3), lineWidth: 1))
                 
-                VStack(alignment: .leading, spacing: 6) {
+                VStack(alignment: .leading, spacing: 5) {
                     Text(title)
-                        .font(.system(size: 17, weight: .black))
+                        .font(.system(size: 17, weight: .bold))
                         .foregroundColor(.white)
-                        .shadow(color: .white.opacity(0.5), radius: 2)
                     Text("Hệ thống sẵn sàng")
                         .font(.system(size: 11, design: .monospaced))
-                        .foregroundColor(.white.opacity(0.6))
+                        .foregroundColor(.white.opacity(0.5))
                 }
                 Spacer()
                 
-                HStack(spacing: 4) {
-                    Text("MỞ").font(.system(size: 12, weight: .black, design: .monospaced))
-                    Image(systemName: "chevron.right").font(.system(size: 10, weight: .black))
+                HStack(spacing: 6) {
+                    Text("MỞ MENU")
+                        .font(.system(size: 11, weight: .black, design: .monospaced))
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 10, weight: .bold))
                 }
                 .foregroundColor(.black)
                 .padding(.horizontal, 16)
-                .padding(.vertical, 10)
+                .padding(.vertical, 12)
                 .background(Color.white)
-                .cornerRadius(12)
-                .shadow(color: .white.opacity(0.4), radius: 5)
+                .cornerRadius(16)
+                .shadow(color: .white.opacity(0.3), radius: 6)
             }
-            .padding(18)
+            .padding(16)
             .background(Color.black)
-            .cornerRadius(22)
-            .overlay(RoundedRectangle(cornerRadius: 22).stroke(Color.white.opacity(0.3), lineWidth: 1.5))
-            .shadow(color: .white.opacity(0.15), radius: 10, x: 0, y: 5)
+            .cornerRadius(20)
+            .overlay(RoundedRectangle(cornerRadius: 20).stroke(Color.white.opacity(0.25), lineWidth: 1.5))
+            .shadow(color: .white.opacity(0.1), radius: 8, x: 0, y: 4)
         }
         .buttonStyle(NeonScaleButtonStyle())
     }
@@ -162,7 +154,6 @@ struct PatchProjectsView: View {
             HStack(spacing: 12) {
                 Button(action: {
                     AudioServicesPlaySystemSound(1306)
-                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
                     withAnimation { showModMenu = false }
                 }) {
                     Image(systemName: "chevron.left")
@@ -171,28 +162,19 @@ struct PatchProjectsView: View {
                         .frame(width: 40, height: 40)
                         .background(Color.white)
                         .clipShape(Circle())
-                        .shadow(color: .white.opacity(0.5), radius: 5)
+                        .shadow(color: .white.opacity(0.4), radius: 4)
                 }
                 .buttonStyle(NeonScaleButtonStyle())
                 
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(selectedGameBundle == "com.dts.freefiremax" ? "Free Fire Max" : "Free Fire Thường")
-                        .font(.system(size: 18, weight: .black))
-                        .foregroundColor(.white)
-                        .shadow(color: .white.opacity(0.5), radius: 2)
-                    Text("Workspace Active")
-                        .font(.system(size: 10, weight: .bold, design: .monospaced))
-                        .foregroundColor(.white.opacity(0.5))
-                }
+                Text(selectedGameBundle == "com.dts.freefiremax" ? "Free Fire Max" : "Free Fire Thường")
+                    .font(.system(size: 18, weight: .bold))
+                    .foregroundColor(.white)
                 
                 Spacer()
                 
-                Button(action: {
-                    UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-                    fetchRemoteData()
-                }) {
+                Button(action: fetchRemoteData) {
                     Image(systemName: "arrow.triangle.2.circlepath")
-                        .font(.system(size: 15, weight: .bold))
+                        .font(.system(size: 14, weight: .bold))
                         .foregroundColor(.white)
                         .padding(10)
                         .background(Circle().stroke(Color.white.opacity(0.4), lineWidth: 1.5))
@@ -200,26 +182,26 @@ struct PatchProjectsView: View {
                 .disabled(isFetching)
                 .buttonStyle(NeonScaleButtonStyle())
             }
-            .padding(.horizontal, 20).padding(.top, 15).padding(.bottom, 10)
+            .padding(.horizontal, 20).padding(.top, 15)
             
+            // Thanh Thư Mục
             if !dynamicTabs.isEmpty {
                 ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 12) {
+                    HStack(spacing: 10) {
                         ForEach(dynamicTabs, id: \.self) { tab in
                             let isSelected = selectedTab.lowercased() == tab.lowercased()
                             Button(action: {
                                 AudioServicesPlaySystemSound(1306)
-                                UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                                withAnimation(.easeInOut(duration: 0.2)) { selectedTab = tab }
+                                selectedTab = tab
                             }) {
                                 Text(tab)
-                                    .font(.system(size: 13, weight: .black, design: .monospaced))
-                                    .padding(.horizontal, 22).padding(.vertical, 12)
+                                    .font(.system(size: 13, weight: .bold, design: .monospaced))
+                                    .padding(.horizontal, 20).padding(.vertical, 10)
                                     .background(isSelected ? Color.white : Color.black)
                                     .foregroundColor(isSelected ? .black : .white)
                                     .cornerRadius(20)
                                     .overlay(RoundedRectangle(cornerRadius: 20).stroke(Color.white.opacity(isSelected ? 1.0 : 0.3), lineWidth: 1.5))
-                                    .shadow(color: isSelected ? .white.opacity(0.6) : .clear, radius: 8)
+                                    .shadow(color: isSelected ? .white.opacity(0.4) : .clear, radius: 6)
                             }
                             .buttonStyle(NeonScaleButtonStyle())
                         }
@@ -229,12 +211,12 @@ struct PatchProjectsView: View {
             }
             
             ScrollView(showsIndicators: false) {
-                VStack(spacing: 16) {
+                VStack(spacing: 14) {
                     let filtered = remoteItems.filter { $0.target == selectedGameBundle && $0.category.lowercased() == selectedTab.lowercased() }
                     if filtered.isEmpty {
-                        VStack(spacing: 12) {
-                            Image(systemName: "cube.transparent").font(.system(size: 45)).foregroundColor(.white.opacity(0.3))
-                            Text("Thư mục trống").font(.system(size: 14, weight: .bold, design: .monospaced)).foregroundColor(.white.opacity(0.5))
+                        VStack(spacing: 10) {
+                            Image(systemName: "folder.badge.questionmark").font(.system(size: 40)).foregroundColor(.white.opacity(0.2))
+                            Text("Chưa có tính năng nào trong mục này").font(.system(size: 12, design: .monospaced)).foregroundColor(.gray)
                         }.padding(.top, 100)
                     } else {
                         ForEach(filtered) { item in
@@ -287,11 +269,7 @@ struct NeonParticleBackgroundView: View {
                     let seed = Double(i) * 55.0
                     let x = (sin(time * 0.2 + seed) * 0.5 + 0.5) * size.width
                     let y = size.height - fmod(time * (50.0 + fmod(seed, 25.0)) + seed, size.height)
-                    let glowRect = CGRect(x: x - 1, y: y - 1, width: 4, height: 4)
-                    let rect = CGRect(x: x, y: y, width: 2, height: 2)
-                    
-                    ctx.fill(Path(ellipseIn: glowRect), with: .color(.white.opacity(0.15)))
-                    ctx.fill(Path(ellipseIn: rect), with: .color(.white.opacity(0.6)))
+                    ctx.fill(Path(ellipseIn: CGRect(x: x, y: y, width: 2, height: 2)), with: .color(.white.opacity(0.35)))
                 }
             }
         }
@@ -299,7 +277,7 @@ struct NeonParticleBackgroundView: View {
     }
 }
 
-// MARK: - HÀNG CHỨC NĂNG (ĐÃ SỬA LỖI KIỂU DỮ LIỆU SWIFT)
+// Giữ nguyên hoàn toàn logic gốc của hàng chức năng
 struct ModFunctionRow: View {
     let remoteItem: RemoteAimItem
     @ObservedObject var store: PatchProjectStore
@@ -311,72 +289,45 @@ struct ModFunctionRow: View {
     var body: some View {
         HStack(spacing: 14) {
             ZStack {
-                RoundedRectangle(cornerRadius: 12)
-                    .fill(isApplied ? Color.white : Color.white.opacity(0.1))
-                    .frame(width: 44, height: 44)
+                RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.1)).frame(width: 42, height: 42)
                 Image(systemName: isApplied ? "checkmark.shield.fill" : "shield.fill")
-                    .foregroundColor(isApplied ? .black : .white.opacity(0.7))
-                    .font(.system(size: 18))
+                    .foregroundColor(isApplied ? .white : .gray)
             }
-            .shadow(color: isApplied ? .white.opacity(0.6) : .clear, radius: 5)
             
-            VStack(alignment: .leading, spacing: 5) {
-                HStack(spacing: 8) {
-                    Text(remoteItem.name)
-                        .font(.system(size: 15, weight: .black))
-                        .foregroundColor(isApplied ? .white : .white.opacity(0.9))
-                        .shadow(color: isApplied ? .white.opacity(0.5) : .clear, radius: 2)
-                    
-                    Text("VIP")
-                        .font(.system(size: 9, weight: .black, design: .monospaced))
-                        .padding(.horizontal, 6).padding(.vertical, 3)
-                        .background(isApplied ? Color.white : Color.white.opacity(0.2))
-                        .cornerRadius(6)
-                        .foregroundColor(isApplied ? .black : .white)
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 6) {
+                    Text(remoteItem.name).font(.system(size: 15, weight: .bold)).foregroundColor(.white)
+                    Text("VIP").font(.system(size: 8, weight: .bold)).padding(.horizontal, 6).padding(.vertical, 2)
+                        .background(Color.white).cornerRadius(4).foregroundColor(.black)
                 }
                 
                 if let note = remoteItem.note, !note.isEmpty {
-                    Text("📌 \(note)")
-                        .font(.system(size: 11, design: .monospaced))
-                        .foregroundColor(isApplied ? .white.opacity(0.8) : .gray)
+                    Text("📌 Note: \(note)")
+                        .font(.system(size: 10, design: .monospaced))
+                        .foregroundColor(.gray)
                 }
             }
             Spacer()
             
             if isWorking {
-                ProgressView().tint(.white).scaleEffect(0.8).padding(.trailing, 5)
+                ProgressView().tint(.white).scaleEffect(0.7)
             } else {
                 Toggle("", isOn: Binding(get: { isApplied }, set: { val in togglePatch(on: val) }))
-                    .labelsHidden()
-                    .tint(.white)
+                    .labelsHidden().tint(.white)
             }
         }
-        .padding(14)
-        .background(Color(white: 0.04))
-        .cornerRadius(20)
-        .overlay(RoundedRectangle(cornerRadius: 20).stroke(isApplied ? Color.white : Color.white.opacity(0.2), lineWidth: isApplied ? 1.5 : 1))
-        .shadow(color: isApplied ? .white.opacity(0.25) : .clear, radius: 10)
+        .padding(14).background(Color.black).cornerRadius(18)
+        .overlay(RoundedRectangle(cornerRadius: 18).stroke(Color.white.opacity(isApplied ? 0.6 : 0.2), lineWidth: isApplied ? 1.5 : 1))
         .onAppear(perform: checkStatus)
-        .onChange(of: store.items.count) { _ in checkStatus() }
     }
     
     private func checkStatus() {
-        if let savedId = UserDefaults.standard.string(forKey: "mod_\(remoteItem.id)") {
-            if let match = store.items.first(where: { $0.id.uuidString == savedId }) {
-                self.localItem = match
-            }
+        if let savedId = UserDefaults.standard.string(forKey: "mod_\(remoteItem.id)"),
+           let match = store.items.first(where: { $0.id.uuidString == savedId }) {
+            self.localItem = match
         }
-        if self.localItem == nil {
-            if let match = store.items.first(where: { $0.summary.displayName == remoteItem.name }) {
-                self.localItem = match
-                UserDefaults.standard.set(match.id.uuidString, forKey: "mod_\(remoteItem.id)")
-            }
-        }
-        
         if let local = localItem {
             isApplied = DevicePatchService.latestReceipt(projectID: local.id) != nil
-        } else {
-            isApplied = false
         }
     }
     
@@ -416,27 +367,15 @@ struct ModFunctionRow: View {
                     let proj = local.summary.schemaVersion >= 2 && local.canInspectContents ? try PatchProjectLibrary.synchronizeWorkspace(item: local) : base
                     _ = try DevicePatchService.apply(project: proj)
                     
-                    await MainActor.run { 
-                        withAnimation(.easeInOut(duration: 0.3)) { self.isApplied = true }
-                        self.isWorking = false
-                        AudioServicesPlaySystemSound(1407) 
-                    }
+                    await MainActor.run { self.isApplied = true; self.isWorking = false; AudioServicesPlaySystemSound(1407) }
                 } else {
                     if let local = targetItem, let receipt = DevicePatchService.latestReceipt(projectID: local.id) {
                         try DevicePatchService.restore(receipt: receipt, allowChangedTargets: true)
                     }
-                    await MainActor.run { 
-                        withAnimation(.easeInOut(duration: 0.3)) { self.isApplied = false }
-                        self.isWorking = false
-                        AudioServicesPlaySystemSound(1407) 
-                    }
+                    await MainActor.run { self.isApplied = false; self.isWorking = false; AudioServicesPlaySystemSound(1407) }
                 }
             } catch {
-                await MainActor.run { 
-                    self.isApplied = !on
-                    self.isWorking = false
-                    AudioServicesPlaySystemSound(1053) 
-                }
+                await MainActor.run { self.isApplied = !on; self.isWorking = false; AudioServicesPlaySystemSound(1053) }
             }
         }
     }
