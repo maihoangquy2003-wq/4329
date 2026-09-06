@@ -290,7 +290,6 @@ struct ModFunctionRow: View {
     
     @State private var isApplied = false
     @State private var isWorking = false
-    @State private var importedItemID: UUID?
     
     private var toggleStateKey: String { "isolated_toggle_\(remoteItem.id)_\(remoteItem.target)" }
     private var mappedUUIDKey: String { "isolated_uuid_\(remoteItem.id)_\(remoteItem.target)" }
@@ -324,10 +323,6 @@ struct ModFunctionRow: View {
         .overlay(RoundedRectangle(cornerRadius: 18).stroke(Color.white.opacity(isApplied ? 0.6 : 0.2), lineWidth: isApplied ? 1.5 : 1))
         .onAppear {
             self.isApplied = UserDefaults.standard.bool(forKey: toggleStateKey)
-            if let uuidStr = UserDefaults.standard.string(forKey: mappedUUIDKey),
-               let uuid = UUID(uuidString: uuidStr) {
-                self.importedItemID = uuid
-            }
         }
     }
     
@@ -359,10 +354,19 @@ struct ModFunctionRow: View {
     
     @MainActor
     private func applyPatch() async throws {
-        // 1. Tải file mới
+        // KIỂM TRA BỘ NHỚ: Nếu Aim này ĐÃ TỪNG được import rồi thì tái sử dụng, KHÔNG import lại.
+        if let uuidStr = UserDefaults.standard.string(forKey: mappedUUIDKey),
+           let uuid = UUID(uuidString: uuidStr),
+           let existingItem = store.items.first(where: { $0.id == uuid }) {
+            
+            // Tìm thấy bản cũ -> Apply trực tiếp luôn
+            try await doApply(for: existingItem)
+            return
+        }
+        
+        // NẾU CHƯA CÓ TRONG BỘ NHỚ: Tải file mới và Import
         let fileURL = try await RemoteAPIManager.shared.downloadAndSaveFile(from: remoteItem.url, itemID: remoteItem.id)
         
-        // 2. Import package
         let beforeIds = Set(store.items.map { $0.id })
         store.importPackage(at: fileURL)
         try await Task.sleep(nanoseconds: 700_000_000)
@@ -371,38 +375,41 @@ struct ModFunctionRow: View {
             throw NSError(domain: "ImportFailed", code: 0, userInfo: [NSLocalizedDescriptionKey: "Không thể nạp cấu hình file vào hệ thống."])
         }
         
-        importedItemID = freshItem.id
+        // Lưu lại UUID để lần sau Bật lại thì xài luôn
         UserDefaults.standard.set(freshItem.id.uuidString, forKey: mappedUUIDKey)
         
-        // 3. Lấy project và apply
+        // Apply
+        try await doApply(for: freshItem)
+    }
+    
+    @MainActor
+    private func doApply(for item: PatchLibraryItem) async throws {
         let project: PatchProject
-        if freshItem.summary.schemaVersion >= 2 && freshItem.canInspectContents {
-            project = try PatchProjectLibrary.synchronizeWorkspace(item: freshItem)
+        if item.summary.schemaVersion >= 2 && item.canInspectContents {
+            // Ép đồng bộ Workspace để lấy cấu trúc project mới
+            project = try PatchProjectLibrary.synchronizeWorkspace(item: item)
         } else {
-            guard let baseProject = freshItem.project else {
+            guard let baseProject = item.project else {
                 throw NSError(domain: "ProjectError", code: 0, userInfo: [NSLocalizedDescriptionKey: "Không thể truy cập project."])
             }
             project = baseProject
         }
-        
         _ = try DevicePatchService.apply(project: project)
     }
     
     @MainActor
     private func removePatch() async throws {
-        // Restore nếu có receipt
-        if let itemID = importedItemID,
-           let targetItem = store.items.first(where: { $0.id == itemID }),
+        // CHỈ Restore (gỡ tác dụng file) - TUYỆT ĐỐI KHÔNG XÓA FILE HAY XÓA UUID
+        if let uuidStr = UserDefaults.standard.string(forKey: mappedUUIDKey),
+           let uuid = UUID(uuidString: uuidStr),
+           let targetItem = store.items.first(where: { $0.id == uuid }),
            let receipt = DevicePatchService.latestReceipt(projectID: targetItem.id) {
+            
             try DevicePatchService.restore(receipt: receipt, allowChangedTargets: true)
         }
         
-        // Xóa file đã tải
-        RemoteAPIManager.shared.removeAllFiles(for: remoteItem.id)
-        
-        // Reset trạng thái
-        importedItemID = nil
-        UserDefaults.standard.removeObject(forKey: mappedUUIDKey)
+        // Chú ý: Đã xóa dòng gọi RemoteAPIManager.shared.removeAllFiles ở đây
+        // Chú ý: Đã xóa dòng xóa mappedUUIDKey khỏi UserDefaults
     }
 }
 
