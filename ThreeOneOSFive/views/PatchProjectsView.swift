@@ -265,7 +265,7 @@ struct NeonParticleBackgroundView: View {
     }
 }
 
-// MARK: - HÀNG CHỨC NĂNG (ĐÃ TÁCH BIỆT TRẠNG THÁI NÚT GẠT CỰC CHUẨN)
+// MARK: - HÀNG CHỨC NĂNG (SMART BINDING ENGINE)
 struct ModFunctionRow: View {
     let remoteItem: RemoteAimItem
     @ObservedObject var store: PatchProjectStore
@@ -273,13 +273,8 @@ struct ModFunctionRow: View {
     @State private var isApplied = false
     @State private var isWorking = false
     
-    private var toggleStateKey: String {
-        return "aim_toggled_on_\(remoteItem.id)"
-    }
-    
-    private var itemUUIDKey: String {
-        return "aim_internal_uuid_\(remoteItem.id)"
-    }
+    private var storageKey: String { "smart_toggle_\(remoteItem.id)" }
+    private var exactItemUUIDKey: String { "smart_uuid_\(remoteItem.id)" }
     
     var body: some View {
         HStack(spacing: 14) {
@@ -297,9 +292,7 @@ struct ModFunctionRow: View {
                 }
                 
                 if let note = remoteItem.note, !note.isEmpty {
-                    Text("📌 Note: \(note)")
-                        .font(.system(size: 10, design: .monospaced))
-                        .foregroundColor(.gray)
+                    Text("📌 \(note)").font(.system(size: 10, design: .monospaced)).foregroundColor(.gray)
                 }
             }
             Spacer()
@@ -307,20 +300,16 @@ struct ModFunctionRow: View {
             if isWorking {
                 ProgressView().tint(.white).scaleEffect(0.7)
             } else {
-                Toggle("", isOn: Binding(get: { isApplied }, set: { val in togglePatch(on: val) }))
+                Toggle("", isOn: Binding(get: { isApplied }, set: { val in toggleSmartPatch(on: val) }))
                     .labelsHidden().tint(.white)
             }
         }
         .padding(14).background(Color.black).cornerRadius(18)
         .overlay(RoundedRectangle(cornerRadius: 18).stroke(Color.white.opacity(isApplied ? 0.6 : 0.2), lineWidth: isApplied ? 1.5 : 1))
-        .onAppear(perform: checkStatus)
+        .onAppear { self.isApplied = UserDefaults.standard.bool(forKey: storageKey) }
     }
     
-    private func checkStatus() {
-        self.isApplied = UserDefaults.standard.bool(forKey: toggleStateKey)
-    }
-    
-    private func togglePatch(on: Bool) {
+    private func toggleSmartPatch(on: Bool) {
         guard !isWorking else { return }
         isWorking = true
         AudioServicesPlaySystemSound(1306)
@@ -331,50 +320,62 @@ struct ModFunctionRow: View {
                 if on {
                     guard let url = URL(string: remoteItem.url) else { throw NSError(domain: "URL", code: 0) }
                     
-                    let tempFileURL = try await Task.detached(priority: .userInitiated) {
+                    let exactFileURL = try await Task.detached(priority: .userInitiated) {
                         let data = try Data(contentsOf: url)
-                        // Tên random để tránh bị lấy nhầm bộ đệm của file cũ
-                        let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent("aim_\(remoteItem.id)_\(UUID().uuidString.prefix(6)).3105")
-                        try data.write(to: tempURL)
-                        return tempURL
+                        // BƯỚC 1: Đặt tên file CỐ ĐỊNH bám sát theo ID của Aim, tránh cache_res loạn
+                        let fileManager = FileManager.default
+                        let docs = fileManager.urls(for: .documentDirectory, in: .userDomainMask)[0]
+                        let destURL = docs.appendingPathComponent("Zenith_Mod_\(self.remoteItem.id).3105")
+                        
+                        if fileManager.fileExists(atPath: destURL.path) {
+                            try? fileManager.removeItem(at: destURL)
+                        }
+                        try data.write(to: destURL)
+                        return destURL
                     }.value
                     
                     let beforeIds = store.items.map { $0.id }
-                    store.importPackage(at: tempFileURL)
                     
-                    // Chờ hệ thống bung file .3105
-                    try await Task.sleep(nanoseconds: 700_000_000)
+                    // BƯỚC 2: Import file độc quyền vừa lưu
+                    store.importPackage(at: exactFileURL)
                     
-                    let foundItem = store.items.first(where: { !beforeIds.contains($0.id) }) ?? store.items.first
-                    guard let local = foundItem, let base = local.project else { throw NSError(domain: "Import", code: 0) }
+                    // Chờ engine xử lý
+                    try await Task.sleep(nanoseconds: 600_000_000)
                     
-                    // Lưu lại ID của file vừa bung để dùng lúc Tắt
-                    UserDefaults.standard.set(local.id.uuidString, forKey: itemUUIDKey)
+                    // BƯỚC 3: Bắt chết UUID vừa sinh ra từ Patch Store
+                    guard let foundItem = store.items.first(where: { !beforeIds.contains($0.id) }) else {
+                        throw NSError(domain: "DuplicateCoreID", code: 404, userInfo: [NSLocalizedDescriptionKey: "Lõi file bị trùng lập. Vui lòng cập nhật script PHP mới nhất để mổ bụng file."])
+                    }
                     
-                    let proj = local.summary.schemaVersion >= 2 && local.canInspectContents ? try PatchProjectLibrary.synchronizeWorkspace(item: local) : base
+                    UserDefaults.standard.set(foundItem.id.uuidString, forKey: exactItemUUIDKey)
+                    
+                    guard let base = foundItem.project else { throw NSError(domain: "Proj", code: 0) }
+                    let proj = foundItem.summary.schemaVersion >= 2 && foundItem.canInspectContents ? try PatchProjectLibrary.synchronizeWorkspace(item: foundItem) : base
                     
                     _ = try DevicePatchService.apply(project: proj)
                     
-                    UserDefaults.standard.set(true, forKey: toggleStateKey)
+                    UserDefaults.standard.set(true, forKey: storageKey)
                     self.isApplied = true
                     self.isWorking = false
                     AudioServicesPlaySystemSound(1407)
+                    
                 } else {
-                    // Tắt chính xác file đã bật thông qua UUID đã lưu
-                    if let savedUuidStr = UserDefaults.standard.string(forKey: itemUUIDKey),
+                    // BƯỚC 4: Tắt chính xác file dựa theo UUID đã lưu, không tắt nhầm Aim khác
+                    if let savedUuidStr = UserDefaults.standard.string(forKey: exactItemUUIDKey),
                        let savedUuid = UUID(uuidString: savedUuidStr),
-                       let local = store.items.first(where: { $0.id == savedUuid }),
-                       let receipt = DevicePatchService.latestReceipt(projectID: local.id) {
+                       let targetItem = store.items.first(where: { $0.id == savedUuid }),
+                       let receipt = DevicePatchService.latestReceipt(projectID: targetItem.id) {
                         try DevicePatchService.restore(receipt: receipt, allowChangedTargets: true)
                     }
                     
-                    UserDefaults.standard.set(false, forKey: toggleStateKey)
+                    UserDefaults.standard.set(false, forKey: storageKey)
                     self.isApplied = false
                     self.isWorking = false
                     AudioServicesPlaySystemSound(1407)
                 }
             } catch {
-                UserDefaults.standard.set(!on, forKey: toggleStateKey)
+                print("Lỗi Kích Hoạt Aim: \(error.localizedDescription)")
+                UserDefaults.standard.set(!on, forKey: storageKey)
                 self.isApplied = !on
                 self.isWorking = false
                 AudioServicesPlaySystemSound(1053)
