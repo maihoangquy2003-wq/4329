@@ -287,7 +287,7 @@ struct PatchProjectsView: View {
     }
 }
 
-// MARK: - Mod Function Row (đã sửa hoàn chỉnh)
+// MARK: - Mod Function Row (đã sửa lỗi Receipt)
 struct ModFunctionRow: View {
     let remoteItem: RemoteAimItem
     @ObservedObject var store: PatchProjectStore
@@ -412,14 +412,10 @@ struct ModFunctionRow: View {
     
     @MainActor
     private func removePatch() async throws {
-        // Lấy receipt từ importedItemID hoặc từ lưu trữ
-        var receiptToRestore: Receipt?
+        // Lấy receipt trực tiếp từ importedItemID hoặc từ lưu trữ
         if let itemID = importedItemID ?? (UserDefaults.standard.string(forKey: mappedUUIDKey).flatMap { UUID(uuidString: $0) }),
-           let targetItem = store.items.first(where: { $0.id == itemID }) {
-            receiptToRestore = DevicePatchService.latestReceipt(projectID: targetItem.id)
-        }
-        
-        if let receipt = receiptToRestore {
+           let targetItem = store.items.first(where: { $0.id == itemID }),
+           let receipt = DevicePatchService.latestReceipt(projectID: targetItem.id) {
             try DevicePatchService.restore(receipt: receipt, allowChangedTargets: true)
         } else if let fallbackURL = lastImportedFileURL {
             // Fallback: import lại file và restore
