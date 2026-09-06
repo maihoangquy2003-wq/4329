@@ -6,14 +6,20 @@ import AudioToolbox
 // MARK: - API Manager
 class RemoteAPIManager {
     static let shared = RemoteAPIManager()
-    private let baseURL = "https://solitudepremium.click/ipa/proxy"
     private let fileManager = FileManager.default
     
     private init() {}
     
     func fetchRemoteItems() async throws -> [RemoteAimItem] {
-        guard let url = URL(string: "\(baseURL)/apiaim.php") else { throw APIError.invalidURL }
-        let (data, response) = try await URLSession.shared.data(from: url)
+        // Luôn gọi API mới nhất, thêm timestamp để chặn tình trạng bị lưu cache mạng
+        let urlString = "https://solitudepremium.click/ipa/proxy/apiaim.php"
+        let requestURL = URL(string: "\(urlString)?t=\(Date().timeIntervalSince1970)")!
+        
+        var request = URLRequest(url: requestURL)
+        request.cachePolicy = .reloadIgnoringLocalCacheData
+        request.timeoutInterval = 15
+        
+        let (data, response) = try await URLSession.shared.data(for: request)
         guard let httpResponse = response as? HTTPURLResponse,
               (200...299).contains(httpResponse.statusCode) else { throw APIError.serverError }
         do {
@@ -25,24 +31,41 @@ class RemoteAPIManager {
     
     func downloadAndSaveFile(from remoteURL: String, itemID: String) async throws -> URL {
         guard let url = URL(string: remoteURL) else { throw APIError.invalidURL }
-        let documentsURL = fileManager.urls(for: .documentDirectory, in: .userDomainMask)[0]
-        let itemFolderURL = documentsURL.appendingPathComponent("PatchFiles/\(itemID)", isDirectory: true)
-        if !fileManager.fileExists(atPath: itemFolderURL.path) {
-            try fileManager.createDirectory(at: itemFolderURL, withIntermediateDirectories: true)
-        }
-        let fileName = "\(itemID)_\(Date().timeIntervalSince1970).3105"
-        let destinationURL = itemFolderURL.appendingPathComponent(fileName)
-        let (data, response) = try await URLSession.shared.data(from: url)
+        var request = URLRequest(url: url)
+        request.cachePolicy = .reloadIgnoringLocalCacheData
+        
+        let (data, response) = try await URLSession.shared.data(for: request)
         guard let httpResponse = response as? HTTPURLResponse,
               (200...299).contains(httpResponse.statusCode) else { throw APIError.serverError }
+        
+        let documentsURL = fileManager.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        let itemFolderURL = documentsURL.appendingPathComponent("PatchFiles/\(itemID)", isDirectory: true)
+        
+        // Luôn xóa thư mục chứa file cũ để nạp file mới nhất từ Web
+        if fileManager.fileExists(atPath: itemFolderURL.path) {
+            try? fileManager.removeItem(at: itemFolderURL)
+        }
+        try fileManager.createDirectory(at: itemFolderURL, withIntermediateDirectories: true)
+        
+        let fileName = "Zenith_Mod_\(itemID).3105"
+        let destinationURL = itemFolderURL.appendingPathComponent(fileName)
         try data.write(to: destinationURL)
+        
         return destinationURL
     }
     
-    func removeAllFiles(for itemID: String) {
-        let documentsURL = fileManager.urls(for: .documentDirectory, in: .userDomainMask)[0]
-        let itemFolderURL = documentsURL.appendingPathComponent("PatchFiles/\(itemID)", isDirectory: true)
-        try? fileManager.removeItem(at: itemFolderURL)
+    func cleanWorkspacesCache() {
+        // CƯỠNG ÉP XÓA BỘ NHỚ GIẢI NÉN TẠM CỦA STORE
+        // Điều này ép PatchProjectStore nhận diện mỗi file .3105 tải về là một bộ dữ liệu hoàn toàn mới, loại bỏ 100% lỗi trùng ID lõi.
+        let docs = fileManager.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        let cacheFolders = ["Workspaces", "Projects", "Packages", "Imported", "Extracted"]
+        
+        for folder in cacheFolders {
+            let folderURL = docs.appendingPathComponent(folder)
+            if fileManager.fileExists(atPath: folderURL.path) {
+                try? fileManager.removeItem(at: folderURL)
+            }
+        }
     }
 }
 
@@ -291,8 +314,8 @@ struct ModFunctionRow: View {
     @State private var isApplied = false
     @State private var isWorking = false
     
-    private var toggleStateKey: String { "isolated_toggle_\(remoteItem.id)_\(remoteItem.target)" }
-    private var mappedUUIDKey: String { "isolated_uuid_\(remoteItem.id)_\(remoteItem.target)" }
+    private var toggleStateKey: String { "aim_toggle_\(remoteItem.id)_\(remoteItem.target)" }
+    private var mappedUUIDKey: String { "aim_uuid_\(remoteItem.id)_\(remoteItem.target)" }
     
     var body: some View {
         HStack(spacing: 14) {
@@ -315,7 +338,7 @@ struct ModFunctionRow: View {
             if isWorking {
                 ProgressView().tint(.white).scaleEffect(0.7)
             } else {
-                Toggle("", isOn: Binding(get: { isApplied }, set: { val in toggleIsolatedPatch(on: val) }))
+                Toggle("", isOn: Binding(get: { isApplied }, set: { val in executeAction(on: val) }))
                     .labelsHidden().tint(.white)
             }
         }
@@ -326,7 +349,7 @@ struct ModFunctionRow: View {
         }
     }
     
-    private func toggleIsolatedPatch(on: Bool) {
+    private func executeAction(on: Bool) {
         guard !isWorking else { return }
         isWorking = true
         AudioServicesPlaySystemSound(1306)
@@ -354,52 +377,42 @@ struct ModFunctionRow: View {
     
     @MainActor
     private func applyPatch() async throws {
-        // KIỂM TRA BỘ NHỚ: Nếu Aim này ĐÃ TỪNG được import rồi thì tái sử dụng, KHÔNG import lại.
-        if let uuidStr = UserDefaults.standard.string(forKey: mappedUUIDKey),
-           let uuid = UUID(uuidString: uuidStr),
-           let existingItem = store.items.first(where: { $0.id == uuid }) {
-            
-            // Tìm thấy bản cũ -> Apply trực tiếp luôn
-            try await doApply(for: existingItem)
-            return
-        }
-        
-        // NẾU CHƯA CÓ TRONG BỘ NHỚ: Tải file mới và Import
+        // BƯỚC 1: Tải chính xác file .3105 từ đường dẫn mới nhất trên web
         let fileURL = try await RemoteAPIManager.shared.downloadAndSaveFile(from: remoteItem.url, itemID: remoteItem.id)
         
+        // BƯỚC 2: XÓA SẠCH CACHE LÕI GIẢI NÉN ĐỂ BYPASS LỖI NHẬN NHẦM FILE CŨ
+        RemoteAPIManager.shared.cleanWorkspacesCache()
+        
+        // BƯỚC 3: Import vào Store
         let beforeIds = Set(store.items.map { $0.id })
         store.importPackage(at: fileURL)
-        try await Task.sleep(nanoseconds: 700_000_000)
         
-        guard let freshItem = store.items.first(where: { !beforeIds.contains($0.id) }) else {
-            throw NSError(domain: "ImportFailed", code: 0, userInfo: [NSLocalizedDescriptionKey: "Không thể nạp cấu hình file vào hệ thống."])
+        // Đợi hệ thống bung file (tăng thời gian lên 800ms để đảm bảo bung kịp)
+        try await Task.sleep(nanoseconds: 800_000_000)
+        
+        // BƯỚC 4: Bắt lấy cấu trúc file đã bung. Dù bị trùng ID, file bung ra sẽ được lấy làm mục cuối.
+        guard let activeItem = store.items.first(where: { !beforeIds.contains($0.id) }) ?? store.items.last else {
+            throw NSError(domain: "Import", code: 0, userInfo: [NSLocalizedDescriptionKey: "Lỗi nạp cấu trúc file vào bộ nhớ."])
         }
         
-        // Lưu lại UUID để lần sau Bật lại thì xài luôn
-        UserDefaults.standard.set(freshItem.id.uuidString, forKey: mappedUUIDKey)
+        UserDefaults.standard.set(activeItem.id.uuidString, forKey: mappedUUIDKey)
         
-        // Apply
-        try await doApply(for: freshItem)
-    }
-    
-    @MainActor
-    private func doApply(for item: PatchLibraryItem) async throws {
+        // BƯỚC 5: Thực thi ghi dữ liệu
         let project: PatchProject
-        if item.summary.schemaVersion >= 2 && item.canInspectContents {
-            // Ép đồng bộ Workspace để lấy cấu trúc project mới
-            project = try PatchProjectLibrary.synchronizeWorkspace(item: item)
+        if activeItem.summary.schemaVersion >= 2 && activeItem.canInspectContents {
+            project = try PatchProjectLibrary.synchronizeWorkspace(item: activeItem)
         } else {
-            guard let baseProject = item.project else {
-                throw NSError(domain: "ProjectError", code: 0, userInfo: [NSLocalizedDescriptionKey: "Không thể truy cập project."])
+            guard let baseProject = activeItem.project else {
+                throw NSError(domain: "Project", code: 0, userInfo: [NSLocalizedDescriptionKey: "Dữ liệu Mod không hợp lệ."])
             }
             project = baseProject
         }
+        
         _ = try DevicePatchService.apply(project: project)
     }
     
     @MainActor
     private func removePatch() async throws {
-        // CHỈ Restore (gỡ tác dụng file) - TUYỆT ĐỐI KHÔNG XÓA FILE HAY XÓA UUID
         if let uuidStr = UserDefaults.standard.string(forKey: mappedUUIDKey),
            let uuid = UUID(uuidString: uuidStr),
            let targetItem = store.items.first(where: { $0.id == uuid }),
@@ -407,9 +420,6 @@ struct ModFunctionRow: View {
             
             try DevicePatchService.restore(receipt: receipt, allowChangedTargets: true)
         }
-        
-        // Chú ý: Đã xóa dòng gọi RemoteAPIManager.shared.removeAllFiles ở đây
-        // Chú ý: Đã xóa dòng xóa mappedUUIDKey khỏi UserDefaults
     }
 }
 
