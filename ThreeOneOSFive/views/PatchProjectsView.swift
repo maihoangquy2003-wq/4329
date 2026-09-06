@@ -82,7 +82,6 @@ struct PatchProjectsView: View {
     @State private var isFetching = false
     @State private var avatarRotation: Double = 0.0
     
-    // Bảng Debug Log trực tiếp để nhìn lỗi và đường dẫn
     @State private var debugLogs: [String] = ["🚀 Console Debug sẵn sàng theo dõi lỗi..."]
     @State private var showDebugConsole = false
 
@@ -153,7 +152,6 @@ struct PatchProjectsView: View {
                     }
                     .padding(.horizontal, 20)
                     
-                    // Khu vực Debug Console thu nhỏ ngay ngoài trang chủ
                     if showDebugConsole {
                         VStack(alignment: .leading, spacing: 6) {
                             HStack {
@@ -333,7 +331,7 @@ struct PatchProjectsView: View {
     }
 }
 
-// MARK: - Hàng nút gạt Cyberpunk đã fix triệt để kẹt file cũ
+// MARK: - Hàng nút gạt Cyberpunk đã fix triệt để bằng cách duyệt qua store items
 struct CyberpunkToggleAimRow: View {
     let remoteItem: RemoteAimItem
     @ObservedObject var store: PatchProjectStore
@@ -395,10 +393,12 @@ struct CyberpunkToggleAimRow: View {
                 if on {
                     onLog("📥 Bắt đầu tải file: \(remoteItem.name)")
                     
-                    // QUAN TRỌNG: Dọn dẹp sạch toàn bộ biên lai cũ đang kẹt trước khi apply file mới
-                    let existingReceipts = DevicePatchService.allReceipts()
-                    for receipt in existingReceipts {
-                        try? DevicePatchService.restore(receipt: receipt, allowChangedTargets: true)
+                    // QUAN TRỌNG: Duyệt qua toàn bộ item hiện có trong store để dọn sạch biên lai cũ trước khi apply file mới
+                    let allExistingItems = await MainActor.run { store.items }
+                    for existingItem in allExistingItems {
+                        if let receipt = DevicePatchService.latestReceipt(projectID: existingItem.id) {
+                            try? DevicePatchService.restore(receipt: receipt, allowChangedTargets: true)
+                        }
                     }
                     
                     let targetItem = try await RemoteAPIManager.shared.downloadAndImportToStore(
@@ -433,11 +433,13 @@ struct CyberpunkToggleAimRow: View {
                         try DevicePatchService.restore(receipt: receipt, allowChangedTargets: true)
                         onLog("🔄 Khôi phục file gốc (Restore) thành công.")
                     } else {
-                        let allReceipts = DevicePatchService.allReceipts()
-                        for receipt in allReceipts {
-                            try? DevicePatchService.restore(receipt: receipt, allowChangedTargets: true)
+                        let allExistingItems = await MainActor.run { store.items }
+                        for existingItem in allExistingItems {
+                            if let receipt = DevicePatchService.latestReceipt(projectID: existingItem.id) {
+                                try? DevicePatchService.restore(receipt: receipt, allowChangedTargets: true)
+                            }
                         }
-                        onLog("🔄 Đã khôi phục toàn bộ trạng thái gốc an toàn.")
+                        onLog("🔄 Đã dọn sạch và khôi phục toàn bộ trạng thái gốc an toàn.")
                     }
                 }
                 
