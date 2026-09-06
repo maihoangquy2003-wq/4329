@@ -265,18 +265,20 @@ struct NeonParticleBackgroundView: View {
     }
 }
 
-// MARK: - HÀNG CHỨC NĂNG (ĐÃ FIX TUYỆT ĐỐI LỖI KÍCH HOẠT NHIỀU AIM)
+// MARK: - HÀNG CHỨC NĂNG (ĐÃ TÁCH BIỆT TRẠNG THÁI NÚT GẠT CỰC CHUẨN)
 struct ModFunctionRow: View {
     let remoteItem: RemoteAimItem
     @ObservedObject var store: PatchProjectStore
     
-    @State private var localItem: PatchLibraryItem?
     @State private var isApplied = false
     @State private var isWorking = false
     
-    // Khóa này trói chặt ID của Server với ID của File trong App
-    private var uniqueStorageKey: String {
-        return "mod_aim_key_\(remoteItem.id)"
+    private var toggleStateKey: String {
+        return "aim_toggled_on_\(remoteItem.id)"
+    }
+    
+    private var itemUUIDKey: String {
+        return "aim_internal_uuid_\(remoteItem.id)"
     }
     
     var body: some View {
@@ -315,15 +317,7 @@ struct ModFunctionRow: View {
     }
     
     private func checkStatus() {
-        if let savedId = UserDefaults.standard.string(forKey: uniqueStorageKey),
-           let match = store.items.first(where: { $0.id.uuidString == savedId }) {
-            self.localItem = match
-        }
-        if let local = localItem {
-            isApplied = DevicePatchService.latestReceipt(projectID: local.id) != nil
-        } else {
-            isApplied = false
-        }
+        self.isApplied = UserDefaults.standard.bool(forKey: toggleStateKey)
     }
     
     private func togglePatch(on: Bool) {
@@ -337,13 +331,10 @@ struct ModFunctionRow: View {
                 if on {
                     guard let url = URL(string: remoteItem.url) else { throw NSError(domain: "URL", code: 0) }
                     
-                    // Tải file về với tên cố định theo ID của Server, KHÔNG dùng Random UUID để tránh loạn hệ thống
                     let tempFileURL = try await Task.detached(priority: .userInitiated) {
                         let data = try Data(contentsOf: url)
-                        let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent("\(remoteItem.id).3105")
-                        if FileManager.default.fileExists(atPath: tempURL.path) {
-                            try? FileManager.default.removeItem(at: tempURL)
-                        }
+                        // Tên random để tránh bị lấy nhầm bộ đệm của file cũ
+                        let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent("aim_\(remoteItem.id)_\(UUID().uuidString.prefix(6)).3105")
                         try data.write(to: tempURL)
                         return tempURL
                     }.value
@@ -351,53 +342,39 @@ struct ModFunctionRow: View {
                     let beforeIds = store.items.map { $0.id }
                     store.importPackage(at: tempFileURL)
                     
-                    var foundItem: PatchLibraryItem? = nil
+                    // Chờ hệ thống bung file .3105
+                    try await Task.sleep(nanoseconds: 700_000_000)
                     
-                    // Vòng lặp siêu dò tìm file vừa tải trong 4.5 giây
-                    for _ in 0..<15 {
-                        try await Task.sleep(nanoseconds: 300_000_000) // Nghỉ 0.3s
-                        
-                        // Trường hợp 1: App nhận diện đây là file hoàn toàn mới
-                        if let new = store.items.first(where: { !beforeIds.contains($0.id) }) {
-                            foundItem = new
-                            break
-                        }
-                        
-                        // Trường hợp 2: App ghi đè file cũ (thường gặp khi up các Aim từ cùng 1 gốc Mod)
-                        if let savedId = UserDefaults.standard.string(forKey: uniqueStorageKey),
-                           let existing = store.items.first(where: { $0.id.uuidString == savedId }) {
-                            foundItem = existing
-                            break
-                        }
-                    }
+                    let foundItem = store.items.first(where: { !beforeIds.contains($0.id) }) ?? store.items.first
+                    guard let local = foundItem, let base = local.project else { throw NSError(domain: "Import", code: 0) }
                     
-                    // Trường hợp 3: Fallback cứu cánh cuối cùng
-                    if foundItem == nil {
-                        foundItem = store.items.first
-                    }
+                    // Lưu lại ID của file vừa bung để dùng lúc Tắt
+                    UserDefaults.standard.set(local.id.uuidString, forKey: itemUUIDKey)
                     
-                    guard let local = foundItem else { throw NSError(domain: "ImportFail", code: 0) }
-                    
-                    self.localItem = local
-                    UserDefaults.standard.set(local.id.uuidString, forKey: uniqueStorageKey)
-                    
-                    guard let base = local.project else { throw NSError(domain: "Proj", code: 0) }
                     let proj = local.summary.schemaVersion >= 2 && local.canInspectContents ? try PatchProjectLibrary.synchronizeWorkspace(item: local) : base
                     
                     _ = try DevicePatchService.apply(project: proj)
                     
+                    UserDefaults.standard.set(true, forKey: toggleStateKey)
                     self.isApplied = true
                     self.isWorking = false
                     AudioServicesPlaySystemSound(1407)
                 } else {
-                    if let local = self.localItem, let receipt = DevicePatchService.latestReceipt(projectID: local.id) {
+                    // Tắt chính xác file đã bật thông qua UUID đã lưu
+                    if let savedUuidStr = UserDefaults.standard.string(forKey: itemUUIDKey),
+                       let savedUuid = UUID(uuidString: savedUuidStr),
+                       let local = store.items.first(where: { $0.id == savedUuid }),
+                       let receipt = DevicePatchService.latestReceipt(projectID: local.id) {
                         try DevicePatchService.restore(receipt: receipt, allowChangedTargets: true)
                     }
+                    
+                    UserDefaults.standard.set(false, forKey: toggleStateKey)
                     self.isApplied = false
                     self.isWorking = false
                     AudioServicesPlaySystemSound(1407)
                 }
             } catch {
+                UserDefaults.standard.set(!on, forKey: toggleStateKey)
                 self.isApplied = !on
                 self.isWorking = false
                 AudioServicesPlaySystemSound(1053)
