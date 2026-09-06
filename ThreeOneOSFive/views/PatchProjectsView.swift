@@ -3,7 +3,13 @@ import UIKit
 import UniformTypeIdentifiers
 import AudioToolbox
 
-// MARK: - API Manager
+private enum PatchPackagePickerPolicy {
+    static let packageType = UTType(filenameExtension: "3105") ?? .data
+    static let allowedContentTypes: [UTType] = [packageType, .data]
+    static let copiesSelectedDocument = true
+}
+
+// MARK: - Remote API Manager
 class RemoteAPIManager {
     static let shared = RemoteAPIManager()
     private let fileManager = FileManager.default
@@ -12,44 +18,42 @@ class RemoteAPIManager {
     
     func fetchRemoteItems() async throws -> [RemoteAimItem] {
         let urlString = "https://solitudepremium.click/ipa/proxy/apiaim.php"
-        let requestURL = URL(string: "\(urlString)?t=\(Date().timeIntervalSince1970)")!
-        
-        var request = URLRequest(url: requestURL)
-        request.cachePolicy = .reloadIgnoringLocalCacheData
-        request.timeoutInterval = 15
-        
-        let (data, response) = try await URLSession.shared.data(for: request)
-        guard let httpResponse = response as? HTTPURLResponse,
-              (200...299).contains(httpResponse.statusCode) else { throw APIError.serverError }
-        do {
-            return try JSONDecoder().decode([RemoteAimItem].self, from: data)
-        } catch {
-            throw APIError.decodingError
+        guard let url = URL(string: "\(urlString)?t=\(Date().timeIntervalSince1970)") else { throw APIError.invalidURL }
+        let (data, response) = try await URLSession.shared.data(from: url)
+        guard let httpResponse = response as? HTTPURLResponse, (200...299).contains(httpResponse.statusCode) else {
+            throw APIError.serverError
         }
+        return try JSONDecoder().decode([RemoteAimItem].self, from: data)
     }
     
-    func downloadAndSaveFile(from remoteURL: String, itemID: String) async throws -> URL {
+    func downloadAndImportToStore(remoteURL: String, itemID: String, store: PatchProjectStore) async throws -> PatchLibraryItem {
         guard let url = URL(string: remoteURL) else { throw APIError.invalidURL }
-        var request = URLRequest(url: url)
-        request.cachePolicy = .reloadIgnoringLocalCacheData
-        
-        let (data, response) = try await URLSession.shared.data(for: request)
-        guard let httpResponse = response as? HTTPURLResponse,
-              (200...299).contains(httpResponse.statusCode) else { throw APIError.serverError }
-        
-        let documentsURL = fileManager.urls(for: .documentDirectory, in: .userDomainMask)[0]
-        let itemFolderURL = documentsURL.appendingPathComponent("PatchFiles/\(itemID)", isDirectory: true)
-        
-        if fileManager.fileExists(atPath: itemFolderURL.path) {
-            try? fileManager.removeItem(at: itemFolderURL)
+        let (data, response) = try await URLSession.shared.data(from: url)
+        guard let httpResponse = response as? HTTPURLResponse, (200...299).contains(httpResponse.statusCode) else {
+            throw APIError.serverError
         }
-        try fileManager.createDirectory(at: itemFolderURL, withIntermediateDirectories: true)
         
-        let fileName = "Patch_\(itemID)_\(UUID().uuidString.prefix(5)).3105"
-        let destinationURL = itemFolderURL.appendingPathComponent(fileName)
-        try data.write(to: destinationURL)
+        let docs = fileManager.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        let folder = docs.appendingPathComponent("RemoteAimCache/\(itemID)", isDirectory: true)
+        if !fileManager.fileExists(atPath: folder.path) {
+            try fileManager.createDirectory(at: folder, withIntermediateDirectories: true)
+        }
         
-        return destinationURL
+        let fileURL = folder.appendingPathComponent("Aim_\(itemID).3105")
+        try data.write(to: fileURL)
+        
+        // Import vào store và trả về item khớp với id của nó
+        return try await MainActor.run {
+            store.importPackage(at: fileURL)
+            // Tìm item vừa được import vào store dựa theo tên hoặc file URL
+            if let matched = store.items.first(where: { $0.packageURL.lastPathComponent.contains(itemID) }) {
+                return matched
+            }
+            guard let latest = store.items.last else {
+                throw NSError(domain: "StoreError", code: 0, userInfo: [NSLocalizedDescriptionKey: "Không thể nạp gói cấu hình"])
+            }
+            return latest
+        }
     }
 }
 
@@ -59,358 +63,6 @@ enum APIError: Error {
     case decodingError
 }
 
-// MARK: - Main View
-struct PatchProjectsView: View {
-    @Environment(\.appLanguage) private var language
-    @EnvironmentObject private var store: PatchProjectStore
-    
-    let onOpenSettings: () -> Void
-    let onOpenLogs: () -> Void
-    
-    @State private var showModMenu = false
-    @AppStorage("selected_game_bundle") private var selectedGameBundle: String = "com.dts.freefiremax"
-    @State private var remoteItems: [RemoteAimItem] = []
-    @State private var selectedTab: String = ""
-    @State private var isFetching = false
-    @State private var avatarRotation: Double = 0.0
-    
-    var body: some View {
-        ZStack {
-            Color.black.ignoresSafeArea()
-            NeonParticleBackgroundView()
-            
-            if !showModMenu {
-                homeScreen.transition(.opacity.combined(with: .scale(scale: 0.95)))
-            } else {
-                modMenuScreen.transition(.move(edge: .trailing))
-            }
-        }
-        .animation(.spring(response: 0.4, dampingFraction: 0.8), value: showModMenu)
-        .onAppear {
-            Task { await fetchRemoteData() }
-            withAnimation(.linear(duration: 6).repeatForever(autoreverses: false)) {
-                avatarRotation = 360
-            }
-        }
-    }
-    
-    private var homeScreen: some View {
-        VStack(spacing: 0) {
-            Spacer().frame(height: 30)
-            ScrollView(showsIndicators: false) {
-                VStack(spacing: 30) {
-                    VStack(spacing: 16) {
-                        ZStack {
-                            Circle()
-                                .stroke(AngularGradient(gradient: Gradient(colors: [.white, .gray, .black, .white]), center: .center), lineWidth: 3)
-                                .frame(width: 104, height: 104)
-                                .rotationEffect(.degrees(avatarRotation))
-                                .shadow(color: .white.opacity(0.5), radius: 10)
-                            AsyncImage(url: URL(string: "https://solitudepremium.click/ipa/proxy/li.jpg")) { phase in
-                                if let image = phase.image { image.resizable().scaledToFill() }
-                                else { Image(systemName: "person.circle.fill").resizable().foregroundColor(.white) }
-                            }
-                            .frame(width: 90, height: 90)
-                            .clipShape(Circle())
-                        }
-                        Text("Zenith Solitude")
-                            .font(.system(size: 24, weight: .black, design: .monospaced))
-                            .foregroundColor(.white)
-                            .shadow(color: .white.opacity(0.7), radius: 6)
-                        HStack(spacing: 10) {
-                            Rectangle().fill(LinearGradient(colors: [.clear, .white], startPoint: .leading, endPoint: .trailing)).frame(width: 30, height: 1)
-                            Text("HEADLOCK ZENIS")
-                                .font(.system(size: 11, weight: .bold, design: .monospaced))
-                                .foregroundColor(.white.opacity(0.8))
-                            Rectangle().fill(LinearGradient(colors: [.white, .clear], startPoint: .leading, endPoint: .trailing)).frame(width: 30, height: 1)
-                        }
-                    }
-                    VStack(spacing: 16) {
-                        homeGameCard(title: "Free Fire Max", icon: "https://solitudepremium.click/ipa/proxy/free.jpg", bundle: "com.dts.freefiremax")
-                        homeGameCard(title: "Free Fire Thường", icon: "https://solitudepremium.click/ipa/proxy/free.jpg", bundle: "com.dts.freefireth")
-                    }
-                    .padding(.horizontal, 20)
-                }
-                .padding(.bottom, 40)
-            }
-        }
-    }
-    
-    private func homeGameCard(title: String, icon: String, bundle: String) -> some View {
-        Button(action: {
-            AudioServicesPlaySystemSound(1306)
-            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-            selectedGameBundle = bundle
-            if !dynamicTabs.contains(selectedTab), let first = dynamicTabs.first {
-                selectedTab = first
-            }
-            withAnimation { showModMenu = true }
-        }) {
-            HStack(spacing: 16) {
-                AsyncImage(url: URL(string: icon)) { phase in
-                    if let image = phase.image { image.resizable().scaledToFill() }
-                    else { Image(systemName: "gamecontroller.fill").foregroundColor(.white) }
-                }
-                .frame(width: 52, height: 52)
-                .clipShape(RoundedRectangle(cornerRadius: 14))
-                .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.white.opacity(0.3), lineWidth: 1))
-                VStack(alignment: .leading, spacing: 5) {
-                    Text(title)
-                        .font(.system(size: 17, weight: .bold))
-                        .foregroundColor(.white)
-                    Text("Hệ thống sẵn sàng")
-                        .font(.system(size: 11, design: .monospaced))
-                        .foregroundColor(.white.opacity(0.5))
-                }
-                Spacer()
-                HStack(spacing: 6) {
-                    Text("MỞ MENU")
-                        .font(.system(size: 11, weight: .black, design: .monospaced))
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 10, weight: .bold))
-                }
-                .foregroundColor(.black)
-                .padding(.horizontal, 16)
-                .padding(.vertical, 12)
-                .background(Color.white)
-                .cornerRadius(16)
-                .shadow(color: .white.opacity(0.3), radius: 6)
-            }
-            .padding(16)
-            .background(Color.black)
-            .cornerRadius(20)
-            .overlay(RoundedRectangle(cornerRadius: 20).stroke(Color.white.opacity(0.25), lineWidth: 1.5))
-            .shadow(color: .white.opacity(0.1), radius: 8, x: 0, y: 4)
-        }
-        .buttonStyle(NeonScaleButtonStyle())
-    }
-    
-    private var modMenuScreen: some View {
-        VStack(spacing: 0) {
-            HStack(spacing: 12) {
-                Button(action: {
-                    AudioServicesPlaySystemSound(1306)
-                    withAnimation { showModMenu = false }
-                }) {
-                    Image(systemName: "chevron.left")
-                        .font(.system(size: 16, weight: .bold))
-                        .foregroundColor(.black)
-                        .frame(width: 40, height: 40)
-                        .background(Color.white)
-                        .clipShape(Circle())
-                        .shadow(color: .white.opacity(0.4), radius: 4)
-                }
-                .buttonStyle(NeonScaleButtonStyle())
-                Text(selectedGameBundle == "com.dts.freefiremax" ? "Free Fire Max" : "Free Fire Thường")
-                    .font(.system(size: 18, weight: .bold))
-                    .foregroundColor(.white)
-                Spacer()
-                Button(action: {
-                    Task { await fetchRemoteData() }
-                }) {
-                    Image(systemName: "arrow.triangle.2.circlepath")
-                        .font(.system(size: 14, weight: .bold))
-                        .foregroundColor(.white)
-                        .padding(10)
-                        .background(Circle().stroke(Color.white.opacity(0.4), lineWidth: 1.5))
-                }
-                .disabled(isFetching)
-                .buttonStyle(NeonScaleButtonStyle())
-            }
-            .padding(.horizontal, 20).padding(.top, 15)
-            
-            if !dynamicTabs.isEmpty {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 10) {
-                        ForEach(dynamicTabs, id: \.self) { tab in
-                            let isSelected = selectedTab.lowercased() == tab.lowercased()
-                            Button(action: {
-                                AudioServicesPlaySystemSound(1306)
-                                selectedTab = tab
-                            }) {
-                                Text(tab)
-                                    .font(.system(size: 13, weight: .bold, design: .monospaced))
-                                    .padding(.horizontal, 20).padding(.vertical, 10)
-                                    .background(isSelected ? Color.white : Color.black)
-                                    .foregroundColor(isSelected ? .black : .white)
-                                    .cornerRadius(20)
-                                    .overlay(RoundedRectangle(cornerRadius: 20).stroke(Color.white.opacity(isSelected ? 1.0 : 0.3), lineWidth: 1.5))
-                                    .shadow(color: isSelected ? .white.opacity(0.4) : .clear, radius: 6)
-                            }
-                            .buttonStyle(NeonScaleButtonStyle())
-                        }
-                    }
-                    .padding(.horizontal, 20).padding(.vertical, 16)
-                }
-            }
-            
-            ScrollView(showsIndicators: false) {
-                VStack(spacing: 14) {
-                    let filtered = remoteItems.filter { $0.target == selectedGameBundle && $0.category.lowercased() == selectedTab.lowercased() }
-                    if filtered.isEmpty {
-                        VStack(spacing: 10) {
-                            Image(systemName: "folder.badge.questionmark").font(.system(size: 40)).foregroundColor(.white.opacity(0.2))
-                            Text("Chưa có tính năng nào trong mục này").font(.system(size: 12, design: .monospaced)).foregroundColor(.gray)
-                        }.padding(.top, 100)
-                    } else {
-                        ForEach(filtered, id: \.id) { item in
-                            ModFunctionRow(remoteItem: item, store: store)
-                        }
-                    }
-                }
-                .padding(.horizontal, 20).padding(.bottom, 40)
-            }
-            Spacer()
-        }
-    }
-    
-    private var dynamicTabs: [String] {
-        var tabs: [String] = []
-        for item in remoteItems where item.target == selectedGameBundle {
-            if !tabs.contains(where: { $0.caseInsensitiveCompare(item.category) == .orderedSame }) {
-                tabs.append(item.category)
-            }
-        }
-        return tabs
-    }
-    
-    @MainActor
-    private func fetchRemoteData() async {
-        guard !isFetching else { return }
-        isFetching = true
-        defer { isFetching = false }
-        do {
-            remoteItems = try await RemoteAPIManager.shared.fetchRemoteItems()
-            if !dynamicTabs.contains(selectedTab), let first = dynamicTabs.first {
-                selectedTab = first
-            }
-        } catch {
-            print("Lỗi fetch remote data: \(error.localizedDescription)")
-        }
-    }
-}
-
-// MARK: - Mod Function Row
-struct ModFunctionRow: View {
-    let remoteItem: RemoteAimItem
-    @ObservedObject var store: PatchProjectStore
-    
-    @State private var isApplied = false
-    @State private var isWorking = false
-    
-    private var toggleStateKey: String { "aim_toggle_\(remoteItem.id)" }
-    private var mappedUUIDKey: String { "aim_uuid_\(remoteItem.id)" }
-    
-    var body: some View {
-        HStack(spacing: 14) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.1)).frame(width: 42, height: 42)
-                Image(systemName: isApplied ? "checkmark.shield.fill" : "shield.fill")
-                    .foregroundColor(isApplied ? .white : .gray)
-            }
-            VStack(alignment: .leading, spacing: 4) {
-                HStack(spacing: 6) {
-                    Text(remoteItem.name).font(.system(size: 15, weight: .bold)).foregroundColor(.white)
-                    Text("VIP").font(.system(size: 8, weight: .bold)).padding(.horizontal, 6).padding(.vertical, 2)
-                        .background(Color.white).cornerRadius(4).foregroundColor(.black)
-                }
-                if let note = remoteItem.note, !note.isEmpty {
-                    Text("📌 \(note)").font(.system(size: 10, design: .monospaced)).foregroundColor(.gray)
-                }
-            }
-            Spacer()
-            if isWorking {
-                ProgressView().tint(.white).scaleEffect(0.7)
-            } else {
-                Toggle("", isOn: Binding(get: { isApplied }, set: { val in executeAction(on: val) }))
-                    .labelsHidden().tint(.white)
-            }
-        }
-        .padding(14).background(Color.black).cornerRadius(18)
-        .overlay(RoundedRectangle(cornerRadius: 18).stroke(Color.white.opacity(isApplied ? 0.6 : 0.2), lineWidth: isApplied ? 1.5 : 1))
-        .onAppear {
-            self.isApplied = UserDefaults.standard.bool(forKey: toggleStateKey)
-        }
-    }
-    
-    private func executeAction(on: Bool) {
-        guard !isWorking else { return }
-        isWorking = true
-        AudioServicesPlaySystemSound(1306)
-        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-        
-        Task { @MainActor in
-            defer { isWorking = false }
-            do {
-                if on {
-                    try await applyPatch()
-                } else {
-                    try await removePatch()
-                }
-                UserDefaults.standard.set(on, forKey: toggleStateKey)
-                self.isApplied = on
-                AudioServicesPlaySystemSound(1407)
-            } catch {
-                print("Lỗi Patch: \(error.localizedDescription)")
-                UserDefaults.standard.set(!on, forKey: toggleStateKey)
-                self.isApplied = !on
-                AudioServicesPlaySystemSound(1053)
-            }
-        }
-    }
-    
-    @MainActor
-    private func applyPatch() async throws {
-        // 1. Tải file mới nhất từ PHP server
-        let fileURL = try await RemoteAPIManager.shared.downloadAndSaveFile(from: remoteItem.url, itemID: remoteItem.id)
-        
-        // 2. DỌN SẠCH KHO LƯU TRỮ CŨ TRONG STORE ĐỂ ÉP HỆ THỐNG NẠP MỚI HOÀN TOÀN
-        if let oldUuidStr = UserDefaults.standard.string(forKey: mappedUUIDKey),
-           let oldUuid = UUID(uuidString: oldUuidStr) {
-            if let receipt = DevicePatchService.latestReceipt(projectID: oldUuid) {
-                try? DevicePatchService.restore(receipt: receipt, allowChangedTargets: true)
-            }
-        }
-        
-        let beforeIds = Set(store.items.map { $0.id })
-        
-        // 3. Import file .3105 vào Store
-        store.importPackage(at: fileURL)
-        try await Task.sleep(nanoseconds: 800_000_000)
-        
-        // 4. Lấy item mới đúng chuẩn
-        guard let freshItem = store.items.first(where: { !beforeIds.contains($0.id) }) ?? store.items.last else {
-            throw NSError(domain: "PatchStore", code: 0, userInfo: [NSLocalizedDescriptionKey: "Không thể nạp cấu hình file vào hệ thống."])
-        }
-        
-        UserDefaults.standard.set(freshItem.id.uuidString, forKey: mappedUUIDKey)
-        
-        // 5. Áp dụng bản vá trực tiếp
-        let project: PatchProject
-        if freshItem.summary.schemaVersion >= 2 && freshItem.canInspectContents {
-            project = try PatchProjectLibrary.synchronizeWorkspace(item: freshItem)
-        } else {
-            guard let baseProject = freshItem.project else {
-                throw NSError(domain: "ProjectError", code: 0, userInfo: [NSLocalizedDescriptionKey: "Dữ liệu Mod không hợp lệ."])
-            }
-            project = baseProject
-        }
-                      
-        _ = try DevicePatchService.apply(project: project)
-    }
-    
-    @MainActor
-    private func removePatch() async throws {
-        if let uuidStr = UserDefaults.standard.string(forKey: mappedUUIDKey),
-           let uuid = UUID(uuidString: uuidStr),
-           let targetItem = store.items.first(where: { $0.id == uuid }),
-           let receipt = DevicePatchService.latestReceipt(projectID: targetItem.id) {
-            try DevicePatchService.restore(receipt: receipt, allowChangedTargets: true)
-        }
-    }
-}
-
-// MARK: - Remote Item Model
 struct RemoteAimItem: Codable, Identifiable {
     let id: String
     let name: String
@@ -420,31 +72,253 @@ struct RemoteAimItem: Codable, Identifiable {
     let url: String
 }
 
-// MARK: - Background View
-struct NeonParticleBackgroundView: View {
+// MARK: - Main View
+struct PatchProjectsView: View {
+    @Environment(\.appLanguage) private var language
+    @EnvironmentObject private var draftCoordinator: PatchDraftCoordinator
+    @EnvironmentObject private var store: PatchProjectStore
+    @AppStorage(FeatureVisibility.cleanerStorageKey) private var cleanerEnabled = true
+    
+    @State private var showCreate = false
+    @State private var showImporter = false
+    @State private var showCleaner = false
+    @State private var searchText = ""
+    @State private var remoteItems: [RemoteAimItem] = []
+    @State private var isFetchingRemote = false
+    @AppStorage("selected_game_bundle") private var selectedGameBundle: String = "com.dts.freefiremax"
+
+    let onOpenSettings: () -> Void
+    let onOpenLogs: () -> Void
+
     var body: some View {
-        TimelineView(.animation) { context in
-            Canvas { ctx, size in
-                let time = context.date.timeIntervalSinceReferenceDate
-                for i in 0..<60 {
-                    let seed = Double(i) * 55.0
-                    let x = (sin(time * 0.2 + seed) * 0.5 + 0.5) * size.width
-                    let y = size.height - fmod(time * (50.0 + fmod(seed, 25.0)) + seed, size.height)
-                    ctx.fill(Path(ellipseIn: CGRect(x: x, y: y, width: 2, height: 2)), with: .color(.white.opacity(0.35)))
+        NavigationStack {
+            VStack(spacing: 0) {
+                // Thanh chọn game
+                HStack(spacing: 12) {
+                    Button(action: { selectedGameBundle = "com.dts.freefiremax" }) {
+                        Text("Free Fire Max")
+                            .font(.system(size: 13, weight: .bold))
+                            .padding(.horizontal, 14).padding(.vertical, 8)
+                            .background(selectedGameBundle == "com.dts.freefiremax" ? Color.accentColor : Color.secondary.opacity(0.15))
+                            .foregroundColor(selectedGameBundle == "com.dts.freefiremax" ? .white : .primary)
+                            .cornerRadius(10)
+                    }
+                    Button(action: { selectedGameBundle = "com.dts.freefireth" }) {
+                        Text("Free Fire Thường")
+                            .font(.system(size: 13, weight: .bold))
+                            .padding(.horizontal, 14).padding(.vertical, 8)
+                            .background(selectedGameBundle == "com.dts.freefireth" ? Color.accentColor : Color.secondary.opacity(0.15))
+                            .foregroundColor(selectedGameBundle == "com.dts.freefireth" ? .white : .primary)
+                            .cornerRadius(10)
+                    }
+                    Spacer()
+                    Button(action: { Task { await fetchRemoteAimList() } }) {
+                        Image(systemName: "arrow.triangle.2.circlepath")
+                            .font(.system(size: 14, weight: .bold))
+                    }
+                    .disabled(isFetchingRemote)
                 }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 10)
+                
+                AppSearchField(
+                    text: $searchText,
+                    prompt: language.text("installed.search"),
+                    clearLabel: language.text("common.clear")
+                )
+                Divider()
+                
+                List {
+                    let filteredRemote = remoteItems.filter { $0.target == selectedGameBundle }
+                    if !filteredRemote.isEmpty {
+                        Section("MENU MOD GẠT NHANH") {
+                            ForEach(filteredRemote, id: \.id) { remoteItem in
+                                ToggleAimRow(remoteItem: remoteItem, store: store, language: language)
+                            }
+                        }
+                    }
+                    
+                    if !store.items.isEmpty {
+                        Section("CỤC BỘ (LOCAL)") {
+                            ForEach(store.items) { item in
+                                itemRow(item)
+                            }
+                            .onDelete { offsets in
+                                offsets.map { store.items[$0] }.forEach(store.delete)
+                            }
+                        }
+                    }
+                }
+                .listStyle(.insetGrouped)
+            }
+            .navigationTitle(language.text("tab.installed"))
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                AppUtilityToolbar(
+                    language: language,
+                    onOpenSettings: onOpenSettings,
+                    onOpenLogs: onOpenLogs
+                )
+            }
+            .onAppear {
+                Task { await fetchRemoteAimList() }
             }
         }
-        .allowsHitTesting(false)
+    }
+
+    private func fetchRemoteAimList() async {
+        guard !isFetchingRemote else { return }
+        isFetchingRemote = true
+        defer { isFetchingRemote = false }
+        do {
+            remoteItems = try await RemoteAPIManager.shared.fetchRemoteItems()
+        } catch {
+            print("Lỗi tải danh sách Aim: \(error.localizedDescription)")
+        }
+    }
+
+    @ViewBuilder
+    private func itemRow(_ item: PatchLibraryItem) -> some View {
+        NavigationLink {
+            PatchProjectDetailView(store: store, projectID: item.id)
+        } label: {
+            PatchProjectRow(item: item, language: language)
+        }
     }
 }
 
-// MARK: - Modifier
-struct PatchStorePresentationModifier: ViewModifier {
+// MARK: - Toggle Row độc lập cho từng chức năng (Chuẩn hóa chế cháo menu gạt)
+private struct ToggleAimRow: View {
+    let remoteItem: RemoteAimItem
     @ObservedObject var store: PatchProjectStore
-    func body(content: Content) -> some View { content }
+    let language: AppLanguage
+    
+    @State private var isWorking = false
+    @State private var mappedItemID: UUID? = nil
+    
+    // Kiểm tra xem tính năng này có đang được bật biên lai không
+    private var isApplied: Bool {
+        guard let id = mappedItemID else { return false }
+        return DevicePatchService.latestReceipt(projectID: id) != nil
+    }
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: isApplied ? "checkmark.shield.fill" : "shield")
+                .foregroundColor(isApplied ? .accentColor : .secondary)
+                .font(.system(size: 20))
+            
+            VStack(alignment: .leading, spacing: 3) {
+                Text(remoteItem.name)
+                    .font(.body.weight(.semibold))
+                    .foregroundStyle(.primary)
+                Text("Mục: \(remoteItem.category)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                if let note = remoteItem.note, !note.isEmpty {
+                    Text("📌 \(note)")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            Spacer()
+            
+            if isWorking {
+                ProgressView()
+                    .scaleEffect(0.8)
+            } else {
+                Toggle("", isOn: Binding(
+                    get: { isApplied },
+                    set: { newValue in
+                        handleToggle(newValue)
+                    }
+                ))
+                .labelsHidden()
+            }
+        }
+        .padding(.vertical, 4)
+        .onAppear {
+            // Khớp ID trong store dựa trên tên file hoặc URL đã lưu trước đó
+            if let found = store.items.first(where: { $0.packageURL.lastPathComponent.contains(remoteItem.id) }) {
+                mappedItemID = found.id
+            }
+        }
+    }
+    
+    private func handleToggle(_ turnOn: Bool) {
+        guard !isWorking else { return }
+        isWorking = true
+        AudioServicesPlaySystemSound(1306)
+        
+        Task.detached(priority: .userInitiated) {
+            do {
+                if turnOn {
+                    // 1. Tải và import file vào store nếu chưa có
+                    let targetItem = try await RemoteAPIManager.shared.downloadAndImportToStore(
+                        remoteURL: remoteItem.url,
+                        itemID: remoteItem.id,
+                        store: store
+                    )
+                    
+                    await MainActor.run {
+                        mappedItemID = targetItem.id
+                    }
+                    
+                    let project = targetItem.summary.schemaVersion >= 2 && targetItem.canInspectContents 
+                        ? try PatchProjectLibrary.synchronizeWorkspace(item: targetItem) 
+                        : (targetItem.project ?? PatchProject())
+                    
+                    // 2. Kích hoạt patch
+                    _ = try DevicePatchService.apply(project: project)
+                    
+                } else {
+                    // Tắt: Lấy biên lai và thực hiện restore khôi phục gốc
+                    if let id = await MainActor.run({ mappedItemID }),
+                       let receipt = DevicePatchService.latestReceipt(projectID: id) {
+                        try DevicePatchService.restore(receipt: receipt, allowChangedTargets: true)
+                    }
+                }
+                
+                await MainActor.run {
+                    store.reload()
+                    isWorking = false
+                    AudioServicesPlaySystemSound(1407)
+                }
+            } catch {
+                await MainActor.run {
+                    isWorking = false
+                    AudioServicesPlaySystemSound(1053)
+                    print("Lỗi chuyển đổi toggle: \(error.localizedDescription)")
+                }
+            }
+        }
+    }
 }
-extension View {
-    func patchStorePresentation(_ store: PatchProjectStore) -> some View {
-        modifier(PatchStorePresentationModifier(store: store))
+
+// Giữ lại các thành phần UI phụ trợ
+private struct PatchProjectRow: View {
+    let item: PatchLibraryItem
+    let language: AppLanguage
+
+    var body: some View {
+        HStack(spacing: 12) {
+            AppRowIcon(systemName: "shippingbox.fill")
+            VStack(alignment: .leading, spacing: 3) {
+                Text(item.project?.name ?? "Dự án")
+                    .font(.body.weight(.semibold))
+                Text("\(item.project?.rules.count ?? 0) quy tắc")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+}
+
+private struct PatchProjectDetailView: View {
+    @Environment(\.appLanguage) private var language
+    @ObservedObject var store: PatchProjectStore
+    let projectID: UUID
+    var body: some View {
+        Text("Chi tiết dự án")
     }
 }
