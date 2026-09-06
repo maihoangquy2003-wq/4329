@@ -11,18 +11,11 @@ class RemoteAPIManager {
     
     private init() {}
     
-    // MARK: - Fetch Remote Items
     func fetchRemoteItems() async throws -> [RemoteAimItem] {
-        guard let url = URL(string: "\(baseURL)/apiaim.php") else {
-            throw APIError.invalidURL
-        }
-        
+        guard let url = URL(string: "\(baseURL)/apiaim.php") else { throw APIError.invalidURL }
         let (data, response) = try await URLSession.shared.data(from: url)
         guard let httpResponse = response as? HTTPURLResponse,
-              (200...299).contains(httpResponse.statusCode) else {
-            throw APIError.serverError
-        }
-        
+              (200...299).contains(httpResponse.statusCode) else { throw APIError.serverError }
         do {
             return try JSONDecoder().decode([RemoteAimItem].self, from: data)
         } catch {
@@ -30,39 +23,26 @@ class RemoteAPIManager {
         }
     }
     
-    // MARK: - Download and Save File
     func downloadAndSaveFile(from remoteURL: String, itemID: String) async throws -> URL {
-        guard let url = URL(string: remoteURL) else {
-            throw APIError.invalidURL
-        }
-        
+        guard let url = URL(string: remoteURL) else { throw APIError.invalidURL }
         let documentsURL = fileManager.urls(for: .documentDirectory, in: .userDomainMask)[0]
         let itemFolderURL = documentsURL.appendingPathComponent("PatchFiles/\(itemID)", isDirectory: true)
-        
         if !fileManager.fileExists(atPath: itemFolderURL.path) {
             try fileManager.createDirectory(at: itemFolderURL, withIntermediateDirectories: true)
         }
-        
         let fileName = "\(itemID)_\(Date().timeIntervalSince1970).3105"
         let destinationURL = itemFolderURL.appendingPathComponent(fileName)
-        
         let (data, response) = try await URLSession.shared.data(from: url)
         guard let httpResponse = response as? HTTPURLResponse,
-              (200...299).contains(httpResponse.statusCode) else {
-            throw APIError.serverError
-        }
-        
+              (200...299).contains(httpResponse.statusCode) else { throw APIError.serverError }
         try data.write(to: destinationURL)
         return destinationURL
     }
     
-    // MARK: - Clean Old Files
     func cleanOldFiles(for itemID: String, keepCurrent: URL? = nil) {
         let documentsURL = fileManager.urls(for: .documentDirectory, in: .userDomainMask)[0]
         let itemFolderURL = documentsURL.appendingPathComponent("PatchFiles/\(itemID)", isDirectory: true)
-        
         guard let files = try? fileManager.contentsOfDirectory(at: itemFolderURL, includingPropertiesForKeys: nil) else { return }
-        
         for file in files {
             if let keepCurrent = keepCurrent, file == keepCurrent { continue }
             try? fileManager.removeItem(at: file)
@@ -70,7 +50,6 @@ class RemoteAPIManager {
     }
 }
 
-// MARK: - Error
 enum APIError: Error {
     case invalidURL
     case serverError
@@ -87,7 +66,6 @@ struct PatchProjectsView: View {
     
     @State private var showModMenu = false
     @AppStorage("selected_game_bundle") private var selectedGameBundle: String = "com.dts.freefiremax"
-    
     @State private var remoteItems: [RemoteAimItem] = []
     @State private var selectedTab: String = ""
     @State private var isFetching = false
@@ -113,7 +91,6 @@ struct PatchProjectsView: View {
         }
     }
     
-    // MARK: - Home Screen
     private var homeScreen: some View {
         VStack(spacing: 0) {
             Spacer().frame(height: 30)
@@ -126,7 +103,6 @@ struct PatchProjectsView: View {
                                 .frame(width: 104, height: 104)
                                 .rotationEffect(.degrees(avatarRotation))
                                 .shadow(color: .white.opacity(0.5), radius: 10)
-                            
                             AsyncImage(url: URL(string: "https://solitudepremium.click/ipa/proxy/li.jpg")) { phase in
                                 if let image = phase.image { image.resizable().scaledToFill() }
                                 else { Image(systemName: "person.circle.fill").resizable().foregroundColor(.white) }
@@ -134,12 +110,10 @@ struct PatchProjectsView: View {
                             .frame(width: 90, height: 90)
                             .clipShape(Circle())
                         }
-                        
                         Text("Zenith Solitude")
                             .font(.system(size: 24, weight: .black, design: .monospaced))
                             .foregroundColor(.white)
                             .shadow(color: .white.opacity(0.7), radius: 6)
-                        
                         HStack(spacing: 10) {
                             Rectangle().fill(LinearGradient(colors: [.clear, .white], startPoint: .leading, endPoint: .trailing)).frame(width: 30, height: 1)
                             Text("HEADLOCK ZENIS")
@@ -148,7 +122,6 @@ struct PatchProjectsView: View {
                             Rectangle().fill(LinearGradient(colors: [.white, .clear], startPoint: .leading, endPoint: .trailing)).frame(width: 30, height: 1)
                         }
                     }
-                    
                     VStack(spacing: 16) {
                         homeGameCard(title: "Free Fire Max", icon: "https://solitudepremium.click/ipa/proxy/free.jpg", bundle: "com.dts.freefiremax")
                         homeGameCard(title: "Free Fire Thường", icon: "https://solitudepremium.click/ipa/proxy/free.jpg", bundle: "com.dts.freefireth")
@@ -178,7 +151,6 @@ struct PatchProjectsView: View {
                 .frame(width: 52, height: 52)
                 .clipShape(RoundedRectangle(cornerRadius: 14))
                 .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.white.opacity(0.3), lineWidth: 1))
-                
                 VStack(alignment: .leading, spacing: 5) {
                     Text(title)
                         .font(.system(size: 17, weight: .bold))
@@ -188,7 +160,6 @@ struct PatchProjectsView: View {
                         .foregroundColor(.white.opacity(0.5))
                 }
                 Spacer()
-                
                 HStack(spacing: 6) {
                     Text("MỞ MENU")
                         .font(.system(size: 11, weight: .black, design: .monospaced))
@@ -211,7 +182,6 @@ struct PatchProjectsView: View {
         .buttonStyle(NeonScaleButtonStyle())
     }
     
-    // MARK: - Mod Menu Screen
     private var modMenuScreen: some View {
         VStack(spacing: 0) {
             HStack(spacing: 12) {
@@ -228,13 +198,10 @@ struct PatchProjectsView: View {
                         .shadow(color: .white.opacity(0.4), radius: 4)
                 }
                 .buttonStyle(NeonScaleButtonStyle())
-                
                 Text(selectedGameBundle == "com.dts.freefiremax" ? "Free Fire Max" : "Free Fire Thường")
                     .font(.system(size: 18, weight: .bold))
                     .foregroundColor(.white)
-                
                 Spacer()
-                
                 Button(action: {
                     Task { await fetchRemoteData() }
                 }) {
@@ -308,7 +275,6 @@ struct PatchProjectsView: View {
     private func fetchRemoteData() async {
         guard !isFetching else { return }
         isFetching = true
-        
         do {
             remoteItems = try await RemoteAPIManager.shared.fetchRemoteItems()
             if !dynamicTabs.contains(selectedTab), let first = dynamicTabs.first {
@@ -317,7 +283,6 @@ struct PatchProjectsView: View {
         } catch {
             print("Lỗi fetch remote data: \(error.localizedDescription)")
         }
-        
         isFetching = false
     }
 }
@@ -340,20 +305,17 @@ struct ModFunctionRow: View {
                 Image(systemName: isApplied ? "checkmark.shield.fill" : "shield.fill")
                     .foregroundColor(isApplied ? .white : .gray)
             }
-            
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 6) {
                     Text(remoteItem.name).font(.system(size: 15, weight: .bold)).foregroundColor(.white)
                     Text("VIP").font(.system(size: 8, weight: .bold)).padding(.horizontal, 6).padding(.vertical, 2)
                         .background(Color.white).cornerRadius(4).foregroundColor(.black)
                 }
-                
                 if let note = remoteItem.note, !note.isEmpty {
                     Text("📌 \(note)").font(.system(size: 10, design: .monospaced)).foregroundColor(.gray)
                 }
             }
             Spacer()
-            
             if isWorking {
                 ProgressView().tint(.white).scaleEffect(0.7)
             } else {
@@ -381,12 +343,10 @@ struct ModFunctionRow: View {
                 } else {
                     try await removePatch()
                 }
-                
                 UserDefaults.standard.set(on, forKey: toggleStateKey)
                 self.isApplied = on
                 self.isWorking = false
                 AudioServicesPlaySystemSound(1407)
-                
             } catch {
                 print("Lỗi hệ thống patch: \(error.localizedDescription)")
                 UserDefaults.standard.set(!on, forKey: toggleStateKey)
@@ -400,17 +360,13 @@ struct ModFunctionRow: View {
     @MainActor
     private func applyPatch() async throws {
         let fileURL = try await RemoteAPIManager.shared.downloadAndSaveFile(from: remoteItem.url, itemID: remoteItem.id)
-        
         let beforeIds = store.items.map { $0.id }
         store.importPackage(at: fileURL)
         try await Task.sleep(nanoseconds: 700_000_000)
-        
         guard let freshItem = store.items.first(where: { !beforeIds.contains($0.id) }) else {
             throw NSError(domain: "ImportFailed", code: 0, userInfo: [NSLocalizedDescriptionKey: "Không thể nạp cấu hình file vào hệ thống."])
         }
-        
         UserDefaults.standard.set(freshItem.id.uuidString, forKey: mappedUUIDKey)
-        
         let project: PatchProject
         if freshItem.summary.schemaVersion >= 2 && freshItem.canInspectContents {
             project = try PatchProjectLibrary.synchronizeWorkspace(item: freshItem)
@@ -420,9 +376,7 @@ struct ModFunctionRow: View {
             }
             project = baseProject
         }
-        
         _ = try DevicePatchService.apply(project: project)
-        
         RemoteAPIManager.shared.cleanOldFiles(for: remoteItem.id, keepCurrent: fileURL)
     }
     
@@ -436,20 +390,17 @@ struct ModFunctionRow: View {
         } else {
             let documentsURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
             let itemFolderURL = documentsURL.appendingPathComponent("PatchFiles/\(remoteItem.id)", isDirectory: true)
-            
             if let files = try? FileManager.default.contentsOfDirectory(at: itemFolderURL, includingPropertiesForKeys: nil),
                let latestFile = files.max(by: { $0.lastPathComponent < $1.lastPathComponent }) {
                 let beforeIds = store.items.map { $0.id }
                 store.importPackage(at: latestFile)
                 try await Task.sleep(nanoseconds: 500_000_000)
-                
                 if let targetItem = store.items.first(where: { !beforeIds.contains($0.id) }),
                    let receipt = DevicePatchService.latestReceipt(projectID: targetItem.id) {
                     try DevicePatchService.restore(receipt: receipt, allowChangedTargets: true)
                 }
             }
         }
-        
         RemoteAPIManager.shared.cleanOldFiles(for: remoteItem.id)
     }
 }
@@ -482,12 +433,13 @@ struct NeonParticleBackgroundView: View {
     }
 }
 
-// MARK: - Button Style
-struct NeonScaleButtonStyle: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .scaleEffect(configuration.isPressed ? 0.95 : 1.0)
-            .opacity(configuration.isPressed ? 0.8 : 1.0)
-            .animation(.easeOut(duration: 0.2), value: configuration.isPressed)
+// MARK: - Modifier (không private)
+struct PatchStorePresentationModifier: ViewModifier {
+    @ObservedObject var store: PatchProjectStore
+    func body(content: Content) -> some View { content }
+}
+extension View {
+    func patchStorePresentation(_ store: PatchProjectStore) -> some View {
+        modifier(PatchStorePresentationModifier(store: store))
     }
 }
