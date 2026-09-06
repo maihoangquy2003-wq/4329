@@ -360,18 +360,29 @@ struct ModFunctionRow: View {
     
     @MainActor
     private func applyPatch() async throws {
+        // 1. CƯỠNG ÉP DỌN SẠCH MỌI BIÊN LAI CŨ TRÊN HỆ THỐNG TRƯỚC KHI KÍCH HOẠT GÓI MỚI
+        for oldItem in store.items {
+            if let oldReceipt = DevicePatchService.latestReceipt(projectID: oldItem.id) {
+                try? DevicePatchService.restore(receipt: oldReceipt, allowChangedTargets: true)
+            }
+        }
+        
+        // 2. Tải file mới từ server
         let fileURL = try await RemoteAPIManager.shared.downloadAndSaveFile(from: remoteItem.url, itemID: remoteItem.id)
         let beforeIds = Set(store.items.map { $0.id })
         
+        // 3. Nạp gói vào kho lưu trữ
         store.importPackage(at: fileURL)
-        try await Task.sleep(nanoseconds: 700_000_000)
+        try await Task.sleep(nanoseconds: 800_000_000)
         
-        guard let freshItem = store.items.first(where: { !beforeIds.contains($0.id) }) ?? store.items.last else {
+        // 4. Lấy item mới vừa bung ra
+        guard let freshItem = store.items.first(where: { !beforeIds.contains($0.id) }) else {
             throw NSError(domain: "PatchStore", code: 0, userInfo: [NSLocalizedDescriptionKey: "Gói mod không hợp lệ hoặc không tải được."])
         }
         
         UserDefaults.standard.set(freshItem.id.uuidString, forKey: mappedUUIDKey)
         
+        // 5. Đồng bộ hóa và áp dụng patch mới
         let project: PatchProject
         if freshItem.summary.schemaVersion >= 2 && freshItem.canInspectContents {
             project = try PatchProjectLibrary.synchronizeWorkspace(item: freshItem)
