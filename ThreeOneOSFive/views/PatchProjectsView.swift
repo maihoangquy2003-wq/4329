@@ -265,7 +265,7 @@ struct NeonParticleBackgroundView: View {
     }
 }
 
-// MARK: - HÀNG CHỨC NĂNG (FORCE ISOLATED IMPORT ENGINE)
+// MARK: - HÀNG CHỨC NĂNG (CLEAN ISOLATED IMPORT ENGINE)
 struct ModFunctionRow: View {
     let remoteItem: RemoteAimItem
     @ObservedObject var store: PatchProjectStore
@@ -322,32 +322,22 @@ struct ModFunctionRow: View {
                 let fileManager = FileManager.default
                 let docsURL = fileManager.urls(for: .documentDirectory, in: .userDomainMask)[0]
                 
-                // Tạo một tên file hoàn toàn ngẫu nhiên và định danh riêng cho mục này
                 let uniqueFileName = "AimData_\(remoteItem.id)_\(UUID().uuidString.prefix(6)).3105"
                 let targetFileURL = docsURL.appendingPathComponent(uniqueFileName)
                 
                 if on {
-                    // Tải dữ liệu chính xác từ URL của mục đó về
                     guard let url = URL(string: remoteItem.url) else { throw NSError(domain: "URL", code: 0) }
                     let data = try Data(contentsOf: url)
                     try data.write(to: targetFileURL)
                     
-                    // Xóa sạch mọi rác cũ liên quan đến ID này nếu có trong store trước đó để ép Store nhận bản mới tinh
-                    if let oldUuidStr = UserDefaults.standard.string(forKey: mappedUUIDKey),
-                       let oldUuid = UUID(uuidString: oldUuidStr) {
-                        store.deletePackage(id: oldUuid)
-                    }
-                    
-                    // Import file hoàn toàn độc lập vào Store
+                    let beforeIds = store.items.map { $0.id }
                     store.importPackage(at: targetFileURL)
-                    try await Task.sleep(nanoseconds: 700_000_000) // Chờ hệ thống bung file
+                    try await Task.sleep(nanoseconds: 700_000_000)
                     
-                    // Lấy chính xác item vừa mới được thêm vào (item ở cuối danh sách store)
-                    guard let freshItem = store.items.last, let base = freshItem.project else {
+                    guard let freshItem = store.items.first(where: { !beforeIds.contains($0.id) }) ?? store.items.last, let base = freshItem.project else {
                         throw NSError(domain: "ImportFailed", code: 0, userInfo: [NSLocalizedDescriptionKey: "Không thể nạp cấu hình file vào hệ thống."])
                     }
                     
-                    // Lưu lại ID UUID thực tế của item này vào UserDefaults riêng cho nút gạt này
                     UserDefaults.standard.set(freshItem.id.uuidString, forKey: mappedUUIDKey)
                     
                     let proj = freshItem.summary.schemaVersion >= 2 && freshItem.canInspectContents ? try PatchProjectLibrary.synchronizeWorkspace(item: freshItem) : base
@@ -360,13 +350,13 @@ struct ModFunctionRow: View {
                     AudioServicesPlaySystemSound(1407)
                     
                 } else {
-                    // Tắt chính xác mục tương ứng dựa vào UUID đã lưu
                     if let uuidStr = UserDefaults.standard.string(forKey: mappedUUIDKey),
                        let uuid = UUID(uuidString: uuidStr),
                        let targetItem = store.items.first(where: { $0.id == uuid }),
                        let receipt = DevicePatchService.latestReceipt(projectID: targetItem.id) {
                         try DevicePatchService.restore(receipt: receipt, allowChangedTargets: true)
-                        store.deletePackage(id: uuid) // Xóa gói khỏi danh sách quản lý rác của Store
+                    } else if let fallbackItem = store.items.last, let receipt = DevicePatchService.latestReceipt(projectID: fallbackItem.id) {
+                        try DevicePatchService.restore(receipt: receipt, allowChangedTargets: true)
                     }
                     
                     UserDefaults.standard.set(false, forKey: toggleStateKey)
