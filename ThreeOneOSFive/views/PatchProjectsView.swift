@@ -42,10 +42,8 @@ class RemoteAPIManager {
         let fileURL = folder.appendingPathComponent("Aim_\(itemID).3105")
         try data.write(to: fileURL)
         
-        // Import vào store và trả về item khớp với id của nó
         return try await MainActor.run {
             store.importPackage(at: fileURL)
-            // Tìm item vừa được import vào store dựa theo tên hoặc file URL
             if let matched = store.items.first(where: { $0.packageURL.lastPathComponent.contains(itemID) }) {
                 return matched
             }
@@ -187,7 +185,7 @@ struct PatchProjectsView: View {
     }
 }
 
-// MARK: - Toggle Row độc lập cho từng chức năng (Chuẩn hóa chế cháo menu gạt)
+// MARK: - Toggle Row độc lập cho từng chức năng
 private struct ToggleAimRow: View {
     let remoteItem: RemoteAimItem
     @ObservedObject var store: PatchProjectStore
@@ -196,7 +194,6 @@ private struct ToggleAimRow: View {
     @State private var isWorking = false
     @State private var mappedItemID: UUID? = nil
     
-    // Kiểm tra xem tính năng này có đang được bật biên lai không
     private var isApplied: Bool {
         guard let id = mappedItemID else { return false }
         return DevicePatchService.latestReceipt(projectID: id) != nil
@@ -238,7 +235,6 @@ private struct ToggleAimRow: View {
         }
         .padding(.vertical, 4)
         .onAppear {
-            // Khớp ID trong store dựa trên tên file hoặc URL đã lưu trước đó
             if let found = store.items.first(where: { $0.packageURL.lastPathComponent.contains(remoteItem.id) }) {
                 mappedItemID = found.id
             }
@@ -253,7 +249,6 @@ private struct ToggleAimRow: View {
         Task.detached(priority: .userInitiated) {
             do {
                 if turnOn {
-                    // 1. Tải và import file vào store nếu chưa có
                     let targetItem = try await RemoteAPIManager.shared.downloadAndImportToStore(
                         remoteURL: remoteItem.url,
                         itemID: remoteItem.id,
@@ -264,15 +259,20 @@ private struct ToggleAimRow: View {
                         mappedItemID = targetItem.id
                     }
                     
-                    let project = targetItem.summary.schemaVersion >= 2 && targetItem.canInspectContents 
-                        ? try PatchProjectLibrary.synchronizeWorkspace(item: targetItem) 
-                        : (targetItem.project ?? PatchProject())
+                    // Sửa lỗi: Thay vì dùng PatchProject() gây lỗi thiếu Decoder, dùng điều kiện an toàn lấy baseProject
+                    let project: PatchProject
+                    if targetItem.summary.schemaVersion >= 2 && targetItem.canInspectContents {
+                        project = try PatchProjectLibrary.synchronizeWorkspace(item: targetItem)
+                    } else {
+                        guard let baseProject = targetItem.project else {
+                            throw NSError(domain: "ProjectError", code: 0, userInfo: [NSLocalizedDescriptionKey: "Dữ liệu Mod không hợp lệ."])
+                        }
+                        project = baseProject
+                    }
                     
-                    // 2. Kích hoạt patch
                     _ = try DevicePatchService.apply(project: project)
                     
                 } else {
-                    // Tắt: Lấy biên lai và thực hiện restore khôi phục gốc
                     if let id = await MainActor.run({ mappedItemID }),
                        let receipt = DevicePatchService.latestReceipt(projectID: id) {
                         try DevicePatchService.restore(receipt: receipt, allowChangedTargets: true)
@@ -295,7 +295,22 @@ private struct ToggleAimRow: View {
     }
 }
 
-// Giữ lại các thành phần UI phụ trợ
+// MARK: - Sửa lỗi ContentView: Thêm Extension patchStorePresentation để khớp với ContentView.swift
+private struct PatchStorePresentationModifier: ViewModifier {
+    @ObservedObject var store: PatchProjectStore
+
+    func body(content: Content) -> some View {
+        content
+    }
+}
+
+extension View {
+    func patchStorePresentation(_ store: PatchProjectStore) -> some View {
+        modifier(PatchStorePresentationModifier(store: store))
+    }
+}
+
+// MARK: - Các thành phần UI phụ trợ
 private struct PatchProjectRow: View {
     let item: PatchLibraryItem
     let language: AppLanguage
