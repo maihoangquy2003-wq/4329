@@ -259,7 +259,6 @@ private struct ToggleAimRow: View {
                         mappedItemID = targetItem.id
                     }
                     
-                    // Sửa lỗi: Thay vì dùng PatchProject() gây lỗi thiếu Decoder, dùng điều kiện an toàn lấy baseProject
                     let project: PatchProject
                     if targetItem.summary.schemaVersion >= 2 && targetItem.canInspectContents {
                         project = try PatchProjectLibrary.synchronizeWorkspace(item: targetItem)
@@ -273,7 +272,8 @@ private struct ToggleAimRow: View {
                     _ = try DevicePatchService.apply(project: project)
                     
                 } else {
-                    if let id = await MainActor.run({ mappedItemID }),
+                    let currentID = await MainActor.run { mappedItemID }
+                    if let id = currentID,
                        let receipt = DevicePatchService.latestReceipt(projectID: id) {
                         try DevicePatchService.restore(receipt: receipt, allowChangedTargets: true)
                     }
