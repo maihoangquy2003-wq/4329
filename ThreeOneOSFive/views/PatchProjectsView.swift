@@ -1,3 +1,4 @@
+
 import SwiftUI
 import UIKit
 import UniformTypeIdentifiers
@@ -207,7 +208,8 @@ struct PatchProjectsView: View {
                             Text("Chưa có tính năng nào trong mục này").font(.system(size: 12, design: .monospaced)).foregroundColor(.gray)
                         }.padding(.top, 100)
                     } else {
-                        ForEach(filtered) { item in
+                        // Thêm id: \.url để ngăn lỗi SwiftUI nếu data API bị trùng lặp id
+                        ForEach(filtered, id: \.url) { item in
                             ModFunctionRow(remoteItem: item, store: store)
                         }
                     }
@@ -265,6 +267,7 @@ struct NeonParticleBackgroundView: View {
     }
 }
 
+// MARK: - HÀNG CHỨC NĂNG (ĐÃ FIX LỖI KÍCH HOẠT NHIỀU AIM)
 struct ModFunctionRow: View {
     let remoteItem: RemoteAimItem
     @ObservedObject var store: PatchProjectStore
@@ -306,15 +309,26 @@ struct ModFunctionRow: View {
         .padding(14).background(Color.black).cornerRadius(18)
         .overlay(RoundedRectangle(cornerRadius: 18).stroke(Color.white.opacity(isApplied ? 0.6 : 0.2), lineWidth: isApplied ? 1.5 : 1))
         .onAppear(perform: checkStatus)
+        .onChange(of: store.items.count) { _ in checkStatus() }
     }
     
     private func checkStatus() {
-        if let savedId = UserDefaults.standard.string(forKey: "mod_\(remoteItem.id)"),
+        // Tìm Mod dựa vào Tên (Khắc phục lỗi ghi đè ID khi làm mod từ 1 khuôn)
+        if let savedId = UserDefaults.standard.string(forKey: "mod_uid_\(remoteItem.name.hashValue)"),
            let match = store.items.first(where: { $0.id.uuidString == savedId }) {
             self.localItem = match
+        } else if let match = store.items.first(where: { $0.summary.displayName == remoteItem.name }) {
+            self.localItem = match
+            UserDefaults.standard.set(match.id.uuidString, forKey: "mod_uid_\(remoteItem.name.hashValue)")
+        } else if let savedId = UserDefaults.standard.string(forKey: "mod_\(remoteItem.id)"), // Giữ fallback cũ
+                  let match = store.items.first(where: { $0.id.uuidString == savedId }) {
+            self.localItem = match
         }
+
         if let local = localItem {
             isApplied = DevicePatchService.latestReceipt(projectID: local.id) != nil
+        } else {
+            isApplied = false
         }
     }
     
@@ -332,7 +346,9 @@ struct ModFunctionRow: View {
                     if targetItem == nil {
                         guard let url = URL(string: remoteItem.url) else { throw NSError(domain: "URL", code: 0) }
                         let data = try Data(contentsOf: url)
-                        let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent("\(remoteItem.id).3105")
+                        
+                        // FIX: Đặt tên file Random để khi tải nhiều aim cùng lúc không bị đè file hỏng
+                        let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent("\(UUID().uuidString).3105")
                         try data.write(to: tempURL)
                         
                         let beforeIds = await MainActor.run { store.items.map { $0.id } }
@@ -340,10 +356,16 @@ struct ModFunctionRow: View {
                         try await Task.sleep(nanoseconds: 1_500_000_000)
                         
                         targetItem = await MainActor.run { store.items.first { !beforeIds.contains($0.id) } }
+                        
+                        // FIX: Nếu import bị ghi đè ngầm (do Modder không tạo UUID mới cho Project) thì sẽ tự tìm theo Tên
+                        if targetItem == nil {
+                            targetItem = await MainActor.run { store.items.first { $0.summary.displayName == remoteItem.name } }
+                        }
+                        
                         if let newLocal = targetItem {
                             await MainActor.run {
                                 self.localItem = newLocal
-                                UserDefaults.standard.set(newLocal.id.uuidString, forKey: "mod_\(remoteItem.id)")
+                                UserDefaults.standard.set(newLocal.id.uuidString, forKey: "mod_uid_\(remoteItem.name.hashValue)")
                             }
                         } else {
                             throw NSError(domain: "ImportFail", code: 0)
