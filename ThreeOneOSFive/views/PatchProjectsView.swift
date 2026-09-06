@@ -283,7 +283,7 @@ struct PatchProjectsView: View {
     }
 }
 
-// MARK: - Mod Function Row (đã khắc phục triệt để)
+// MARK: - Mod Function Row
 struct ModFunctionRow: View {
     let remoteItem: RemoteAimItem
     @ObservedObject var store: PatchProjectStore
@@ -386,32 +386,21 @@ struct ModFunctionRow: View {
         }
         
         _ = try DevicePatchService.apply(project: project)
-        
-        // 4. Dọn file cũ (chỉ giữ file hiện tại)
-        RemoteAPIManager.shared.removeAllFiles(for: remoteItem.id)
-        try? FileManager.default.createDirectory(at: fileURL.deletingLastPathComponent(), withIntermediateDirectories: true)
-        try? FileManager.default.moveItem(at: fileURL, to: fileURL)
     }
     
     @MainActor
     private func removePatch() async throws {
-        // 1. Lấy itemID đã lưu
+        // Restore nếu có receipt
         if let itemID = importedItemID,
            let targetItem = store.items.first(where: { $0.id == itemID }),
            let receipt = DevicePatchService.latestReceipt(projectID: targetItem.id) {
-            // 2. Restore
             try DevicePatchService.restore(receipt: receipt, allowChangedTargets: true)
         }
         
-        // 3. Xóa item khỏi store nếu có thể
-        if let itemID = importedItemID {
-            store.items.removeAll { $0.id == itemID }
-        }
-        
-        // 4. Xóa file đã tải
+        // Xóa file đã tải
         RemoteAPIManager.shared.removeAllFiles(for: remoteItem.id)
         
-        // 5. Reset trạng thái
+        // Reset trạng thái
         importedItemID = nil
         UserDefaults.standard.removeObject(forKey: mappedUUIDKey)
     }
@@ -445,7 +434,7 @@ struct NeonParticleBackgroundView: View {
     }
 }
 
-// MARK: - Modifier (không private)
+// MARK: - Modifier
 struct PatchStorePresentationModifier: ViewModifier {
     @ObservedObject var store: PatchProjectStore
     func body(content: Content) -> some View { content }
