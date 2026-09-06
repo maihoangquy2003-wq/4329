@@ -1,4 +1,3 @@
-
 import SwiftUI
 import UIKit
 import UniformTypeIdentifiers
@@ -19,7 +18,6 @@ class RemoteAPIManager {
         }
         
         let (data, response) = try await URLSession.shared.data(from: url)
-        
         guard let httpResponse = response as? HTTPURLResponse,
               (200...299).contains(httpResponse.statusCode) else {
             throw APIError.serverError
@@ -38,7 +36,6 @@ class RemoteAPIManager {
             throw APIError.invalidURL
         }
         
-        // Tạo thư mục riêng cho mỗi item
         let documentsURL = fileManager.urls(for: .documentDirectory, in: .userDomainMask)[0]
         let itemFolderURL = documentsURL.appendingPathComponent("PatchFiles/\(itemID)", isDirectory: true)
         
@@ -57,46 +54,6 @@ class RemoteAPIManager {
         
         try data.write(to: destinationURL)
         return destinationURL
-    }
-    
-    // MARK: - Upload File
-    func uploadFile(fileURL: URL, name: String, category: String, target: String, note: String) async throws {
-        guard let url = URL(string: "\(baseURL)/upload.php") else {
-            throw APIError.invalidURL
-        }
-        
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        
-        let boundary = UUID().uuidString
-        request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
-        
-        var body = Data()
-        // Thêm file
-        let fileData = try Data(contentsOf: fileURL)
-        body.append("--\(boundary)\r\n")
-        body.append("Content-Disposition: form-data; name=\"file\"; filename=\"\(fileURL.lastPathComponent)\"\r\n")
-        body.append("Content-Type: application/octet-stream\r\n\r\n")
-        body.append(fileData)
-        body.append("\r\n")
-        
-        // Thêm các field
-        let fields = ["name": name, "category": category, "target": target, "note": note]
-        for (key, value) in fields {
-            body.append("--\(boundary)\r\n")
-            body.append("Content-Disposition: form-data; name=\"\(key)\"\r\n\r\n")
-            body.append("\(value)\r\n")
-        }
-        body.append("--\(boundary)--\r\n")
-        
-        request.httpBody = body
-        
-        let (data, response) = try await URLSession.shared.data(for: request)
-        guard let httpResponse = response as? HTTPURLResponse,
-              (200...299).contains(httpResponse.statusCode) else {
-            throw APIError.serverError
-        }
-        // Có thể parse response nếu cần
     }
     
     // MARK: - Clean Old Files
@@ -135,7 +92,6 @@ struct PatchProjectsView: View {
     @State private var selectedTab: String = ""
     @State private var isFetching = false
     @State private var avatarRotation: Double = 0.0
-    @State private var showUpload = false
     
     var body: some View {
         ZStack {
@@ -149,9 +105,6 @@ struct PatchProjectsView: View {
             }
         }
         .animation(.spring(response: 0.4, dampingFraction: 0.8), value: showModMenu)
-        .sheet(isPresented: $showUpload) {
-            UploadView(selectedGameBundle: selectedGameBundle)
-        }
         .onAppear {
             Task { await fetchRemoteData() }
             withAnimation(.linear(duration: 6).repeatForever(autoreverses: false)) {
@@ -281,15 +234,6 @@ struct PatchProjectsView: View {
                     .foregroundColor(.white)
                 
                 Spacer()
-                
-                Button(action: { showUpload = true }) {
-                    Image(systemName: "square.and.arrow.up")
-                        .font(.system(size: 14, weight: .bold))
-                        .foregroundColor(.white)
-                        .padding(10)
-                        .background(Circle().stroke(Color.white.opacity(0.4), lineWidth: 1.5))
-                }
-                .buttonStyle(NeonScaleButtonStyle())
                 
                 Button(action: {
                     Task { await fetchRemoteData() }
@@ -507,134 +451,6 @@ struct ModFunctionRow: View {
         }
         
         RemoteAPIManager.shared.cleanOldFiles(for: remoteItem.id)
-    }
-}
-
-// MARK: - Upload View
-struct UploadView: View {
-    let selectedGameBundle: String
-    @Environment(\.dismiss) private var dismiss
-    
-    @State private var fileName = ""
-    @State private var category = ""
-    @State private var note = ""
-    @State private var fileURL: URL?
-    @State private var isUploading = false
-    @State private var showFilePicker = false
-    
-    var body: some View {
-        NavigationView {
-            ZStack {
-                Color.black.ignoresSafeArea()
-                
-                VStack(spacing: 20) {
-                    Text("Tải lên file .3105")
-                        .font(.system(size: 22, weight: .bold))
-                        .foregroundColor(.white)
-                    
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Tên chức năng")
-                            .font(.system(size: 12, design: .monospaced))
-                            .foregroundColor(.gray)
-                        TextField("Nhập tên", text: $fileName)
-                            .textFieldStyle(.plain)
-                            .padding()
-                            .background(Color.white.opacity(0.1))
-                            .cornerRadius(10)
-                            .foregroundColor(.white)
-                    }
-                    
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Thư mục (category)")
-                            .font(.system(size: 12, design: .monospaced))
-                            .foregroundColor(.gray)
-                        TextField("Nhập tên thư mục", text: $category)
-                            .textFieldStyle(.plain)
-                            .padding()
-                            .background(Color.white.opacity(0.1))
-                            .cornerRadius(10)
-                            .foregroundColor(.white)
-                    }
-                    
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Ghi chú")
-                            .font(.system(size: 12, design: .monospaced))
-                            .foregroundColor(.gray)
-                        TextField("Ghi chú (không bắt buộc)", text: $note)
-                            .textFieldStyle(.plain)
-                            .padding()
-                            .background(Color.white.opacity(0.1))
-                            .cornerRadius(10)
-                            .foregroundColor(.white)
-                    }
-                    
-                    Button(action: { showFilePicker = true }) {
-                        HStack {
-                            Image(systemName: "doc.badge.plus")
-                            Text(fileURL?.lastPathComponent ?? "Chọn file .3105")
-                                .lineLimit(1)
-                        }
-                        .padding()
-                        .frame(maxWidth: .infinity)
-                        .background(Color.white.opacity(0.1))
-                        .cornerRadius(10)
-                        .foregroundColor(.white)
-                    }
-                    
-                    Button(action: upload) {
-                        if isUploading {
-                            ProgressView()
-                                .tint(.white)
-                                .frame(maxWidth: .infinity)
-                                .padding()
-                        } else {
-                            Text("Tải lên")
-                                .font(.system(size: 16, weight: .bold))
-                                .frame(maxWidth: .infinity)
-                                .padding()
-                                .background(Color.white)
-                                .foregroundColor(.black)
-                                .cornerRadius(12)
-                        }
-                    }
-                    .disabled(fileURL == nil || fileName.isEmpty || category.isEmpty || isUploading)
-                    
-                    Spacer()
-                }
-                .padding()
-            }
-            .navigationBarItems(trailing: Button("Đóng") { dismiss() })
-        }
-        .fileImporter(isPresented: $showFilePicker, allowedContentTypes: [UTType(filenameExtension: "3105") ?? .data]) { result in
-            switch result {
-            case .success(let url):
-                fileURL = url
-            case .failure(let error):
-                print("Lỗi chọn file: \(error.localizedDescription)")
-            }
-        }
-    }
-    
-    private func upload() {
-        guard let fileURL = fileURL else { return }
-        isUploading = true
-        
-        Task {
-            do {
-                try await RemoteAPIManager.shared.uploadFile(
-                    fileURL: fileURL,
-                    name: fileName,
-                    category: category,
-                    target: selectedGameBundle,
-                    note: note
-                )
-                isUploading = false
-                dismiss()
-            } catch {
-                print("Lỗi upload: \(error.localizedDescription)")
-                isUploading = false
-            }
-        }
     }
 }
 
