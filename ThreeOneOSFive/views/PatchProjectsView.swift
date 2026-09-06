@@ -364,7 +364,6 @@ struct ModFunctionRow: View {
         let beforeIds = Set(store.items.map { $0.id })
         
         store.importPackage(at: fileURL)
-        
         try await Task.sleep(nanoseconds: 700_000_000)
         
         guard let freshItem = store.items.first(where: { !beforeIds.contains($0.id) }) ?? store.items.last else {
