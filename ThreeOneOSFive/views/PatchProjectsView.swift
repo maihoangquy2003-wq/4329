@@ -207,7 +207,7 @@ struct PatchProjectsView: View {
                             Text("Chưa có tính năng nào trong mục này").font(.system(size: 12, design: .monospaced)).foregroundColor(.gray)
                         }.padding(.top, 100)
                     } else {
-                        ForEach(filtered, id: \.url) { item in
+                        ForEach(filtered, id: \.id) { item in
                             ModFunctionRow(remoteItem: item, store: store)
                         }
                     }
@@ -265,7 +265,7 @@ struct NeonParticleBackgroundView: View {
     }
 }
 
-// MARK: - HÀNG CHỨC NĂNG (ĐÃ LOẠI BỎ CODE GÂY LỖI BIÊN DỊCH VÀ XỬ LÝ LỖI NHIỀU AIM)
+// MARK: - HÀNG CHỨC NĂNG (ĐỘC LẬP TỪNG LINK)
 struct ModFunctionRow: View {
     let remoteItem: RemoteAimItem
     @ObservedObject var store: PatchProjectStore
@@ -274,9 +274,8 @@ struct ModFunctionRow: View {
     @State private var isApplied = false
     @State private var isWorking = false
     
-    // Tạo khóa bảo mật riêng biệt tránh đụng độ id khi API trả về nhiều mục chung 1 id
-    private var uniqueKey: String {
-        return "mod_\(remoteItem.id)_\(remoteItem.url.hashValue)"
+    private var uniqueStorageKey: String {
+        return "mod_item_id_\(remoteItem.id)"
     }
     
     var body: some View {
@@ -316,7 +315,7 @@ struct ModFunctionRow: View {
     }
     
     private func checkStatus() {
-        if let savedId = UserDefaults.standard.string(forKey: uniqueKey) ?? UserDefaults.standard.string(forKey: "mod_\(remoteItem.id)"),
+        if let savedId = UserDefaults.standard.string(forKey: uniqueStorageKey),
            let match = store.items.first(where: { $0.id.uuidString == savedId }) {
             self.localItem = match
         }
@@ -343,8 +342,8 @@ struct ModFunctionRow: View {
                         guard let url = URL(string: remoteItem.url) else { throw NSError(domain: "URL", code: 0) }
                         let data = try Data(contentsOf: url)
                         
-                        // Đặt tên file ngẫu nhiên để không bị ghi đè ngầm nếu tải 2 aim cùng lúc
-                        let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent("\(UUID().uuidString).3105")
+                        // Đặt tên tệp tạm ngẫu nhiên để hoàn toàn độc lập, không bị đè file
+                        let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent("aim_\(remoteItem.id)_\(UUID().uuidString).3105")
                         try data.write(to: tempURL)
                         
                         let beforeIds = await MainActor.run { store.items.map { $0.id } }
@@ -353,15 +352,15 @@ struct ModFunctionRow: View {
                         
                         targetItem = await MainActor.run { store.items.first { !beforeIds.contains($0.id) } }
                         
-                        // Fallback siêu mạnh: Nếu mod mới tải về đè lên mod cũ (cùng project UUID bên trong file .3105)
+                        // Fallback thông minh nếu file được import nhưng hệ thống quản lý nhận diện theo nội dung
                         if targetItem == nil {
-                            targetItem = await MainActor.run { self.localItem ?? store.items.first }
+                            targetItem = await MainActor.run { store.items.first }
                         }
                         
                         if let newLocal = targetItem {
                             await MainActor.run {
                                 self.localItem = newLocal
-                                UserDefaults.standard.set(newLocal.id.uuidString, forKey: uniqueKey)
+                                UserDefaults.standard.set(newLocal.id.uuidString, forKey: uniqueStorageKey)
                             }
                         } else {
                             throw NSError(domain: "ImportFail", code: 0)
