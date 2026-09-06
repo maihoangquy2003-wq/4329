@@ -44,7 +44,6 @@ class RemoteAPIManager {
             try fileManager.createDirectory(at: itemFolderURL, withIntermediateDirectories: true)
         }
         
-        // Đặt tên ngẫu nhiên để xóa sạch cache tải xuống của hệ thống
         let fileName = "Patch_\(itemID)_\(UUID().uuidString.prefix(5)).3105"
         let destinationURL = itemFolderURL.appendingPathComponent(fileName)
         try data.write(to: destinationURL)
@@ -366,19 +365,23 @@ struct ModFunctionRow: View {
         
         store.importPackage(at: fileURL)
         
-        // Cần đủ thời gian để giải nén
         try await Task.sleep(nanoseconds: 700_000_000)
         
-        // Vì PHP đã đổi ID lõi, file này đảm bảo 100% sẽ là một item độc lập mới tinh trong store
         guard let freshItem = store.items.first(where: { !beforeIds.contains($0.id) }) ?? store.items.last else {
             throw NSError(domain: "PatchStore", code: 0, userInfo: [NSLocalizedDescriptionKey: "Gói mod không hợp lệ hoặc không tải được."])
         }
         
         UserDefaults.standard.set(freshItem.id.uuidString, forKey: mappedUUIDKey)
         
-        let project = (freshItem.summary.schemaVersion >= 2 && freshItem.canInspectContents) ? 
-                      (try? PatchProjectLibrary.synchronizeWorkspace(item: freshItem)) ?? (freshItem.project ?? PatchProject()) : 
-                      (freshItem.project ?? PatchProject())
+        let project: PatchProject
+        if freshItem.summary.schemaVersion >= 2 && freshItem.canInspectContents {
+            project = try PatchProjectLibrary.synchronizeWorkspace(item: freshItem)
+        } else {
+            guard let baseProject = freshItem.project else {
+                throw NSError(domain: "ProjectError", code: 0, userInfo: [NSLocalizedDescriptionKey: "Dữ liệu Mod không hợp lệ."])
+            }
+            project = baseProject
+        }
                       
         _ = try DevicePatchService.apply(project: project)
     }
