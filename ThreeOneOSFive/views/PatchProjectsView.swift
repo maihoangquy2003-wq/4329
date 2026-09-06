@@ -11,7 +11,6 @@ class RemoteAPIManager {
     private init() {}
     
     func fetchRemoteItems() async throws -> [RemoteAimItem] {
-        // Luôn gọi API mới nhất, thêm timestamp để chặn tình trạng bị lưu cache mạng
         let urlString = "https://solitudepremium.click/ipa/proxy/apiaim.php"
         let requestURL = URL(string: "\(urlString)?t=\(Date().timeIntervalSince1970)")!
         
@@ -41,31 +40,16 @@ class RemoteAPIManager {
         let documentsURL = fileManager.urls(for: .documentDirectory, in: .userDomainMask)[0]
         let itemFolderURL = documentsURL.appendingPathComponent("PatchFiles/\(itemID)", isDirectory: true)
         
-        // Luôn xóa thư mục chứa file cũ để nạp file mới nhất từ Web
-        if fileManager.fileExists(atPath: itemFolderURL.path) {
-            try? fileManager.removeItem(at: itemFolderURL)
+        if !fileManager.fileExists(atPath: itemFolderURL.path) {
+            try fileManager.createDirectory(at: itemFolderURL, withIntermediateDirectories: true)
         }
-        try fileManager.createDirectory(at: itemFolderURL, withIntermediateDirectories: true)
         
-        let fileName = "Zenith_Mod_\(itemID).3105"
+        // Đặt tên ngẫu nhiên để xóa sạch cache tải xuống của hệ thống
+        let fileName = "Patch_\(itemID)_\(UUID().uuidString.prefix(5)).3105"
         let destinationURL = itemFolderURL.appendingPathComponent(fileName)
         try data.write(to: destinationURL)
         
         return destinationURL
-    }
-    
-    func cleanWorkspacesCache() {
-        // CƯỠNG ÉP XÓA BỘ NHỚ GIẢI NÉN TẠM CỦA STORE
-        // Điều này ép PatchProjectStore nhận diện mỗi file .3105 tải về là một bộ dữ liệu hoàn toàn mới, loại bỏ 100% lỗi trùng ID lõi.
-        let docs = fileManager.urls(for: .documentDirectory, in: .userDomainMask)[0]
-        let cacheFolders = ["Workspaces", "Projects", "Packages", "Imported", "Extracted"]
-        
-        for folder in cacheFolders {
-            let folderURL = docs.appendingPathComponent(folder)
-            if fileManager.fileExists(atPath: folderURL.path) {
-                try? fileManager.removeItem(at: folderURL)
-            }
-        }
     }
 }
 
@@ -314,8 +298,8 @@ struct ModFunctionRow: View {
     @State private var isApplied = false
     @State private var isWorking = false
     
-    private var toggleStateKey: String { "aim_toggle_\(remoteItem.id)_\(remoteItem.target)" }
-    private var mappedUUIDKey: String { "aim_uuid_\(remoteItem.id)_\(remoteItem.target)" }
+    private var toggleStateKey: String { "aim_toggle_\(remoteItem.id)" }
+    private var mappedUUIDKey: String { "aim_uuid_\(remoteItem.id)" }
     
     var body: some View {
         HStack(spacing: 14) {
@@ -367,7 +351,7 @@ struct ModFunctionRow: View {
                 self.isApplied = on
                 AudioServicesPlaySystemSound(1407)
             } catch {
-                print("Lỗi hệ thống patch: \(error.localizedDescription)")
+                print("Lỗi Patch: \(error.localizedDescription)")
                 UserDefaults.standard.set(!on, forKey: toggleStateKey)
                 self.isApplied = !on
                 AudioServicesPlaySystemSound(1053)
@@ -377,37 +361,25 @@ struct ModFunctionRow: View {
     
     @MainActor
     private func applyPatch() async throws {
-        // BƯỚC 1: Tải chính xác file .3105 từ đường dẫn mới nhất trên web
         let fileURL = try await RemoteAPIManager.shared.downloadAndSaveFile(from: remoteItem.url, itemID: remoteItem.id)
-        
-        // BƯỚC 2: XÓA SẠCH CACHE LÕI GIẢI NÉN ĐỂ BYPASS LỖI NHẬN NHẦM FILE CŨ
-        RemoteAPIManager.shared.cleanWorkspacesCache()
-        
-        // BƯỚC 3: Import vào Store
         let beforeIds = Set(store.items.map { $0.id })
+        
         store.importPackage(at: fileURL)
         
-        // Đợi hệ thống bung file (tăng thời gian lên 800ms để đảm bảo bung kịp)
-        try await Task.sleep(nanoseconds: 800_000_000)
+        // Cần đủ thời gian để giải nén
+        try await Task.sleep(nanoseconds: 700_000_000)
         
-        // BƯỚC 4: Bắt lấy cấu trúc file đã bung. Dù bị trùng ID, file bung ra sẽ được lấy làm mục cuối.
-        guard let activeItem = store.items.first(where: { !beforeIds.contains($0.id) }) ?? store.items.last else {
-            throw NSError(domain: "Import", code: 0, userInfo: [NSLocalizedDescriptionKey: "Lỗi nạp cấu trúc file vào bộ nhớ."])
+        // Vì PHP đã đổi ID lõi, file này đảm bảo 100% sẽ là một item độc lập mới tinh trong store
+        guard let freshItem = store.items.first(where: { !beforeIds.contains($0.id) }) ?? store.items.last else {
+            throw NSError(domain: "PatchStore", code: 0, userInfo: [NSLocalizedDescriptionKey: "Gói mod không hợp lệ hoặc không tải được."])
         }
         
-        UserDefaults.standard.set(activeItem.id.uuidString, forKey: mappedUUIDKey)
+        UserDefaults.standard.set(freshItem.id.uuidString, forKey: mappedUUIDKey)
         
-        // BƯỚC 5: Thực thi ghi dữ liệu
-        let project: PatchProject
-        if activeItem.summary.schemaVersion >= 2 && activeItem.canInspectContents {
-            project = try PatchProjectLibrary.synchronizeWorkspace(item: activeItem)
-        } else {
-            guard let baseProject = activeItem.project else {
-                throw NSError(domain: "Project", code: 0, userInfo: [NSLocalizedDescriptionKey: "Dữ liệu Mod không hợp lệ."])
-            }
-            project = baseProject
-        }
-        
+        let project = (freshItem.summary.schemaVersion >= 2 && freshItem.canInspectContents) ? 
+                      (try? PatchProjectLibrary.synchronizeWorkspace(item: freshItem)) ?? (freshItem.project ?? PatchProject()) : 
+                      (freshItem.project ?? PatchProject())
+                      
         _ = try DevicePatchService.apply(project: project)
     }
     
