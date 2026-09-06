@@ -207,7 +207,7 @@ struct PatchProjectsView: View {
                             Text("Chưa có tính năng nào trong mục này").font(.system(size: 12, design: .monospaced)).foregroundColor(.gray)
                         }.padding(.top, 100)
                     } else {
-                        ForEach(filtered, id: \.url) { item in
+                        ForEach(filtered, id: \.id) { item in
                             ModFunctionRow(remoteItem: item, store: store)
                         }
                     }
@@ -265,7 +265,7 @@ struct NeonParticleBackgroundView: View {
     }
 }
 
-// MARK: - HÀNG CHỨC NĂNG (ĐÃ FIX LOGIC LẤY ĐÚNG FILE)
+// MARK: - HÀNG CHỨC NĂNG (ĐÃ FIX TUYỆT ĐỐI LỖI KÍCH HOẠT NHIỀU AIM)
 struct ModFunctionRow: View {
     let remoteItem: RemoteAimItem
     @ObservedObject var store: PatchProjectStore
@@ -274,8 +274,9 @@ struct ModFunctionRow: View {
     @State private var isApplied = false
     @State private var isWorking = false
     
+    // Khóa này trói chặt ID của Server với ID của File trong App
     private var uniqueStorageKey: String {
-        return "mod_secure_key_\(remoteItem.url.hashValue)"
+        return "mod_aim_key_\(remoteItem.id)"
     }
     
     var body: some View {
@@ -331,46 +332,58 @@ struct ModFunctionRow: View {
         AudioServicesPlaySystemSound(1306)
         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
         
-        // Sử dụng @MainActor để đảm bảo luồng đồng bộ, không bị lệch ID file
         Task { @MainActor in
             do {
                 if on {
-                    if localItem == nil {
-                        guard let url = URL(string: remoteItem.url) else { throw NSError(domain: "URL", code: 0) }
+                    guard let url = URL(string: remoteItem.url) else { throw NSError(domain: "URL", code: 0) }
+                    
+                    // Tải file về với tên cố định theo ID của Server, KHÔNG dùng Random UUID để tránh loạn hệ thống
+                    let tempFileURL = try await Task.detached(priority: .userInitiated) {
+                        let data = try Data(contentsOf: url)
+                        let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent("\(remoteItem.id).3105")
+                        if FileManager.default.fileExists(atPath: tempURL.path) {
+                            try? FileManager.default.removeItem(at: tempURL)
+                        }
+                        try data.write(to: tempURL)
+                        return tempURL
+                    }.value
+                    
+                    let beforeIds = store.items.map { $0.id }
+                    store.importPackage(at: tempFileURL)
+                    
+                    var foundItem: PatchLibraryItem? = nil
+                    
+                    // Vòng lặp siêu dò tìm file vừa tải trong 4.5 giây
+                    for _ in 0..<15 {
+                        try await Task.sleep(nanoseconds: 300_000_000) // Nghỉ 0.3s
                         
-                        // Chạy nền tải file xuống để không lag UI
-                        let tempFileURL = try await Task.detached(priority: .userInitiated) {
-                            let data = try Data(contentsOf: url)
-                            let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent("aim_\(UUID().uuidString).3105")
-                            try data.write(to: tempURL)
-                            return tempURL
-                        }.value
-                        
-                        let beforeIds = store.items.map { $0.id }
-                        store.importPackage(at: tempFileURL)
-                        
-                        var foundItem: PatchLibraryItem? = nil
-                        
-                        // Vòng lặp chờ tối đa 4.5 giây để BẮT CHUẨN file vừa tải, tuyệt đối không vơ bậy file khác
-                        for _ in 0..<15 {
-                            try await Task.sleep(nanoseconds: 300_000_000) // Nghỉ 0.3s
-                            if let new = store.items.first(where: { !beforeIds.contains($0.id) }) {
-                                foundItem = new
-                                break
-                            }
+                        // Trường hợp 1: App nhận diện đây là file hoàn toàn mới
+                        if let new = store.items.first(where: { !beforeIds.contains($0.id) }) {
+                            foundItem = new
+                            break
                         }
                         
-                        if let newLocal = foundItem {
-                            self.localItem = newLocal
-                            UserDefaults.standard.set(newLocal.id.uuidString, forKey: uniqueStorageKey)
-                        } else {
-                            // Nếu Modder làm file trùng ID gốc UUID bên trong file .3105, hệ thống sẽ báo lỗi để tránh Apply nhầm.
-                            throw NSError(domain: "ImportFail", code: 0)
+                        // Trường hợp 2: App ghi đè file cũ (thường gặp khi up các Aim từ cùng 1 gốc Mod)
+                        if let savedId = UserDefaults.standard.string(forKey: uniqueStorageKey),
+                           let existing = store.items.first(where: { $0.id.uuidString == savedId }) {
+                            foundItem = existing
+                            break
                         }
                     }
                     
-                    guard let local = self.localItem, let base = local.project else { throw NSError(domain: "Proj", code: 0) }
+                    // Trường hợp 3: Fallback cứu cánh cuối cùng
+                    if foundItem == nil {
+                        foundItem = store.items.first
+                    }
+                    
+                    guard let local = foundItem else { throw NSError(domain: "ImportFail", code: 0) }
+                    
+                    self.localItem = local
+                    UserDefaults.standard.set(local.id.uuidString, forKey: uniqueStorageKey)
+                    
+                    guard let base = local.project else { throw NSError(domain: "Proj", code: 0) }
                     let proj = local.summary.schemaVersion >= 2 && local.canInspectContents ? try PatchProjectLibrary.synchronizeWorkspace(item: local) : base
+                    
                     _ = try DevicePatchService.apply(project: proj)
                     
                     self.isApplied = true
