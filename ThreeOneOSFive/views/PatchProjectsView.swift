@@ -29,7 +29,6 @@ class RemoteAPIManager {
     }
     
     func downloadDedicatedFile(for remoteItem: RemoteAimItem) async throws -> URL {
-        // Gắn kèm timestamp vào URL để chắc chắn server trả về đúng file của Aim này mà không bị dính cache
         let separator = remoteItem.url.contains("?") ? "&" : "?"
         let bustedURLString = "\(remoteItem.url)\(separator)aim_id=\(remoteItem.id)&t=\(Date().timeIntervalSince1970)"
         guard let url = URL(string: bustedURLString) else { throw APIError.invalidURL }
@@ -46,11 +45,10 @@ class RemoteAPIManager {
         let aimFolderURL = documentsURL.appendingPathComponent("DedicatedAimCache/\(remoteItem.id)", isDirectory: true)
         
         if fileManager.fileExists(atPath: aimFolderURL.path) {
-            try? fileManager.removeItem(at: aimFolderURL) // Xóa sạch file cũ của riêng Aim này để bắt buộc tải mới hoàn toàn
+            try? fileManager.removeItem(at: aimFolderURL)
         }
         try fileManager.createDirectory(at: aimFolderURL, withIntermediateDirectories: true)
         
-        // Đặt tên file gắn liền với ID của Aim
         let fileURL = aimFolderURL.appendingPathComponent("Aim_\(remoteItem.id).3105")
         try data.write(to: fileURL)
         return fileURL
@@ -327,7 +325,7 @@ struct PatchProjectsView: View {
     }
 }
 
-// MARK: - Hàng nút gạt Cyberpunk (Mỗi Aim gắn liền 1 file độc lập riêng biệt tuyệt đối)
+// MARK: - Hàng nút gạt Cyberpunk độc lập
 struct CyberpunkToggleAimRow: View {
     let remoteItem: RemoteAimItem
     @ObservedObject var store: PatchProjectStore
@@ -372,7 +370,6 @@ struct CyberpunkToggleAimRow: View {
         .padding(14).background(Color.black).cornerRadius(18)
         .overlay(RoundedRectangle(cornerRadius: 18).stroke(Color.white.opacity(isApplied ? 0.6 : 0.2), lineWidth: isApplied ? 1.5 : 1))
         .onAppear {
-            // Khớp chính xác item trong store theo đúng ID của Aim này
             if let found = store.items.first(where: { $0.packageURL.path.contains("DedicatedAimCache/\(remoteItem.id)") }) {
                 mappedItemID = found.id
             }
@@ -390,7 +387,7 @@ struct CyberpunkToggleAimRow: View {
                 if on {
                     onLog("📥 Bắt buộc tải file riêng cho [\(remoteItem.name)] (ID: \(remoteItem.id))...")
                     
-                    // 1. Dọn dẹp sạch toàn bộ các biên lai cũ đang kích hoạt để tránh xung đột
+                    // 1. Dọn dẹp sạch toàn bộ các biên lai cũ đang kích hoạt
                     let allExistingItems = await MainActor.run { store.items }
                     for existingItem in allExistingItems {
                         if let receipt = DevicePatchService.latestReceipt(projectID: existingItem.id) {
@@ -398,10 +395,10 @@ struct CyberpunkToggleAimRow: View {
                         }
                     }
                     
-                    // 2. Tải file ĐẶC BIỆT và RIÊNG BIỆT dành riêng cho Aim này từ URL của nó
+                    // 2. Tải file ĐẶC BIỆT và RIÊNG BIỆT dành riêng cho Aim này
                     let dedicatedFileURL = try await RemoteAPIManager.shared.downloadDedicatedFile(for: remoteItem)
                     
-                    // 3. Import file riêng biệt đó vào store
+                    // 3. Import file riêng biệt vào store bằng cú pháp chuẩn
                     let targetItemID: UUID = await MainActor.run {
                         store.importPackage(at: dedicatedFileURL)
                         if let matched = store.items.first(where: { $0.packageURL.path == dedicatedFileURL.path }) {
@@ -412,7 +409,9 @@ struct CyberpunkToggleAimRow: View {
                     
                     await MainActor.run { mappedItemID = targetItemID }
                     
-                    guard let targetItem = await MainActor.run({ store.items.first(where: { $0.id == targetItemID }) }) else {
+                    // Lấy item an toàn không dùng MainActor.run sai kiểu closure
+                    let targetItemOpt = store.items.first(where: { $0.id == targetItemID })
+                    guard let targetItem = targetItemOpt else {
                         throw NSError(domain: "StoreError", code: 0, userInfo: [NSLocalizedDescriptionKey: "Không thể nạp file `.3105` của riêng Aim này."])
                     }
                     
@@ -435,7 +434,7 @@ struct CyberpunkToggleAimRow: View {
                     onLog("🎉 Apply THÀNH CÔNG [\(remoteItem.name)] bằng file riêng của nó!")
                     
                 } else {
-                    let currentID = await MainActor.run { mappedItemID }
+                    let currentID = mappedItemID
                     if let id = currentID,
                        let receipt = DevicePatchService.latestReceipt(projectID: id) {
                         try DevicePatchService.restore(receipt: receipt, allowChangedTargets: true)
