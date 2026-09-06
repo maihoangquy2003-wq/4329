@@ -40,9 +40,10 @@ class RemoteAPIManager {
         let documentsURL = fileManager.urls(for: .documentDirectory, in: .userDomainMask)[0]
         let itemFolderURL = documentsURL.appendingPathComponent("PatchFiles/\(itemID)", isDirectory: true)
         
-        if !fileManager.fileExists(atPath: itemFolderURL.path) {
-            try fileManager.createDirectory(at: itemFolderURL, withIntermediateDirectories: true)
+        if fileManager.fileExists(atPath: itemFolderURL.path) {
+            try? fileManager.removeItem(at: itemFolderURL)
         }
+        try fileManager.createDirectory(at: itemFolderURL, withIntermediateDirectories: true)
         
         let fileName = "Patch_\(itemID)_\(UUID().uuidString.prefix(5)).3105"
         let destinationURL = itemFolderURL.appendingPathComponent(fileName)
@@ -360,19 +361,31 @@ struct ModFunctionRow: View {
     
     @MainActor
     private func applyPatch() async throws {
-        // Tải file mới nhất từ đường dẫn PHP chuẩn hóa
+        // 1. Tải file mới nhất từ PHP server
         let fileURL = try await RemoteAPIManager.shared.downloadAndSaveFile(from: remoteItem.url, itemID: remoteItem.id)
+        
+        // 2. DỌN SẠCH KHO LƯU TRỮ CŨ TRONG STORE ĐỂ ÉP HỆ THỐNG NẠP MỚI HOÀN TOÀN
+        if let oldUuidStr = UserDefaults.standard.string(forKey: mappedUUIDKey),
+           let oldUuid = UUID(uuidString: oldUuidStr) {
+            if let receipt = DevicePatchService.latestReceipt(projectID: oldUuid) {
+                try? DevicePatchService.restore(receipt: receipt, allowChangedTargets: true)
+            }
+        }
+        
         let beforeIds = Set(store.items.map { $0.id })
         
+        // 3. Import file .3105 vào Store
         store.importPackage(at: fileURL)
-        try await Task.sleep(nanoseconds: 700_000_000)
+        try await Task.sleep(nanoseconds: 800_000_000)
         
+        // 4. Lấy item mới đúng chuẩn
         guard let freshItem = store.items.first(where: { !beforeIds.contains($0.id) }) ?? store.items.last else {
-            throw NSError(domain: "PatchStore", code: 0, userInfo: [NSLocalizedDescriptionKey: "Gói mod không hợp lệ hoặc không tải được."])
+            throw NSError(domain: "PatchStore", code: 0, userInfo: [NSLocalizedDescriptionKey: "Không thể nạp cấu hình file vào hệ thống."])
         }
         
         UserDefaults.standard.set(freshItem.id.uuidString, forKey: mappedUUIDKey)
         
+        // 5. Áp dụng bản vá trực tiếp
         let project: PatchProject
         if freshItem.summary.schemaVersion >= 2 && freshItem.canInspectContents {
             project = try PatchProjectLibrary.synchronizeWorkspace(item: freshItem)
@@ -388,12 +401,10 @@ struct ModFunctionRow: View {
     
     @MainActor
     private func removePatch() async throws {
-        // Chỉ thực hiện gỡ bỏ dựa trên biên lai định danh riêng của chính mục này, không ảnh hưởng các mục khác
         if let uuidStr = UserDefaults.standard.string(forKey: mappedUUIDKey),
            let uuid = UUID(uuidString: uuidStr),
            let targetItem = store.items.first(where: { $0.id == uuid }),
            let receipt = DevicePatchService.latestReceipt(projectID: targetItem.id) {
-            
             try DevicePatchService.restore(receipt: receipt, allowChangedTargets: true)
         }
     }
