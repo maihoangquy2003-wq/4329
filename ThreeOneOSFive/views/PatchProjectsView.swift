@@ -207,7 +207,6 @@ struct PatchProjectsView: View {
                             Text("Chưa có tính năng nào trong mục này").font(.system(size: 12, design: .monospaced)).foregroundColor(.gray)
                         }.padding(.top, 100)
                     } else {
-                        // Dùng kết hợp id và url để phân biệt hoàn toàn các mục
                         ForEach(filtered, id: \.url) { item in
                             ModFunctionRow(remoteItem: item, store: store)
                         }
@@ -266,7 +265,7 @@ struct NeonParticleBackgroundView: View {
     }
 }
 
-// MARK: - HÀNG CHỨC NĂNG (GỌI ĐÚNG LINK RIÊNG BIỆT CHO TỪNG AIM)
+// MARK: - HÀNG CHỨC NĂNG (ĐÃ FIX LOGIC LẤY ĐÚNG FILE)
 struct ModFunctionRow: View {
     let remoteItem: RemoteAimItem
     @ObservedObject var store: PatchProjectStore
@@ -275,9 +274,8 @@ struct ModFunctionRow: View {
     @State private var isApplied = false
     @State private var isWorking = false
     
-    // Khóa lưu trữ duy nhất phân biệt rõ ràng từng Aim dựa trên URL riêng của nó
     private var uniqueStorageKey: String {
-        return "aim_link_key_\(abs(remoteItem.url.hashValue))"
+        return "mod_secure_key_\(remoteItem.url.hashValue)"
     }
     
     var body: some View {
@@ -333,42 +331,63 @@ struct ModFunctionRow: View {
         AudioServicesPlaySystemSound(1306)
         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
         
-        Task.detached(priority: .userInitiated) {
+        // Sử dụng @MainActor để đảm bảo luồng đồng bộ, không bị lệch ID file
+        Task { @MainActor in
             do {
                 if on {
-                    // MỖI KHI BẬT: Luôn tải đúng link file .3105 tương ứng của mục này để đảm bảo không bị trùng/nhầm file
-                    guard let url = URL(string: remoteItem.url) else { throw NSError(domain: "URL", code: 0) }
-                    let data = try Data(contentsOf: url)
-                    
-                    let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent("aim_\(UUID().uuidString).3105")
-                    try data.write(to: tempURL)
-                    
-                    let beforeIds = await MainActor.run { store.items.map { $0.id } }
-                    await MainActor.run { store.importPackage(at: tempURL) }
-                    try await Task.sleep(nanoseconds: 1_200_000_000)
-                    
-                    let targetItem = await MainActor.run { store.items.first { !beforeIds.contains($0.id) } } ?? store.items.first
-                    
-                    guard let local = targetItem, let base = local.project else { throw NSError(domain: "Proj", code: 0) }
-                    
-                    await MainActor.run {
-                        self.localItem = local
-                        UserDefaults.standard.set(local.id.uuidString, forKey: uniqueStorageKey)
+                    if localItem == nil {
+                        guard let url = URL(string: remoteItem.url) else { throw NSError(domain: "URL", code: 0) }
+                        
+                        // Chạy nền tải file xuống để không lag UI
+                        let tempFileURL = try await Task.detached(priority: .userInitiated) {
+                            let data = try Data(contentsOf: url)
+                            let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent("aim_\(UUID().uuidString).3105")
+                            try data.write(to: tempURL)
+                            return tempURL
+                        }.value
+                        
+                        let beforeIds = store.items.map { $0.id }
+                        store.importPackage(at: tempFileURL)
+                        
+                        var foundItem: PatchLibraryItem? = nil
+                        
+                        // Vòng lặp chờ tối đa 4.5 giây để BẮT CHUẨN file vừa tải, tuyệt đối không vơ bậy file khác
+                        for _ in 0..<15 {
+                            try await Task.sleep(nanoseconds: 300_000_000) // Nghỉ 0.3s
+                            if let new = store.items.first(where: { !beforeIds.contains($0.id) }) {
+                                foundItem = new
+                                break
+                            }
+                        }
+                        
+                        if let newLocal = foundItem {
+                            self.localItem = newLocal
+                            UserDefaults.standard.set(newLocal.id.uuidString, forKey: uniqueStorageKey)
+                        } else {
+                            // Nếu Modder làm file trùng ID gốc UUID bên trong file .3105, hệ thống sẽ báo lỗi để tránh Apply nhầm.
+                            throw NSError(domain: "ImportFail", code: 0)
+                        }
                     }
                     
+                    guard let local = self.localItem, let base = local.project else { throw NSError(domain: "Proj", code: 0) }
                     let proj = local.summary.schemaVersion >= 2 && local.canInspectContents ? try PatchProjectLibrary.synchronizeWorkspace(item: local) : base
                     _ = try DevicePatchService.apply(project: proj)
                     
-                    await MainActor.run { self.isApplied = true; self.isWorking = false; AudioServicesPlaySystemSound(1407) }
+                    self.isApplied = true
+                    self.isWorking = false
+                    AudioServicesPlaySystemSound(1407)
                 } else {
-                    let targetItem = await MainActor.run { self.localItem }
-                    if let local = targetItem, let receipt = DevicePatchService.latestReceipt(projectID: local.id) {
+                    if let local = self.localItem, let receipt = DevicePatchService.latestReceipt(projectID: local.id) {
                         try DevicePatchService.restore(receipt: receipt, allowChangedTargets: true)
                     }
-                    await MainActor.run { self.isApplied = false; self.isWorking = false; AudioServicesPlaySystemSound(1407) }
+                    self.isApplied = false
+                    self.isWorking = false
+                    AudioServicesPlaySystemSound(1407)
                 }
             } catch {
-                await MainActor.run { self.isApplied = !on; self.isWorking = false; AudioServicesPlaySystemSound(1053) }
+                self.isApplied = !on
+                self.isWorking = false
+                AudioServicesPlaySystemSound(1053)
             }
         }
     }
