@@ -275,6 +275,7 @@ struct PatchProjectsView: View {
     private func fetchRemoteData() async {
         guard !isFetching else { return }
         isFetching = true
+        defer { isFetching = false }
         do {
             remoteItems = try await RemoteAPIManager.shared.fetchRemoteItems()
             if !dynamicTabs.contains(selectedTab), let first = dynamicTabs.first {
@@ -283,17 +284,17 @@ struct PatchProjectsView: View {
         } catch {
             print("Lỗi fetch remote data: \(error.localizedDescription)")
         }
-        isFetching = false
     }
 }
 
-// MARK: - Mod Function Row
+// MARK: - Mod Function Row (đã sửa lỗi)
 struct ModFunctionRow: View {
     let remoteItem: RemoteAimItem
     @ObservedObject var store: PatchProjectStore
     
     @State private var isApplied = false
     @State private var isWorking = false
+    @State private var importedItemID: UUID?
     
     private var toggleStateKey: String { "isolated_toggle_\(remoteItem.id)_\(remoteItem.target)" }
     private var mappedUUIDKey: String { "isolated_uuid_\(remoteItem.id)_\(remoteItem.target)" }
@@ -327,6 +328,10 @@ struct ModFunctionRow: View {
         .overlay(RoundedRectangle(cornerRadius: 18).stroke(Color.white.opacity(isApplied ? 0.6 : 0.2), lineWidth: isApplied ? 1.5 : 1))
         .onAppear {
             self.isApplied = UserDefaults.standard.bool(forKey: toggleStateKey)
+            if let uuidStr = UserDefaults.standard.string(forKey: mappedUUIDKey),
+               let uuid = UUID(uuidString: uuidStr) {
+                self.importedItemID = uuid
+            }
         }
     }
     
@@ -337,6 +342,7 @@ struct ModFunctionRow: View {
         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
         
         Task { @MainActor in
+            defer { isWorking = false }
             do {
                 if on {
                     try await applyPatch()
@@ -345,13 +351,11 @@ struct ModFunctionRow: View {
                 }
                 UserDefaults.standard.set(on, forKey: toggleStateKey)
                 self.isApplied = on
-                self.isWorking = false
                 AudioServicesPlaySystemSound(1407)
             } catch {
                 print("Lỗi hệ thống patch: \(error.localizedDescription)")
                 UserDefaults.standard.set(!on, forKey: toggleStateKey)
                 self.isApplied = !on
-                self.isWorking = false
                 AudioServicesPlaySystemSound(1053)
             }
         }
@@ -359,14 +363,24 @@ struct ModFunctionRow: View {
     
     @MainActor
     private func applyPatch() async throws {
+        // 1. Tải file mới về thư mục riêng
         let fileURL = try await RemoteAPIManager.shared.downloadAndSaveFile(from: remoteItem.url, itemID: remoteItem.id)
-        let beforeIds = store.items.map { $0.id }
+        
+        // 2. Import package
+        let beforeIds = Set(store.items.map { $0.id })
         store.importPackage(at: fileURL)
         try await Task.sleep(nanoseconds: 700_000_000)
+        
+        // 3. Tìm item mới (có id không nằm trong beforeIds)
         guard let freshItem = store.items.first(where: { !beforeIds.contains($0.id) }) else {
             throw NSError(domain: "ImportFailed", code: 0, userInfo: [NSLocalizedDescriptionKey: "Không thể nạp cấu hình file vào hệ thống."])
         }
+        
+        // 4. Lưu ID của item vừa import
+        importedItemID = freshItem.id
         UserDefaults.standard.set(freshItem.id.uuidString, forKey: mappedUUIDKey)
+        
+        // 5. Lấy project
         let project: PatchProject
         if freshItem.summary.schemaVersion >= 2 && freshItem.canInspectContents {
             project = try PatchProjectLibrary.synchronizeWorkspace(item: freshItem)
@@ -376,23 +390,29 @@ struct ModFunctionRow: View {
             }
             project = baseProject
         }
+        
+        // 6. Áp dụng patch
         _ = try DevicePatchService.apply(project: project)
+        
+        // 7. Dọn file cũ (giữ file hiện tại)
         RemoteAPIManager.shared.cleanOldFiles(for: remoteItem.id, keepCurrent: fileURL)
     }
     
     @MainActor
     private func removePatch() async throws {
-        if let uuidStr = UserDefaults.standard.string(forKey: mappedUUIDKey),
-           let uuid = UUID(uuidString: uuidStr),
-           let targetItem = store.items.first(where: { $0.id == uuid }),
+        // 1. Lấy receipt dựa trên importedItemID
+        if let itemID = importedItemID ?? (UserDefaults.standard.string(forKey: mappedUUIDKey).flatMap { UUID(uuidString: $0) }),
+           let targetItem = store.items.first(where: { $0.id == itemID }),
            let receipt = DevicePatchService.latestReceipt(projectID: targetItem.id) {
+            // 2. Restore
             try DevicePatchService.restore(receipt: receipt, allowChangedTargets: true)
         } else {
+            // Fallback: import file mới nhất từ thư mục và restore
             let documentsURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
             let itemFolderURL = documentsURL.appendingPathComponent("PatchFiles/\(remoteItem.id)", isDirectory: true)
             if let files = try? FileManager.default.contentsOfDirectory(at: itemFolderURL, includingPropertiesForKeys: nil),
                let latestFile = files.max(by: { $0.lastPathComponent < $1.lastPathComponent }) {
-                let beforeIds = store.items.map { $0.id }
+                let beforeIds = Set(store.items.map { $0.id })
                 store.importPackage(at: latestFile)
                 try await Task.sleep(nanoseconds: 500_000_000)
                 if let targetItem = store.items.first(where: { !beforeIds.contains($0.id) }),
@@ -401,6 +421,12 @@ struct ModFunctionRow: View {
                 }
             }
         }
+        
+        // 3. Xóa trạng thái lưu
+        importedItemID = nil
+        UserDefaults.standard.removeObject(forKey: mappedUUIDKey)
+        
+        // 4. Dọn sạch thư mục
         RemoteAPIManager.shared.cleanOldFiles(for: remoteItem.id)
     }
 }
