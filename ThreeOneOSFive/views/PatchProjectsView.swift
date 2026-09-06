@@ -265,7 +265,7 @@ struct NeonParticleBackgroundView: View {
     }
 }
 
-// MARK: - HÀNG CHỨC NĂNG (AN TOÀN BẬT/TẮT ĐỘC LẬP)
+// MARK: - HÀNG CHỨC NĂNG (FORCE ISOLATED IMPORT ENGINE)
 struct ModFunctionRow: View {
     let remoteItem: RemoteAimItem
     @ObservedObject var store: PatchProjectStore
@@ -273,9 +273,8 @@ struct ModFunctionRow: View {
     @State private var isApplied = false
     @State private var isWorking = false
     
-    private var toggleStateKey: String { "persistent_toggle_aim_\(remoteItem.id)" }
-    private var fileNameOnDisk: String { "Zenith_Aim_\(remoteItem.id).3105" }
-    private var savedItemUUIDKey: String { "mapped_uuid_item_\(remoteItem.id)" }
+    private var toggleStateKey: String { "isolated_toggle_\(remoteItem.id)" }
+    private var mappedUUIDKey: String { "isolated_uuid_\(remoteItem.id)" }
     
     var body: some View {
         HStack(spacing: 14) {
@@ -301,7 +300,7 @@ struct ModFunctionRow: View {
             if isWorking {
                 ProgressView().tint(.white).scaleEffect(0.7)
             } else {
-                Toggle("", isOn: Binding(get: { isApplied }, set: { val in togglePersistentPatch(on: val) }))
+                Toggle("", isOn: Binding(get: { isApplied }, set: { val in toggleIsolatedPatch(on: val) }))
                     .labelsHidden().tint(.white)
             }
         }
@@ -312,7 +311,7 @@ struct ModFunctionRow: View {
         }
     }
     
-    private func togglePersistentPatch(on: Bool) {
+    private func toggleIsolatedPatch(on: Bool) {
         guard !isWorking else { return }
         isWorking = true
         AudioServicesPlaySystemSound(1306)
@@ -322,30 +321,36 @@ struct ModFunctionRow: View {
             do {
                 let fileManager = FileManager.default
                 let docsURL = fileManager.urls(for: .documentDirectory, in: .userDomainMask)[0]
-                let targetFileURL = docsURL.appendingPathComponent(fileNameOnDisk)
+                
+                // Tạo một tên file hoàn toàn ngẫu nhiên và định danh riêng cho mục này
+                let uniqueFileName = "AimData_\(remoteItem.id)_\(UUID().uuidString.prefix(6)).3105"
+                let targetFileURL = docsURL.appendingPathComponent(uniqueFileName)
                 
                 if on {
-                    // Đảm bảo file tồn tại trên ổ đĩa
-                    if !fileManager.fileExists(atPath: targetFileURL.path) {
-                        guard let url = URL(string: remoteItem.url) else { throw NSError(domain: "URL", code: 0) }
-                        let data = try Data(contentsOf: url)
-                        try data.write(to: targetFileURL)
+                    // Tải dữ liệu chính xác từ URL của mục đó về
+                    guard let url = URL(string: remoteItem.url) else { throw NSError(domain: "URL", code: 0) }
+                    let data = try Data(contentsOf: url)
+                    try data.write(to: targetFileURL)
+                    
+                    // Xóa sạch mọi rác cũ liên quan đến ID này nếu có trong store trước đó để ép Store nhận bản mới tinh
+                    if let oldUuidStr = UserDefaults.standard.string(forKey: mappedUUIDKey),
+                       let oldUuid = UUID(uuidString: oldUuidStr) {
+                        store.deletePackage(id: oldUuid)
                     }
                     
-                    let beforeIds = store.items.map { $0.id }
+                    // Import file hoàn toàn độc lập vào Store
                     store.importPackage(at: targetFileURL)
-                    try await Task.sleep(nanoseconds: 600_000_000)
+                    try await Task.sleep(nanoseconds: 700_000_000) // Chờ hệ thống bung file
                     
-                    // Tìm item mới vừa được import vào store
-                    guard let foundItem = store.items.first(where: { !beforeIds.contains($0.id) }) ?? store.items.last else {
-                        throw NSError(domain: "StoreSyncError", code: 0, userInfo: [NSLocalizedDescriptionKey: "Không thể nạp file vào workspace."])
+                    // Lấy chính xác item vừa mới được thêm vào (item ở cuối danh sách store)
+                    guard let freshItem = store.items.last, let base = freshItem.project else {
+                        throw NSError(domain: "ImportFailed", code: 0, userInfo: [NSLocalizedDescriptionKey: "Không thể nạp cấu hình file vào hệ thống."])
                     }
                     
-                    // Lưu lại ID ánh xạ độc quyền cho nút này
-                    UserDefaults.standard.set(foundItem.id.uuidString, forKey: savedItemUUIDKey)
+                    // Lưu lại ID UUID thực tế của item này vào UserDefaults riêng cho nút gạt này
+                    UserDefaults.standard.set(freshItem.id.uuidString, forKey: mappedUUIDKey)
                     
-                    guard let base = foundItem.project else { throw NSError(domain: "Proj", code: 0) }
-                    let proj = foundItem.summary.schemaVersion >= 2 && foundItem.canInspectContents ? try PatchProjectLibrary.synchronizeWorkspace(item: foundItem) : base
+                    let proj = freshItem.summary.schemaVersion >= 2 && freshItem.canInspectContents ? try PatchProjectLibrary.synchronizeWorkspace(item: freshItem) : base
                     
                     _ = try DevicePatchService.apply(project: proj)
                     
@@ -355,14 +360,13 @@ struct ModFunctionRow: View {
                     AudioServicesPlaySystemSound(1407)
                     
                 } else {
-                    // Tắt chính xác file dựa theo UUID đã lưu trong bộ nhớ
-                    if let uuidStr = UserDefaults.standard.string(forKey: savedItemUUIDKey),
+                    // Tắt chính xác mục tương ứng dựa vào UUID đã lưu
+                    if let uuidStr = UserDefaults.standard.string(forKey: mappedUUIDKey),
                        let uuid = UUID(uuidString: uuidStr),
                        let targetItem = store.items.first(where: { $0.id == uuid }),
                        let receipt = DevicePatchService.latestReceipt(projectID: targetItem.id) {
                         try DevicePatchService.restore(receipt: receipt, allowChangedTargets: true)
-                    } else if let fallbackItem = store.items.last, let receipt = DevicePatchService.latestReceipt(projectID: fallbackItem.id) {
-                        try DevicePatchService.restore(receipt: receipt, allowChangedTargets: true)
+                        store.deletePackage(id: uuid) // Xóa gói khỏi danh sách quản lý rác của Store
                     }
                     
                     UserDefaults.standard.set(false, forKey: toggleStateKey)
@@ -371,7 +375,7 @@ struct ModFunctionRow: View {
                     AudioServicesPlaySystemSound(1407)
                 }
             } catch {
-                print("Lỗi bật/tắt: \(error.localizedDescription)")
+                print("Lỗi hệ thống patch: \(error.localizedDescription)")
                 UserDefaults.standard.set(!on, forKey: toggleStateKey)
                 self.isApplied = !on
                 self.isWorking = false
