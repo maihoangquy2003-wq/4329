@@ -3,7 +3,7 @@ import UIKit
 import UniformTypeIdentifiers
 import AudioToolbox
 
-// MARK: - API Manager
+// MARK: - API Manager (Đã ép buộc bypass cache để luôn tải file mới nhất)
 class RemoteAPIManager {
     static let shared = RemoteAPIManager()
     private let fileManager = FileManager.default
@@ -12,9 +12,9 @@ class RemoteAPIManager {
     
     func fetchRemoteItems() async throws -> [RemoteAimItem] {
         let urlString = "https://solitudepremium.click/ipa/proxy/apiaim.php"
-        let requestURL = URL(string: "\(urlString)?t=\(Date().timeIntervalSince1970)")!
+        guard let url = URL(string: "\(urlString)?t=\(Date().timeIntervalSince1970)") else { throw APIError.invalidURL }
         
-        var request = URLRequest(url: requestURL)
+        var request = URLRequest(url: url)
         request.cachePolicy = .reloadIgnoringLocalCacheData
         request.timeoutInterval = 15
         
@@ -29,9 +29,14 @@ class RemoteAPIManager {
     }
     
     func downloadAndImportToStore(remoteURL: String, itemID: String, store: PatchProjectStore) async throws -> PatchLibraryItem {
-        guard let url = URL(string: remoteURL) else { throw APIError.invalidURL }
+        // Ép thêm tham số thời gian vào URL để server và URLSession không trả về file cache cũ
+        let separator = remoteURL.contains("?") ? "&" : "?"
+        let bustedURLString = "\(remoteURL)\(separator)nocache=\(Date().timeIntervalSince1970)"
+        guard let url = URL(string: bustedURLString) else { throw APIError.invalidURL }
+        
         var request = URLRequest(url: url)
         request.cachePolicy = .reloadIgnoringLocalCacheData
+        request.timeoutInterval = 30
         
         let (data, response) = try await URLSession.shared.data(for: request)
         guard let httpResponse = response as? HTTPURLResponse,
@@ -44,13 +49,14 @@ class RemoteAPIManager {
             try fileManager.createDirectory(at: itemFolderURL, withIntermediateDirectories: true)
         }
         
-        let fileName = "Aim_\(itemID)_\(UUID().uuidString.prefix(4)).3105"
-        let destinationURL = itemFolderURL.appendingPathComponent(fileName)
+        // Tạo tên file độc lập tuyệt đối với timestamp để tránh ghi đè nhầm lẫn
+        let uniqueFileName = "Aim_\(itemID)_\(Int(Date().timeIntervalSince1970)).3105"
+        let destinationURL = itemFolderURL.appendingPathComponent(uniqueFileName)
         try data.write(to: destinationURL)
         
         return try await MainActor.run {
             store.importPackage(at: destinationURL)
-            if let matched = store.items.first(where: { $0.packageURL.lastPathComponent.contains(itemID) }) {
+            if let matched = store.items.first(where: { $0.packageURL.lastPathComponent == uniqueFileName }) {
                 return matched
             }
             guard let latest = store.items.last else {
@@ -331,7 +337,7 @@ struct PatchProjectsView: View {
     }
 }
 
-// MARK: - Hàng nút gạt Cyberpunk đã fix triệt để bằng cách duyệt qua store items
+// MARK: - Hàng nút gạt Cyberpunk (Ép buộc tải mới hoàn toàn mỗi lần kích hoạt)
 struct CyberpunkToggleAimRow: View {
     let remoteItem: RemoteAimItem
     @ObservedObject var store: PatchProjectStore
@@ -391,9 +397,9 @@ struct CyberpunkToggleAimRow: View {
         Task.detached(priority: .userInitiated) {
             do {
                 if on {
-                    onLog("📥 Bắt đầu tải file: \(remoteItem.name)")
+                    onLog("📥 Đang tải mới file từ server: \(remoteItem.name)...")
                     
-                    // QUAN TRỌNG: Duyệt qua toàn bộ item hiện có trong store để dọn sạch biên lai cũ trước khi apply file mới
+                    // Dọn dẹp sạch toàn bộ biên lai cũ trước khi apply file mới
                     let allExistingItems = await MainActor.run { store.items }
                     for existingItem in allExistingItems {
                         if let receipt = DevicePatchService.latestReceipt(projectID: existingItem.id) {
@@ -401,6 +407,7 @@ struct CyberpunkToggleAimRow: View {
                         }
                     }
                     
+                    // Gọi hàm tải file với cơ chế chống cache URL
                     let targetItem = try await RemoteAPIManager.shared.downloadAndImportToStore(
                         remoteURL: remoteItem.url,
                         itemID: remoteItem.id,
@@ -408,7 +415,7 @@ struct CyberpunkToggleAimRow: View {
                     )
                     
                     await MainActor.run { mappedItemID = targetItem.id }
-                    onLog("✅ Đã import file mới tại: \(targetItem.packageURL.path)")
+                    onLog("✅ Tải xong và import file độc lập tại: \(targetItem.packageURL.lastPathComponent)")
                     
                     let project: PatchProject
                     if targetItem.summary.schemaVersion >= 2 && targetItem.canInspectContents {
@@ -422,7 +429,7 @@ struct CyberpunkToggleAimRow: View {
                         onLog("📦 Sử dụng cấu trúc Legacy Project.")
                     }
                     
-                    // Áp dụng bản vá mới
+                    // Kích hoạt bản vá mới chính xác 100%
                     _ = try DevicePatchService.apply(project: project)
                     onLog("🎉 Apply thành công chức năng: \(remoteItem.name)")
                     
@@ -439,7 +446,7 @@ struct CyberpunkToggleAimRow: View {
                                 try? DevicePatchService.restore(receipt: receipt, allowChangedTargets: true)
                             }
                         }
-                        onLog("🔄 Đã dọn sạch và khôi phục toàn bộ trạng thái gốc an toàn.")
+                        onLog("🔄 Đã khôi phục toàn bộ trạng thái gốc an toàn.")
                     }
                 }
                 
