@@ -207,7 +207,8 @@ struct PatchProjectsView: View {
                             Text("Chưa có tính năng nào trong mục này").font(.system(size: 12, design: .monospaced)).foregroundColor(.gray)
                         }.padding(.top, 100)
                     } else {
-                        ForEach(filtered, id: \.id) { item in
+                        // Dùng kết hợp id và url để phân biệt hoàn toàn các mục
+                        ForEach(filtered, id: \.url) { item in
                             ModFunctionRow(remoteItem: item, store: store)
                         }
                     }
@@ -265,7 +266,7 @@ struct NeonParticleBackgroundView: View {
     }
 }
 
-// MARK: - HÀNG CHỨC NĂNG (ĐỘC LẬP TỪNG LINK)
+// MARK: - HÀNG CHỨC NĂNG (GỌI ĐÚNG LINK RIÊNG BIỆT CHO TỪNG AIM)
 struct ModFunctionRow: View {
     let remoteItem: RemoteAimItem
     @ObservedObject var store: PatchProjectStore
@@ -274,8 +275,9 @@ struct ModFunctionRow: View {
     @State private var isApplied = false
     @State private var isWorking = false
     
+    // Khóa lưu trữ duy nhất phân biệt rõ ràng từng Aim dựa trên URL riêng của nó
     private var uniqueStorageKey: String {
-        return "mod_item_id_\(remoteItem.id)"
+        return "aim_link_key_\(abs(remoteItem.url.hashValue))"
     }
     
     var body: some View {
@@ -311,7 +313,6 @@ struct ModFunctionRow: View {
         .padding(14).background(Color.black).cornerRadius(18)
         .overlay(RoundedRectangle(cornerRadius: 18).stroke(Color.white.opacity(isApplied ? 0.6 : 0.2), lineWidth: isApplied ? 1.5 : 1))
         .onAppear(perform: checkStatus)
-        .onChange(of: store.items.count) { _ in checkStatus() }
     }
     
     private func checkStatus() {
@@ -319,7 +320,6 @@ struct ModFunctionRow: View {
            let match = store.items.first(where: { $0.id.uuidString == savedId }) {
             self.localItem = match
         }
-        
         if let local = localItem {
             isApplied = DevicePatchService.latestReceipt(projectID: local.id) != nil
         } else {
@@ -335,44 +335,33 @@ struct ModFunctionRow: View {
         
         Task.detached(priority: .userInitiated) {
             do {
-                var targetItem = await MainActor.run { self.localItem }
-                
                 if on {
-                    if targetItem == nil {
-                        guard let url = URL(string: remoteItem.url) else { throw NSError(domain: "URL", code: 0) }
-                        let data = try Data(contentsOf: url)
-                        
-                        // Đặt tên tệp tạm ngẫu nhiên để hoàn toàn độc lập, không bị đè file
-                        let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent("aim_\(remoteItem.id)_\(UUID().uuidString).3105")
-                        try data.write(to: tempURL)
-                        
-                        let beforeIds = await MainActor.run { store.items.map { $0.id } }
-                        await MainActor.run { store.importPackage(at: tempURL) }
-                        try await Task.sleep(nanoseconds: 1_500_000_000)
-                        
-                        targetItem = await MainActor.run { store.items.first { !beforeIds.contains($0.id) } }
-                        
-                        // Fallback thông minh nếu file được import nhưng hệ thống quản lý nhận diện theo nội dung
-                        if targetItem == nil {
-                            targetItem = await MainActor.run { store.items.first }
-                        }
-                        
-                        if let newLocal = targetItem {
-                            await MainActor.run {
-                                self.localItem = newLocal
-                                UserDefaults.standard.set(newLocal.id.uuidString, forKey: uniqueStorageKey)
-                            }
-                        } else {
-                            throw NSError(domain: "ImportFail", code: 0)
-                        }
-                    }
+                    // MỖI KHI BẬT: Luôn tải đúng link file .3105 tương ứng của mục này để đảm bảo không bị trùng/nhầm file
+                    guard let url = URL(string: remoteItem.url) else { throw NSError(domain: "URL", code: 0) }
+                    let data = try Data(contentsOf: url)
+                    
+                    let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent("aim_\(UUID().uuidString).3105")
+                    try data.write(to: tempURL)
+                    
+                    let beforeIds = await MainActor.run { store.items.map { $0.id } }
+                    await MainActor.run { store.importPackage(at: tempURL) }
+                    try await Task.sleep(nanoseconds: 1_200_000_000)
+                    
+                    let targetItem = await MainActor.run { store.items.first { !beforeIds.contains($0.id) } } ?? store.items.first
                     
                     guard let local = targetItem, let base = local.project else { throw NSError(domain: "Proj", code: 0) }
+                    
+                    await MainActor.run {
+                        self.localItem = local
+                        UserDefaults.standard.set(local.id.uuidString, forKey: uniqueStorageKey)
+                    }
+                    
                     let proj = local.summary.schemaVersion >= 2 && local.canInspectContents ? try PatchProjectLibrary.synchronizeWorkspace(item: local) : base
                     _ = try DevicePatchService.apply(project: proj)
                     
                     await MainActor.run { self.isApplied = true; self.isWorking = false; AudioServicesPlaySystemSound(1407) }
                 } else {
+                    let targetItem = await MainActor.run { self.localItem }
                     if let local = targetItem, let receipt = DevicePatchService.latestReceipt(projectID: local.id) {
                         try DevicePatchService.restore(receipt: receipt, allowChangedTargets: true)
                     }
