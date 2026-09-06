@@ -287,7 +287,7 @@ struct PatchProjectsView: View {
     }
 }
 
-// MARK: - Mod Function Row (đã sửa lỗi)
+// MARK: - Mod Function Row (đã sửa hoàn chỉnh)
 struct ModFunctionRow: View {
     let remoteItem: RemoteAimItem
     @ObservedObject var store: PatchProjectStore
@@ -295,6 +295,7 @@ struct ModFunctionRow: View {
     @State private var isApplied = false
     @State private var isWorking = false
     @State private var importedItemID: UUID?
+    @State private var lastImportedFileURL: URL?
     
     private var toggleStateKey: String { "isolated_toggle_\(remoteItem.id)_\(remoteItem.target)" }
     private var mappedUUIDKey: String { "isolated_uuid_\(remoteItem.id)_\(remoteItem.target)" }
@@ -332,6 +333,7 @@ struct ModFunctionRow: View {
                let uuid = UUID(uuidString: uuidStr) {
                 self.importedItemID = uuid
             }
+            self.lastImportedFileURL = latestFileURL()
         }
     }
     
@@ -363,24 +365,35 @@ struct ModFunctionRow: View {
     
     @MainActor
     private func applyPatch() async throws {
-        // 1. Tải file mới về thư mục riêng
-        let fileURL = try await RemoteAPIManager.shared.downloadAndSaveFile(from: remoteItem.url, itemID: remoteItem.id)
+        // 1. Nếu có item cũ, thử restore trước để tránh xung đột
+        if let oldItemID = importedItemID,
+           let oldItem = store.items.first(where: { $0.id == oldItemID }),
+           let oldReceipt = DevicePatchService.latestReceipt(projectID: oldItem.id) {
+            try? DevicePatchService.restore(receipt: oldReceipt, allowChangedTargets: true)
+        }
         
-        // 2. Import package
+        // 2. Tải file mới (nếu cần) hoặc dùng file cũ
+        let fileURL: URL
+        if let existingURL = lastImportedFileURL, FileManager.default.fileExists(atPath: existingURL.path) {
+            fileURL = existingURL
+        } else {
+            fileURL = try await RemoteAPIManager.shared.downloadAndSaveFile(from: remoteItem.url, itemID: remoteItem.id)
+            lastImportedFileURL = fileURL
+        }
+        
+        // 3. Import package
         let beforeIds = Set(store.items.map { $0.id })
         store.importPackage(at: fileURL)
         try await Task.sleep(nanoseconds: 700_000_000)
         
-        // 3. Tìm item mới (có id không nằm trong beforeIds)
         guard let freshItem = store.items.first(where: { !beforeIds.contains($0.id) }) else {
             throw NSError(domain: "ImportFailed", code: 0, userInfo: [NSLocalizedDescriptionKey: "Không thể nạp cấu hình file vào hệ thống."])
         }
         
-        // 4. Lưu ID của item vừa import
         importedItemID = freshItem.id
         UserDefaults.standard.set(freshItem.id.uuidString, forKey: mappedUUIDKey)
         
-        // 5. Lấy project
+        // 4. Lấy project và apply
         let project: PatchProject
         if freshItem.summary.schemaVersion >= 2 && freshItem.canInspectContents {
             project = try PatchProjectLibrary.synchronizeWorkspace(item: freshItem)
@@ -391,43 +404,45 @@ struct ModFunctionRow: View {
             project = baseProject
         }
         
-        // 6. Áp dụng patch
         _ = try DevicePatchService.apply(project: project)
         
-        // 7. Dọn file cũ (giữ file hiện tại)
+        // 5. Dọn file cũ (giữ file hiện tại)
         RemoteAPIManager.shared.cleanOldFiles(for: remoteItem.id, keepCurrent: fileURL)
     }
     
     @MainActor
     private func removePatch() async throws {
-        // 1. Lấy receipt dựa trên importedItemID
+        // Lấy receipt từ importedItemID hoặc từ lưu trữ
+        var receiptToRestore: Receipt?
         if let itemID = importedItemID ?? (UserDefaults.standard.string(forKey: mappedUUIDKey).flatMap { UUID(uuidString: $0) }),
-           let targetItem = store.items.first(where: { $0.id == itemID }),
-           let receipt = DevicePatchService.latestReceipt(projectID: targetItem.id) {
-            // 2. Restore
+           let targetItem = store.items.first(where: { $0.id == itemID }) {
+            receiptToRestore = DevicePatchService.latestReceipt(projectID: targetItem.id)
+        }
+        
+        if let receipt = receiptToRestore {
             try DevicePatchService.restore(receipt: receipt, allowChangedTargets: true)
-        } else {
-            // Fallback: import file mới nhất từ thư mục và restore
-            let documentsURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-            let itemFolderURL = documentsURL.appendingPathComponent("PatchFiles/\(remoteItem.id)", isDirectory: true)
-            if let files = try? FileManager.default.contentsOfDirectory(at: itemFolderURL, includingPropertiesForKeys: nil),
-               let latestFile = files.max(by: { $0.lastPathComponent < $1.lastPathComponent }) {
-                let beforeIds = Set(store.items.map { $0.id })
-                store.importPackage(at: latestFile)
-                try await Task.sleep(nanoseconds: 500_000_000)
-                if let targetItem = store.items.first(where: { !beforeIds.contains($0.id) }),
-                   let receipt = DevicePatchService.latestReceipt(projectID: targetItem.id) {
-                    try DevicePatchService.restore(receipt: receipt, allowChangedTargets: true)
-                }
+        } else if let fallbackURL = lastImportedFileURL {
+            // Fallback: import lại file và restore
+            let beforeIds = Set(store.items.map { $0.id })
+            store.importPackage(at: fallbackURL)
+            try await Task.sleep(nanoseconds: 500_000_000)
+            if let targetItem = store.items.first(where: { !beforeIds.contains($0.id) }),
+               let receipt = DevicePatchService.latestReceipt(projectID: targetItem.id) {
+                try DevicePatchService.restore(receipt: receipt, allowChangedTargets: true)
             }
         }
         
-        // 3. Xóa trạng thái lưu
+        // Reset trạng thái
         importedItemID = nil
         UserDefaults.standard.removeObject(forKey: mappedUUIDKey)
-        
-        // 4. Dọn sạch thư mục
-        RemoteAPIManager.shared.cleanOldFiles(for: remoteItem.id)
+        // Giữ file trong thư mục, có thể dùng lại lần sau
+    }
+    
+    private func latestFileURL() -> URL? {
+        let documentsURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        let itemFolderURL = documentsURL.appendingPathComponent("PatchFiles/\(remoteItem.id)", isDirectory: true)
+        guard let files = try? FileManager.default.contentsOfDirectory(at: itemFolderURL, includingPropertiesForKeys: nil) else { return nil }
+        return files.max(by: { $0.lastPathComponent < $1.lastPathComponent })
     }
 }
 
