@@ -3,7 +3,7 @@ import UIKit
 import UniformTypeIdentifiers
 import AudioToolbox
 
-// MARK: - API Manager (Đã ép buộc bypass cache để luôn tải file mới nhất)
+// MARK: - API Manager độc lập cho từng Aim ID
 class RemoteAPIManager {
     static let shared = RemoteAPIManager()
     private let fileManager = FileManager.default
@@ -28,10 +28,10 @@ class RemoteAPIManager {
         }
     }
     
-    func downloadAndImportToStore(remoteURL: String, itemID: String, store: PatchProjectStore) async throws -> PatchLibraryItem {
-        // Ép thêm tham số thời gian vào URL để server và URLSession không trả về file cache cũ
-        let separator = remoteURL.contains("?") ? "&" : "?"
-        let bustedURLString = "\(remoteURL)\(separator)nocache=\(Date().timeIntervalSince1970)"
+    func downloadDedicatedFile(for remoteItem: RemoteAimItem) async throws -> URL {
+        // Gắn kèm timestamp vào URL để chắc chắn server trả về đúng file của Aim này mà không bị dính cache
+        let separator = remoteItem.url.contains("?") ? "&" : "?"
+        let bustedURLString = "\(remoteItem.url)\(separator)aim_id=\(remoteItem.id)&t=\(Date().timeIntervalSince1970)"
         guard let url = URL(string: bustedURLString) else { throw APIError.invalidURL }
         
         var request = URLRequest(url: url)
@@ -43,27 +43,17 @@ class RemoteAPIManager {
               (200...299).contains(httpResponse.statusCode) else { throw APIError.serverError }
         
         let documentsURL = fileManager.urls(for: .documentDirectory, in: .userDomainMask)[0]
-        let itemFolderURL = documentsURL.appendingPathComponent("RemoteAimCache/\(itemID)", isDirectory: true)
+        let aimFolderURL = documentsURL.appendingPathComponent("DedicatedAimCache/\(remoteItem.id)", isDirectory: true)
         
-        if !fileManager.fileExists(atPath: itemFolderURL.path) {
-            try fileManager.createDirectory(at: itemFolderURL, withIntermediateDirectories: true)
+        if fileManager.fileExists(atPath: aimFolderURL.path) {
+            try? fileManager.removeItem(at: aimFolderURL) // Xóa sạch file cũ của riêng Aim này để bắt buộc tải mới hoàn toàn
         }
+        try fileManager.createDirectory(at: aimFolderURL, withIntermediateDirectories: true)
         
-        // Tạo tên file độc lập tuyệt đối với timestamp để tránh ghi đè nhầm lẫn
-        let uniqueFileName = "Aim_\(itemID)_\(Int(Date().timeIntervalSince1970)).3105"
-        let destinationURL = itemFolderURL.appendingPathComponent(uniqueFileName)
-        try data.write(to: destinationURL)
-        
-        return try await MainActor.run {
-            store.importPackage(at: destinationURL)
-            if let matched = store.items.first(where: { $0.packageURL.lastPathComponent == uniqueFileName }) {
-                return matched
-            }
-            guard let latest = store.items.last else {
-                throw NSError(domain: "StoreError", code: 0, userInfo: [NSLocalizedDescriptionKey: "Không thể nạp gói cấu hình vào store."])
-            }
-            return latest
-        }
+        // Đặt tên file gắn liền với ID của Aim
+        let fileURL = aimFolderURL.appendingPathComponent("Aim_\(remoteItem.id).3105")
+        try data.write(to: fileURL)
+        return fileURL
     }
 }
 
@@ -337,7 +327,7 @@ struct PatchProjectsView: View {
     }
 }
 
-// MARK: - Hàng nút gạt Cyberpunk (Ép buộc tải mới hoàn toàn mỗi lần kích hoạt)
+// MARK: - Hàng nút gạt Cyberpunk (Mỗi Aim gắn liền 1 file độc lập riêng biệt tuyệt đối)
 struct CyberpunkToggleAimRow: View {
     let remoteItem: RemoteAimItem
     @ObservedObject var store: PatchProjectStore
@@ -361,7 +351,7 @@ struct CyberpunkToggleAimRow: View {
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 6) {
                     Text(remoteItem.name).font(.system(size: 15, weight: .bold)).foregroundColor(.white)
-                    Text("VIP").font(.system(size: 8, weight: .bold)).padding(.horizontal, 6).padding(.vertical, 2)
+                    Text("ID: \(remoteItem.id)").font(.system(size: 8, weight: .bold)).padding(.horizontal, 6).padding(.vertical, 2)
                         .background(Color.white).cornerRadius(4).foregroundColor(.black)
                 }
                 if let note = remoteItem.note, !note.isEmpty {
@@ -382,7 +372,8 @@ struct CyberpunkToggleAimRow: View {
         .padding(14).background(Color.black).cornerRadius(18)
         .overlay(RoundedRectangle(cornerRadius: 18).stroke(Color.white.opacity(isApplied ? 0.6 : 0.2), lineWidth: isApplied ? 1.5 : 1))
         .onAppear {
-            if let found = store.items.first(where: { $0.packageURL.lastPathComponent.contains(remoteItem.id) }) {
+            // Khớp chính xác item trong store theo đúng ID của Aim này
+            if let found = store.items.first(where: { $0.packageURL.path.contains("DedicatedAimCache/\(remoteItem.id)") }) {
                 mappedItemID = found.id
             }
         }
@@ -397,9 +388,9 @@ struct CyberpunkToggleAimRow: View {
         Task.detached(priority: .userInitiated) {
             do {
                 if on {
-                    onLog("📥 Đang tải mới file từ server: \(remoteItem.name)...")
+                    onLog("📥 Bắt buộc tải file riêng cho [\(remoteItem.name)] (ID: \(remoteItem.id))...")
                     
-                    // Dọn dẹp sạch toàn bộ biên lai cũ trước khi apply file mới
+                    // 1. Dọn dẹp sạch toàn bộ các biên lai cũ đang kích hoạt để tránh xung đột
                     let allExistingItems = await MainActor.run { store.items }
                     for existingItem in allExistingItems {
                         if let receipt = DevicePatchService.latestReceipt(projectID: existingItem.id) {
@@ -407,15 +398,25 @@ struct CyberpunkToggleAimRow: View {
                         }
                     }
                     
-                    // Gọi hàm tải file với cơ chế chống cache URL
-                    let targetItem = try await RemoteAPIManager.shared.downloadAndImportToStore(
-                        remoteURL: remoteItem.url,
-                        itemID: remoteItem.id,
-                        store: store
-                    )
+                    // 2. Tải file ĐẶC BIỆT và RIÊNG BIỆT dành riêng cho Aim này từ URL của nó
+                    let dedicatedFileURL = try await RemoteAPIManager.shared.downloadDedicatedFile(for: remoteItem)
                     
-                    await MainActor.run { mappedItemID = targetItem.id }
-                    onLog("✅ Tải xong và import file độc lập tại: \(targetItem.packageURL.lastPathComponent)")
+                    // 3. Import file riêng biệt đó vào store
+                    let targetItemID: UUID = await MainActor.run {
+                        store.importPackage(at: dedicatedFileURL)
+                        if let matched = store.items.first(where: { $0.packageURL.path == dedicatedFileURL.path }) {
+                            return matched.id
+                        }
+                        return store.items.last?.id ?? UUID()
+                    }
+                    
+                    await MainActor.run { mappedItemID = targetItemID }
+                    
+                    guard let targetItem = await MainActor.run({ store.items.first(where: { $0.id == targetItemID }) }) else {
+                        throw NSError(domain: "StoreError", code: 0, userInfo: [NSLocalizedDescriptionKey: "Không thể nạp file `.3105` của riêng Aim này."])
+                    }
+                    
+                    onLog("✅ Đã load file riêng tại: \(targetItem.packageURL.lastPathComponent)")
                     
                     let project: PatchProject
                     if targetItem.summary.schemaVersion >= 2 && targetItem.canInspectContents {
@@ -423,22 +424,22 @@ struct CyberpunkToggleAimRow: View {
                         onLog("📂 Đồng bộ workspace thành công.")
                     } else {
                         guard let baseProject = targetItem.project else {
-                            throw NSError(domain: "ProjectError", code: 0, userInfo: [NSLocalizedDescriptionKey: "Dữ liệu Mod không hợp lệ."])
+                            throw NSError(domain: "ProjectError", code: 0, userInfo: [NSLocalizedDescriptionKey: "Dữ liệu cấu trúc project không hợp lệ."])
                         }
                         project = baseProject
-                        onLog("📦 Sử dụng cấu trúc Legacy Project.")
+                        onLog("📦 Sử dụng Legacy Project riêng.")
                     }
                     
-                    // Kích hoạt bản vá mới chính xác 100%
+                    // 4. Kích hoạt đúng file của riêng Aim này
                     _ = try DevicePatchService.apply(project: project)
-                    onLog("🎉 Apply thành công chức năng: \(remoteItem.name)")
+                    onLog("🎉 Apply THÀNH CÔNG [\(remoteItem.name)] bằng file riêng của nó!")
                     
                 } else {
                     let currentID = await MainActor.run { mappedItemID }
                     if let id = currentID,
                        let receipt = DevicePatchService.latestReceipt(projectID: id) {
                         try DevicePatchService.restore(receipt: receipt, allowChangedTargets: true)
-                        onLog("🔄 Khôi phục file gốc (Restore) thành công.")
+                        onLog("🔄 Khôi phục file gốc (Restore) của [\(remoteItem.name)] thành công.")
                     } else {
                         let allExistingItems = await MainActor.run { store.items }
                         for existingItem in allExistingItems {
