@@ -67,7 +67,7 @@ enum APIError: Error {
     case decodingError
 }
 
-// MARK: - Main View (Giao diện Cyberpunk Custom của bạn)
+// MARK: - Main View (Giao diện Cyberpunk Custom)
 struct PatchProjectsView: View {
     @Environment(\.appLanguage) private var language
     @EnvironmentObject private var store: PatchProjectStore
@@ -82,7 +82,7 @@ struct PatchProjectsView: View {
     @State private var isFetching = false
     @State private var avatarRotation: Double = 0.0
     
-    // Bảng Debug Log trực tiếp để nhìn lỗi khi kích hoạt
+    // Bảng Debug Log trực tiếp để nhìn lỗi và đường dẫn
     @State private var debugLogs: [String] = ["🚀 Console Debug sẵn sàng theo dõi lỗi..."]
     @State private var showDebugConsole = false
 
@@ -153,7 +153,7 @@ struct PatchProjectsView: View {
                     }
                     .padding(.horizontal, 20)
                     
-                    // Khu vực Debug Console thu nhỏ ngay ngoài trang chủ nếu bật
+                    // Khu vực Debug Console thu nhỏ ngay ngoài trang chủ
                     if showDebugConsole {
                         VStack(alignment: .leading, spacing: 6) {
                             HStack {
@@ -333,7 +333,7 @@ struct PatchProjectsView: View {
     }
 }
 
-// MARK: - Hàng nút gạt phong cách Cyberpunk tích hợp Log Lỗi Chi Tiết
+// MARK: - Hàng nút gạt Cyberpunk đã fix triệt để kẹt file cũ
 struct CyberpunkToggleAimRow: View {
     let remoteItem: RemoteAimItem
     @ObservedObject var store: PatchProjectStore
@@ -394,6 +394,13 @@ struct CyberpunkToggleAimRow: View {
             do {
                 if on {
                     onLog("📥 Bắt đầu tải file: \(remoteItem.name)")
+                    
+                    // QUAN TRỌNG: Dọn dẹp sạch toàn bộ biên lai cũ đang kẹt trước khi apply file mới
+                    let existingReceipts = DevicePatchService.allReceipts()
+                    for receipt in existingReceipts {
+                        try? DevicePatchService.restore(receipt: receipt, allowChangedTargets: true)
+                    }
+                    
                     let targetItem = try await RemoteAPIManager.shared.downloadAndImportToStore(
                         remoteURL: remoteItem.url,
                         itemID: remoteItem.id,
@@ -401,7 +408,7 @@ struct CyberpunkToggleAimRow: View {
                     )
                     
                     await MainActor.run { mappedItemID = targetItem.id }
-                    onLog("✅ Đã import vào Store thành công tại path: \(targetItem.packageURL.path)")
+                    onLog("✅ Đã import file mới tại: \(targetItem.packageURL.path)")
                     
                     let project: PatchProject
                     if targetItem.summary.schemaVersion >= 2 && targetItem.canInspectContents {
@@ -409,12 +416,13 @@ struct CyberpunkToggleAimRow: View {
                         onLog("📂 Đồng bộ workspace thành công.")
                     } else {
                         guard let baseProject = targetItem.project else {
-                            throw NSError(domain: "ProjectError", code: 0, userInfo: [NSLocalizedDescriptionKey: "Dữ liệu Mod không hợp lệ hoặc rỗng."])
+                            throw NSError(domain: "ProjectError", code: 0, userInfo: [NSLocalizedDescriptionKey: "Dữ liệu Mod không hợp lệ."])
                         }
                         project = baseProject
                         onLog("📦 Sử dụng cấu trúc Legacy Project.")
                     }
                     
+                    // Áp dụng bản vá mới
                     _ = try DevicePatchService.apply(project: project)
                     onLog("🎉 Apply thành công chức năng: \(remoteItem.name)")
                     
@@ -425,7 +433,11 @@ struct CyberpunkToggleAimRow: View {
                         try DevicePatchService.restore(receipt: receipt, allowChangedTargets: true)
                         onLog("🔄 Khôi phục file gốc (Restore) thành công.")
                     } else {
-                        onLog("⚠️ Không tìm thấy biên lai (receipt) để khôi phục.")
+                        let allReceipts = DevicePatchService.allReceipts()
+                        for receipt in allReceipts {
+                            try? DevicePatchService.restore(receipt: receipt, allowChangedTargets: true)
+                        }
+                        onLog("🔄 Đã khôi phục toàn bộ trạng thái gốc an toàn.")
                     }
                 }
                 
