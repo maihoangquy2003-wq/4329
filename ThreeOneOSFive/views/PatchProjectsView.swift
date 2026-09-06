@@ -3,13 +3,7 @@ import UIKit
 import UniformTypeIdentifiers
 import AudioToolbox
 
-private enum PatchPackagePickerPolicy {
-    static let packageType = UTType(filenameExtension: "3105") ?? .data
-    static let allowedContentTypes: [UTType] = [packageType, .data]
-    static let copiesSelectedDocument = true
-}
-
-// MARK: - Remote API Manager
+// MARK: - API Manager
 class RemoteAPIManager {
     static let shared = RemoteAPIManager()
     private let fileManager = FileManager.default
@@ -18,37 +12,49 @@ class RemoteAPIManager {
     
     func fetchRemoteItems() async throws -> [RemoteAimItem] {
         let urlString = "https://solitudepremium.click/ipa/proxy/apiaim.php"
-        guard let url = URL(string: "\(urlString)?t=\(Date().timeIntervalSince1970)") else { throw APIError.invalidURL }
-        let (data, response) = try await URLSession.shared.data(from: url)
-        guard let httpResponse = response as? HTTPURLResponse, (200...299).contains(httpResponse.statusCode) else {
-            throw APIError.serverError
+        let requestURL = URL(string: "\(urlString)?t=\(Date().timeIntervalSince1970)")!
+        
+        var request = URLRequest(url: requestURL)
+        request.cachePolicy = .reloadIgnoringLocalCacheData
+        request.timeoutInterval = 15
+        
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let httpResponse = response as? HTTPURLResponse,
+              (200...299).contains(httpResponse.statusCode) else { throw APIError.serverError }
+        do {
+            return try JSONDecoder().decode([RemoteAimItem].self, from: data)
+        } catch {
+            throw APIError.decodingError
         }
-        return try JSONDecoder().decode([RemoteAimItem].self, from: data)
     }
     
     func downloadAndImportToStore(remoteURL: String, itemID: String, store: PatchProjectStore) async throws -> PatchLibraryItem {
         guard let url = URL(string: remoteURL) else { throw APIError.invalidURL }
-        let (data, response) = try await URLSession.shared.data(from: url)
-        guard let httpResponse = response as? HTTPURLResponse, (200...299).contains(httpResponse.statusCode) else {
-            throw APIError.serverError
+        var request = URLRequest(url: url)
+        request.cachePolicy = .reloadIgnoringLocalCacheData
+        
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let httpResponse = response as? HTTPURLResponse,
+              (200...299).contains(httpResponse.statusCode) else { throw APIError.serverError }
+        
+        let documentsURL = fileManager.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        let itemFolderURL = documentsURL.appendingPathComponent("RemoteAimCache/\(itemID)", isDirectory: true)
+        
+        if !fileManager.fileExists(atPath: itemFolderURL.path) {
+            try fileManager.createDirectory(at: itemFolderURL, withIntermediateDirectories: true)
         }
         
-        let docs = fileManager.urls(for: .documentDirectory, in: .userDomainMask)[0]
-        let folder = docs.appendingPathComponent("RemoteAimCache/\(itemID)", isDirectory: true)
-        if !fileManager.fileExists(atPath: folder.path) {
-            try fileManager.createDirectory(at: folder, withIntermediateDirectories: true)
-        }
-        
-        let fileURL = folder.appendingPathComponent("Aim_\(itemID).3105")
-        try data.write(to: fileURL)
+        let fileName = "Aim_\(itemID)_\(UUID().uuidString.prefix(4)).3105"
+        let destinationURL = itemFolderURL.appendingPathComponent(fileName)
+        try data.write(to: destinationURL)
         
         return try await MainActor.run {
-            store.importPackage(at: fileURL)
+            store.importPackage(at: destinationURL)
             if let matched = store.items.first(where: { $0.packageURL.lastPathComponent.contains(itemID) }) {
                 return matched
             }
             guard let latest = store.items.last else {
-                throw NSError(domain: "StoreError", code: 0, userInfo: [NSLocalizedDescriptionKey: "Không thể nạp gói cấu hình"])
+                throw NSError(domain: "StoreError", code: 0, userInfo: [NSLocalizedDescriptionKey: "Không thể nạp gói cấu hình vào store."])
             }
             return latest
         }
@@ -61,135 +67,277 @@ enum APIError: Error {
     case decodingError
 }
 
-struct RemoteAimItem: Codable, Identifiable {
-    let id: String
-    let name: String
-    let category: String
-    let target: String
-    let note: String?
-    let url: String
-}
-
-// MARK: - Main View
+// MARK: - Main View (Giao diện Cyberpunk Custom của bạn)
 struct PatchProjectsView: View {
     @Environment(\.appLanguage) private var language
-    @EnvironmentObject private var draftCoordinator: PatchDraftCoordinator
     @EnvironmentObject private var store: PatchProjectStore
-    @AppStorage(FeatureVisibility.cleanerStorageKey) private var cleanerEnabled = true
     
-    @State private var showCreate = false
-    @State private var showImporter = false
-    @State private var showCleaner = false
-    @State private var searchText = ""
-    @State private var remoteItems: [RemoteAimItem] = []
-    @State private var isFetchingRemote = false
-    @AppStorage("selected_game_bundle") private var selectedGameBundle: String = "com.dts.freefiremax"
-
     let onOpenSettings: () -> Void
     let onOpenLogs: () -> Void
+    
+    @State private var showModMenu = false
+    @AppStorage("selected_game_bundle") private var selectedGameBundle: String = "com.dts.freefiremax"
+    @State private var remoteItems: [RemoteAimItem] = []
+    @State private var selectedTab: String = ""
+    @State private var isFetching = false
+    @State private var avatarRotation: Double = 0.0
+    
+    // Bảng Debug Log trực tiếp để nhìn lỗi khi kích hoạt
+    @State private var debugLogs: [String] = ["🚀 Console Debug sẵn sàng theo dõi lỗi..."]
+    @State private var showDebugConsole = false
 
     var body: some View {
-        NavigationStack {
-            VStack(spacing: 0) {
-                // Thanh chọn game
-                HStack(spacing: 12) {
-                    Button(action: { selectedGameBundle = "com.dts.freefiremax" }) {
-                        Text("Free Fire Max")
-                            .font(.system(size: 13, weight: .bold))
-                            .padding(.horizontal, 14).padding(.vertical, 8)
-                            .background(selectedGameBundle == "com.dts.freefiremax" ? Color.accentColor : Color.secondary.opacity(0.15))
-                            .foregroundColor(selectedGameBundle == "com.dts.freefiremax" ? .white : .primary)
-                            .cornerRadius(10)
-                    }
-                    Button(action: { selectedGameBundle = "com.dts.freefireth" }) {
-                        Text("Free Fire Thường")
-                            .font(.system(size: 13, weight: .bold))
-                            .padding(.horizontal, 14).padding(.vertical, 8)
-                            .background(selectedGameBundle == "com.dts.freefireth" ? Color.accentColor : Color.secondary.opacity(0.15))
-                            .foregroundColor(selectedGameBundle == "com.dts.freefireth" ? .white : .primary)
-                            .cornerRadius(10)
-                    }
-                    Spacer()
-                    Button(action: { Task { await fetchRemoteAimList() } }) {
-                        Image(systemName: "arrow.triangle.2.circlepath")
-                            .font(.system(size: 14, weight: .bold))
-                    }
-                    .disabled(isFetchingRemote)
-                }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 10)
-                
-                AppSearchField(
-                    text: $searchText,
-                    prompt: language.text("installed.search"),
-                    clearLabel: language.text("common.clear")
-                )
-                Divider()
-                
-                List {
-                    let filteredRemote = remoteItems.filter { $0.target == selectedGameBundle }
-                    if !filteredRemote.isEmpty {
-                        Section("MENU MOD GẠT NHANH") {
-                            ForEach(filteredRemote, id: \.id) { remoteItem in
-                                ToggleAimRow(remoteItem: remoteItem, store: store, language: language)
-                            }
-                        }
-                    }
-                    
-                    if !store.items.isEmpty {
-                        Section("CỤC BỘ (LOCAL)") {
-                            ForEach(store.items) { item in
-                                itemRow(item)
-                            }
-                            .onDelete { offsets in
-                                offsets.map { store.items[$0] }.forEach(store.delete)
-                            }
-                        }
-                    }
-                }
-                .listStyle(.insetGrouped)
+        ZStack {
+            Color.black.ignoresSafeArea()
+            NeonParticleBackgroundView()
+            
+            if !showModMenu {
+                homeScreen.transition(.opacity.combined(with: .scale(scale: 0.95)))
+            } else {
+                modMenuScreen.transition(.move(edge: .trailing))
             }
-            .navigationTitle(language.text("tab.installed"))
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                AppUtilityToolbar(
-                    language: language,
-                    onOpenSettings: onOpenSettings,
-                    onOpenLogs: onOpenLogs
-                )
-            }
-            .onAppear {
-                Task { await fetchRemoteAimList() }
+        }
+        .animation(.spring(response: 0.4, dampingFraction: 0.8), value: showModMenu)
+        .onAppear {
+            Task { await fetchRemoteData() }
+            withAnimation(.linear(duration: 6).repeatForever(autoreverses: false)) {
+                avatarRotation = 360
             }
         }
     }
-
-    private func fetchRemoteAimList() async {
-        guard !isFetchingRemote else { return }
-        isFetchingRemote = true
-        defer { isFetchingRemote = false }
+    
+    private var homeScreen: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Spacer()
+                Button(action: { showDebugConsole.toggle() }) {
+                    Image(systemName: "ladybug.fill")
+                        .foregroundColor(.yellow)
+                        .padding(10)
+                        .background(Circle().stroke(Color.yellow.opacity(0.5), lineWidth: 1))
+                }
+                .padding(.trailing, 20).padding(.top, 10)
+            }
+            
+            ScrollView(showsIndicators: false) {
+                VStack(spacing: 30) {
+                    VStack(spacing: 16) {
+                        ZStack {
+                            Circle()
+                                .stroke(AngularGradient(gradient: Gradient(colors: [.white, .gray, .black, .white]), center: .center), lineWidth: 3)
+                                .frame(width: 104, height: 104)
+                                .rotationEffect(.degrees(avatarRotation))
+                                .shadow(color: .white.opacity(0.5), radius: 10)
+                            AsyncImage(url: URL(string: "https://solitudepremium.click/ipa/proxy/li.jpg")) { phase in
+                                if let image = phase.image { image.resizable().scaledToFill() }
+                                else { Image(systemName: "person.circle.fill").resizable().foregroundColor(.white) }
+                            }
+                            .frame(width: 90, height: 90)
+                            .clipShape(Circle())
+                        }
+                        Text("Zenith Solitude")
+                            .font(.system(size: 24, weight: .black, design: .monospaced))
+                            .foregroundColor(.white)
+                            .shadow(color: .white.opacity(0.7), radius: 6)
+                        HStack(spacing: 10) {
+                            Rectangle().fill(LinearGradient(colors: [.clear, .white], startPoint: .leading, endPoint: .trailing)).frame(width: 30, height: 1)
+                            Text("HEADLOCK ZENIS")
+                                .font(.system(size: 11, weight: .bold, design: .monospaced))
+                                .foregroundColor(.white.opacity(0.8))
+                            Rectangle().fill(LinearGradient(colors: [.white, .clear], startPoint: .leading, endPoint: .trailing)).frame(width: 30, height: 1)
+                        }
+                    }
+                    VStack(spacing: 16) {
+                        homeGameCard(title: "Free Fire Max", icon: "https://solitudepremium.click/ipa/proxy/free.jpg", bundle: "com.dts.freefiremax")
+                        homeGameCard(title: "Free Fire Thường", icon: "https://solitudepremium.click/ipa/proxy/free.jpg", bundle: "com.dts.freefireth")
+                    }
+                    .padding(.horizontal, 20)
+                    
+                    // Khu vực Debug Console thu nhỏ ngay ngoài trang chủ nếu bật
+                    if showDebugConsole {
+                        VStack(alignment: .leading, spacing: 6) {
+                            HStack {
+                                Text("🛠 DEBUG CONSOLE LOGS").font(.system(size: 11, weight: .bold, design: .monospaced)).foregroundColor(.yellow)
+                                Spacer()
+                                Button("Xóa") { debugLogs.removeAll() }.font(.caption2).foregroundColor(.gray)
+                            }
+                            ForEach(debugLogs.prefix(6), id: \.self) { log in
+                                Text(log).font(.system(size: 9, design: .monospaced)).foregroundColor(log.contains("❌") ? .red : (log.contains("✅") ? .green : .white))
+                            }
+                        }
+                        .padding(14).background(Color.black.opacity(0.85)).cornerRadius(12)
+                        .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.yellow.opacity(0.4), lineWidth: 1))
+                        .padding(.horizontal, 20)
+                    }
+                }
+                .padding(.bottom, 40)
+            }
+        }
+    }
+    
+    private func homeGameCard(title: String, icon: String, bundle: String) -> some View {
+        Button(action: {
+            AudioServicesPlaySystemSound(1306)
+            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+            selectedGameBundle = bundle
+            if !dynamicTabs.contains(selectedTab), let first = dynamicTabs.first {
+                selectedTab = first
+            }
+            withAnimation { showModMenu = true }
+        }) {
+            HStack(spacing: 16) {
+                AsyncImage(url: URL(string: icon)) { phase in
+                    if let image = phase.image { image.resizable().scaledToFill() }
+                    else { Image(systemName: "gamecontroller.fill").foregroundColor(.white) }
+                }
+                .frame(width: 52, height: 52)
+                .clipShape(RoundedRectangle(cornerRadius: 14))
+                .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.white.opacity(0.3), lineWidth: 1))
+                VStack(alignment: .leading, spacing: 5) {
+                    Text(title)
+                        .font(.system(size: 17, weight: .bold))
+                        .foregroundColor(.white)
+                    Text("Hệ thống sẵn sàng")
+                        .font(.system(size: 11, design: .monospaced))
+                        .foregroundColor(.white.opacity(0.5))
+                }
+                Spacer()
+                HStack(spacing: 6) {
+                    Text("MỞ MENU")
+                        .font(.system(size: 11, weight: .black, design: .monospaced))
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 10, weight: .bold))
+                }
+                .foregroundColor(.black)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 12)
+                .background(Color.white)
+                .cornerRadius(16)
+                .shadow(color: .white.opacity(0.3), radius: 6)
+            }
+            .padding(16)
+            .background(Color.black)
+            .cornerRadius(20)
+            .overlay(RoundedRectangle(cornerRadius: 20).stroke(Color.white.opacity(0.25), lineWidth: 1.5))
+            .shadow(color: .white.opacity(0.1), radius: 8, x: 0, y: 4)
+        }
+        .buttonStyle(NeonScaleButtonStyle())
+    }
+    
+    private var modMenuScreen: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 12) {
+                Button(action: {
+                    AudioServicesPlaySystemSound(1306)
+                    withAnimation { showModMenu = false }
+                }) {
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: 16, weight: .bold))
+                        .foregroundColor(.black)
+                        .frame(width: 40, height: 40)
+                        .background(Color.white)
+                        .clipShape(Circle())
+                        .shadow(color: .white.opacity(0.4), radius: 4)
+                }
+                .buttonStyle(NeonScaleButtonStyle())
+                Text(selectedGameBundle == "com.dts.freefiremax" ? "Free Fire Max" : "Free Fire Thường")
+                    .font(.system(size: 18, weight: .bold))
+                    .foregroundColor(.white)
+                Spacer()
+                Button(action: {
+                    Task { await fetchRemoteData() }
+                }) {
+                    Image(systemName: "arrow.triangle.2.circlepath")
+                        .font(.system(size: 14, weight: .bold))
+                        .foregroundColor(.white)
+                        .padding(10)
+                        .background(Circle().stroke(Color.white.opacity(0.4), lineWidth: 1.5))
+                }
+                .disabled(isFetching)
+                .buttonStyle(NeonScaleButtonStyle())
+            }
+            .padding(.horizontal, 20).padding(.top, 15)
+            
+            if !dynamicTabs.isEmpty {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 10) {
+                        ForEach(dynamicTabs, id: \.self) { tab in
+                            let isSelected = selectedTab.lowercased() == tab.lowercased()
+                            Button(action: {
+                                AudioServicesPlaySystemSound(1306)
+                                selectedTab = tab
+                            }) {
+                                Text(tab)
+                                    .font(.system(size: 13, weight: .bold, design: .monospaced))
+                                    .padding(.horizontal, 20).padding(.vertical, 10)
+                                    .background(isSelected ? Color.white : Color.black)
+                                    .foregroundColor(isSelected ? .black : .white)
+                                    .cornerRadius(20)
+                                    .overlay(RoundedRectangle(cornerRadius: 20).stroke(Color.white.opacity(isSelected ? 1.0 : 0.3), lineWidth: 1.5))
+                                    .shadow(color: isSelected ? .white.opacity(0.4) : .clear, radius: 6)
+                            }
+                            .buttonStyle(NeonScaleButtonStyle())
+                        }
+                    }
+                    .padding(.horizontal, 20).padding(.vertical, 16)
+                }
+            }
+            
+            ScrollView(showsIndicators: false) {
+                VStack(spacing: 14) {
+                    let filtered = remoteItems.filter { $0.target == selectedGameBundle && $0.category.lowercased() == selectedTab.lowercased() }
+                    if filtered.isEmpty {
+                        VStack(spacing: 10) {
+                            Image(systemName: "folder.badge.questionmark").font(.system(size: 40)).foregroundColor(.white.opacity(0.2))
+                            Text("Chưa có tính năng nào trong mục này").font(.system(size: 12, design: .monospaced)).foregroundColor(.gray)
+                        }.padding(.top, 100)
+                    } else {
+                        ForEach(filtered, id: \.id) { item in
+                            CyberpunkToggleAimRow(remoteItem: item, store: store, onLog: { log in
+                                debugLogs.insert("[\(TimeFormatter.current())] \(log)", at: 0)
+                                if debugLogs.count > 20 { debugLogs.removeLast() }
+                            })
+                        }
+                    }
+                }
+                .padding(.horizontal, 20).padding(.bottom, 40)
+            }
+            Spacer()
+        }
+    }
+    
+    private var dynamicTabs: [String] {
+        var tabs: [String] = []
+        for item in remoteItems where item.target == selectedGameBundle {
+            if !tabs.contains(where: { $0.caseInsensitiveCompare(item.category) == .orderedSame }) {
+                tabs.append(item.category)
+            }
+        }
+        return tabs
+    }
+    
+    @MainActor
+    private func fetchRemoteData() async {
+        guard !isFetching else { return }
+        isFetching = true
+        defer { isFetching = false }
         do {
             remoteItems = try await RemoteAPIManager.shared.fetchRemoteItems()
+            if !dynamicTabs.contains(selectedTab), let first = dynamicTabs.first {
+                selectedTab = first
+            }
+            debugLogs.insert("✅ Tải danh sách web thành công: \(remoteItems.count) mục", at: 0)
         } catch {
-            print("Lỗi tải danh sách Aim: \(error.localizedDescription)")
-        }
-    }
-
-    @ViewBuilder
-    private func itemRow(_ item: PatchLibraryItem) -> some View {
-        NavigationLink {
-            PatchProjectDetailView(store: store, projectID: item.id)
-        } label: {
-            PatchProjectRow(item: item, language: language)
+            debugLogs.insert("❌ Lỗi fetch remote data: \(error.localizedDescription)", at: 0)
         }
     }
 }
 
-// MARK: - Toggle Row độc lập cho từng chức năng
-private struct ToggleAimRow: View {
+// MARK: - Hàng nút gạt phong cách Cyberpunk tích hợp Log Lỗi Chi Tiết
+struct CyberpunkToggleAimRow: View {
     let remoteItem: RemoteAimItem
     @ObservedObject var store: PatchProjectStore
-    let language: AppLanguage
+    let onLog: (String) -> Void
     
     @State private var isWorking = false
     @State private var mappedItemID: UUID? = nil
@@ -198,42 +346,37 @@ private struct ToggleAimRow: View {
         guard let id = mappedItemID else { return false }
         return DevicePatchService.latestReceipt(projectID: id) != nil
     }
-
+    
     var body: some View {
-        HStack(spacing: 12) {
-            Image(systemName: isApplied ? "checkmark.shield.fill" : "shield")
-                .foregroundColor(isApplied ? .accentColor : .secondary)
-                .font(.system(size: 20))
-            
-            VStack(alignment: .leading, spacing: 3) {
-                Text(remoteItem.name)
-                    .font(.body.weight(.semibold))
-                    .foregroundStyle(.primary)
-                Text("Mục: \(remoteItem.category)")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+        HStack(spacing: 14) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.1)).frame(width: 42, height: 42)
+                Image(systemName: isApplied ? "checkmark.shield.fill" : "shield.fill")
+                    .foregroundColor(isApplied ? .white : .gray)
+            }
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 6) {
+                    Text(remoteItem.name).font(.system(size: 15, weight: .bold)).foregroundColor(.white)
+                    Text("VIP").font(.system(size: 8, weight: .bold)).padding(.horizontal, 6).padding(.vertical, 2)
+                        .background(Color.white).cornerRadius(4).foregroundColor(.black)
+                }
                 if let note = remoteItem.note, !note.isEmpty {
-                    Text("📌 \(note)")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
+                    Text("📌 \(note)").font(.system(size: 10, design: .monospaced)).foregroundColor(.gray)
                 }
             }
             Spacer()
-            
             if isWorking {
-                ProgressView()
-                    .scaleEffect(0.8)
+                ProgressView().tint(.white).scaleEffect(0.7)
             } else {
                 Toggle("", isOn: Binding(
                     get: { isApplied },
-                    set: { newValue in
-                        handleToggle(newValue)
-                    }
+                    set: { val in executeAction(on: val) }
                 ))
-                .labelsHidden()
+                .labelsHidden().tint(.white)
             }
         }
-        .padding(.vertical, 4)
+        .padding(14).background(Color.black).cornerRadius(18)
+        .overlay(RoundedRectangle(cornerRadius: 18).stroke(Color.white.opacity(isApplied ? 0.6 : 0.2), lineWidth: isApplied ? 1.5 : 1))
         .onAppear {
             if let found = store.items.first(where: { $0.packageURL.lastPathComponent.contains(remoteItem.id) }) {
                 mappedItemID = found.id
@@ -241,41 +384,48 @@ private struct ToggleAimRow: View {
         }
     }
     
-    private func handleToggle(_ turnOn: Bool) {
+    private func executeAction(on: Bool) {
         guard !isWorking else { return }
         isWorking = true
         AudioServicesPlaySystemSound(1306)
+        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
         
         Task.detached(priority: .userInitiated) {
             do {
-                if turnOn {
+                if on {
+                    onLog("📥 Bắt đầu tải file: \(remoteItem.name)")
                     let targetItem = try await RemoteAPIManager.shared.downloadAndImportToStore(
                         remoteURL: remoteItem.url,
                         itemID: remoteItem.id,
                         store: store
                     )
                     
-                    await MainActor.run {
-                        mappedItemID = targetItem.id
-                    }
+                    await MainActor.run { mappedItemID = targetItem.id }
+                    onLog("✅ Đã import vào Store thành công tại path: \(targetItem.packageURL.path)")
                     
                     let project: PatchProject
                     if targetItem.summary.schemaVersion >= 2 && targetItem.canInspectContents {
                         project = try PatchProjectLibrary.synchronizeWorkspace(item: targetItem)
+                        onLog("📂 Đồng bộ workspace thành công.")
                     } else {
                         guard let baseProject = targetItem.project else {
-                            throw NSError(domain: "ProjectError", code: 0, userInfo: [NSLocalizedDescriptionKey: "Dữ liệu Mod không hợp lệ."])
+                            throw NSError(domain: "ProjectError", code: 0, userInfo: [NSLocalizedDescriptionKey: "Dữ liệu Mod không hợp lệ hoặc rỗng."])
                         }
                         project = baseProject
+                        onLog("📦 Sử dụng cấu trúc Legacy Project.")
                     }
                     
                     _ = try DevicePatchService.apply(project: project)
+                    onLog("🎉 Apply thành công chức năng: \(remoteItem.name)")
                     
                 } else {
                     let currentID = await MainActor.run { mappedItemID }
                     if let id = currentID,
                        let receipt = DevicePatchService.latestReceipt(projectID: id) {
                         try DevicePatchService.restore(receipt: receipt, allowChangedTargets: true)
+                        onLog("🔄 Khôi phục file gốc (Restore) thành công.")
+                    } else {
+                        onLog("⚠️ Không tìm thấy biên lai (receipt) để khôi phục.")
                     }
                 }
                 
@@ -288,52 +438,56 @@ private struct ToggleAimRow: View {
                 await MainActor.run {
                     isWorking = false
                     AudioServicesPlaySystemSound(1053)
-                    print("Lỗi chuyển đổi toggle: \(error.localizedDescription)")
+                    onLog("❌ LỖI [\(remoteItem.name)]: \(error.localizedDescription)")
                 }
             }
         }
     }
 }
 
-// MARK: - Sửa lỗi ContentView: Thêm Extension patchStorePresentation để khớp với ContentView.swift
-private struct PatchStorePresentationModifier: ViewModifier {
-    @ObservedObject var store: PatchProjectStore
+// MARK: - Remote Item Model
+struct RemoteAimItem: Codable, Identifiable {
+    let id: String
+    let name: String
+    let category: String
+    let target: String
+    let note: String?
+    let url: String
+}
 
-    func body(content: Content) -> some View {
-        content
+struct TimeFormatter {
+    static func current() -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "HH:mm:ss"
+        return formatter.string(from: Date())
     }
 }
 
+// MARK: - Background View
+struct NeonParticleBackgroundView: View {
+    var body: some View {
+        TimelineView(.animation) { context in
+            Canvas { ctx, size in
+                let time = context.date.timeIntervalSinceReferenceDate
+                for i in 0..<60 {
+                    let seed = Double(i) * 55.0
+                    let x = (sin(time * 0.2 + seed) * 0.5 + 0.5) * size.width
+                    let y = size.height - fmod(time * (50.0 + fmod(seed, 25.0)) + seed, size.height)
+                    ctx.fill(Path(ellipseIn: CGRect(x: x, y: y, width: 2, height: 2)), with: .color(.white.opacity(0.35)))
+                }
+            }
+        }
+        .allowsHitTesting(false)
+    }
+}
+
+// MARK: - Modifier
+struct PatchStorePresentationModifier: ViewModifier {
+    @ObservedObject var store: PatchProjectStore
+    func body(content: Content) -> some View { content }
+}
 extension View {
     func patchStorePresentation(_ store: PatchProjectStore) -> some View {
         modifier(PatchStorePresentationModifier(store: store))
-    }
-}
-
-// MARK: - Các thành phần UI phụ trợ
-private struct PatchProjectRow: View {
-    let item: PatchLibraryItem
-    let language: AppLanguage
-
-    var body: some View {
-        HStack(spacing: 12) {
-            AppRowIcon(systemName: "shippingbox.fill")
-            VStack(alignment: .leading, spacing: 3) {
-                Text(item.project?.name ?? "Dự án")
-                    .font(.body.weight(.semibold))
-                Text("\(item.project?.rules.count ?? 0) quy tắc")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-        }
-    }
-}
-
-private struct PatchProjectDetailView: View {
-    @Environment(\.appLanguage) private var language
-    @ObservedObject var store: PatchProjectStore
-    let projectID: UUID
-    var body: some View {
-        Text("Chi tiết dự án")
     }
 }
