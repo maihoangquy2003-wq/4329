@@ -3,7 +3,7 @@ import UIKit
 import UniformTypeIdentifiers
 import AudioToolbox
 
-// MARK: - 1. SMART REMOTE API MANAGER
+// MARK: - 1. SMART REMOTE API MANAGER (Ép buộc biến đổi dữ liệu nội bộ chống trùng lặp)
 class RemoteAPIManager {
     static let shared = RemoteAPIManager()
     
@@ -37,6 +37,18 @@ class RemoteAPIManager {
             throw APIError.serverError
         }
         
+        // GIẢI PHÁP ĐẶC TRỊ: Bắt buộc biến đổi nội dung JSON bên trong tệp dựa theo ID của Aim
+        // Dù server có trả về trùng file, code Swift vẫn tự động đổi ID và tên ruột để Store không bị nhầm lẫn
+        var finalData = data
+        if var json = try? JSONSerialization.jsonObject(with: data, options: .mutableContainers) as? [String: Any] {
+            json["id"] = UUID().uuidString
+            json["name"] = remoteItem.name
+            json["zenith_isolated_nonce"] = remoteItem.id
+            if let modifiedData = try? JSONSerialization.data(withJSONObject: json, options: []) {
+                finalData = modifiedData
+            }
+        }
+        
         let documentsURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
         let dedicatedFolder = documentsURL.appendingPathComponent("ZenithIsolatedCache/\(remoteItem.id)", isDirectory: true)
         
@@ -45,8 +57,8 @@ class RemoteAPIManager {
         }
         try FileManager.default.createDirectory(at: dedicatedFolder, withIntermediateDirectories: true)
         
-        let fileURL = dedicatedFolder.appendingPathComponent("AimPayload_\(remoteItem.id).3105")
-        try data.write(to: fileURL)
+        let fileURL = dedicatedFolder.appendingPathComponent("Aim_\(remoteItem.id)_\(UUID().uuidString.prefix(4)).3105")
+        try finalData.write(to: fileURL)
         return fileURL
     }
 }
@@ -206,7 +218,7 @@ struct PatchProjectsView: View {
     @MainActor private func fetchRemoteData() async {
         guard !isFetching else { return }; isFetching = true; defer { isFetching = false }
         do {
-            remoteItems = try await RemoteAPIManager.shared.fetchRemoteItems() // Đã loại bỏ closure không hợp lệ
+            remoteItems = try await RemoteAPIManager.shared.fetchRemoteItems()
             if !dynamicTabs.contains(selectedTab), let first = dynamicTabs.first { selectedTab = first }
             appendLog("✅ [SYNC] Tải danh sách thành công (\(remoteItems.count) mục).")
         } catch {
