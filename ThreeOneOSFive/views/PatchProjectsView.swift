@@ -234,7 +234,11 @@ struct CyberpunkToggleAimRow: View {
             if isWorking { ProgressView().tint(.white).scaleEffect(0.7) } 
             else { Toggle("", isOn: Binding(get: { isApplied }, set: { val in executeSmartAction(on: val) })).labelsHidden().tint(.white) }
         }.padding(14).background(Color.black).cornerRadius(18).overlay(RoundedRectangle(cornerRadius: 18).stroke(Color.white.opacity(isApplied ? 0.6 : 0.2), lineWidth: isApplied ? 1.5 : 1))
-        .onAppear { if let found = store.items.first(where: { $0.packageURL.path.contains("SmartAimCache/\(remoteItem.id)") }) { mappedItemID = found.id } }
+        .onAppear {
+            if let found = store.items.first(where: { $0.packageURL.lastPathComponent.contains(remoteItem.id) }) {
+                mappedItemID = found.id
+            }
+        }
     }
     
     private func executeSmartAction(on: Bool) {
@@ -246,7 +250,7 @@ struct CyberpunkToggleAimRow: View {
                 if on {
                     onLog("📥 Đang tải gói độc lập cho: [\(remoteItem.name)]...")
                     
-                    // Lấy danh sách item hiện tại trên MainActor an toàn trước khi chạy vòng lặp
+                    // 1. Dọn dẹp sạch toàn bộ biên lai cũ
                     let allExistingItems = await MainActor.run { store.items }
                     for existingItem in allExistingItems {
                         if let receipt = DevicePatchService.latestReceipt(projectID: existingItem.id) {
@@ -254,21 +258,27 @@ struct CyberpunkToggleAimRow: View {
                         }
                     }
                     
-                    // Tải file trực tiếp thông qua ID
+                    // 2. Tải tệp tạm xuống
                     let fileURL = try await RemoteAPIManager.shared.downloadAndTransformFile(for: remoteItem)
                     
-                    let targetItemID: UUID = await MainActor.run {
+                    // 3. Import vào Store một cách an toàn và lấy đúng item vừa nạp dựa theo ID của remoteItem
+                    let targetItem: PatchLibraryItem = try await MainActor.run {
                         store.importPackage(at: fileURL)
-                        return store.items.first(where: { $0.packageURL.path == fileURL.path })?.id ?? UUID()
+                        store.reload()
+                        
+                        // Tìm kiếm item trong store khớp với ID của remote item hoặc lấy phần tử cuối cùng
+                        if let matched = store.items.first(where: { $0.packageURL.lastPathComponent.contains(remoteItem.id) }) {
+                            return matched
+                        }
+                        guard let latest = store.items.last else {
+                            throw NSError(domain: "StoreError", code: 0, userInfo: [NSLocalizedDescriptionKey: "Không thể nạp file vào Store."])
+                        }
+                        return latest
                     }
                     
-                    await MainActor.run { mappedItemID = targetItemID }
+                    await MainActor.run { mappedItemID = targetItem.id }
                     
-                    let currentStoreItems = await MainActor.run { store.items }
-                    guard let targetItem = currentStoreItems.first(where: { $0.id == targetItemID }) else {
-                        throw NSError(domain: "StoreError", code: 0, userInfo: [NSLocalizedDescriptionKey: "Lỗi nạp file vào Store."])
-                    }
-                    
+                    // 4. Đồng bộ Workspace hoặc lấy Project trực tiếp
                     var project: PatchProject
                     if targetItem.summary.schemaVersion >= 2 && targetItem.canInspectContents {
                         project = try PatchProjectLibrary.synchronizeWorkspace(item: targetItem)
@@ -279,13 +289,14 @@ struct CyberpunkToggleAimRow: View {
                         project = baseProject
                     }
                         
+                    // Ép buộc phân biệt tên dự án độc lập
                     project.name = "\(remoteItem.name) [ID:\(remoteItem.id)]"
                     
+                    // 5. Thực hiện Apply bản vá
                     _ = try DevicePatchService.apply(project: project)
                     onLog("🎉 Apply THÀNH CÔNG tính năng: \(remoteItem.name)!")
                     
                 } else {
-                    // Tránh lỗi MainActor.run bằng cách đọc giá trịmappedItemID trước, hoặc bọc an toàn
                     let currentID = await MainActor.run { mappedItemID }
                     if let id = currentID, let receipt = DevicePatchService.latestReceipt(projectID: id) {
                         try DevicePatchService.restore(receipt: receipt, allowChangedTargets: true)
