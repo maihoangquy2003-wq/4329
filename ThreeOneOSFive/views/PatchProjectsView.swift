@@ -3,10 +3,9 @@ import UIKit
 import UniformTypeIdentifiers
 import AudioToolbox
 
-// MARK: - 1. SMART REMOTE API MANAGER (Ép buộc tạo mã băm mới cho tệp để chống trùng lặp Store)
+// MARK: - 1. SMART REMOTE API MANAGER
 class RemoteAPIManager {
     static let shared = RemoteAPIManager()
-    private let fileManager = FileManager.default
     
     private init() {}
     
@@ -23,10 +22,9 @@ class RemoteAPIManager {
         return try JSONDecoder().decode([RemoteAimItem].self, from: data)
     }
     
-    func downloadAndTransformFile(for remoteItem: RemoteAimItem) async throws -> URL {
-        let separator = remoteItem.url.contains("?") ? "&" : "?"
-        let bustedURLString = "\(remoteItem.url)\(separator)action=download&id=\(remoteItem.id)&unique_ts=\(Date().timeIntervalSince1970)"
-        guard let url = URL(string: bustedURLString) else { throw APIError.invalidURL }
+    func downloadFile(for remoteItem: RemoteAimItem) async throws -> URL {
+        let urlString = "\(remoteItem.url)?action=download&id=\(remoteItem.id)&nocache=\(Date().timeIntervalSince1970)"
+        guard let url = URL(string: urlString) else { throw APIError.invalidURL }
         
         var request = URLRequest(url: url)
         request.cachePolicy = .reloadIgnoringLocalCacheData
@@ -35,26 +33,11 @@ class RemoteAPIManager {
         let (data, response) = try await URLSession.shared.data(for: request)
         guard let httpResponse = response as? HTTPURLResponse, (200...299).contains(httpResponse.statusCode) else { throw APIError.serverError }
         
-        // KỸ THUẬT CHỐNG CACHE STORE: Biến đổi nhẹ dữ liệu tệp để mã băm (hash) thay đổi hoàn toàn
-        var finalData = data
-        if var json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
-            json["unique_stamp"] = "\(remoteItem.id)_\(UUID().uuidString)"
-            if let modifiedData = try? JSONSerialization.data(withJSONObject: json, options: [.prettyPrinted]) {
-                finalData = modifiedData
-            }
-        }
+        let cacheDir = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+        let uniqueFileName = "Aim_\(remoteItem.id)_\(UUID().uuidString.prefix(6)).3105"
+        let fileURL = cacheDir.appendingPathComponent(uniqueFileName)
         
-        let documentsURL = fileManager.urls(for: .documentDirectory, in: .userDomainMask)[0]
-        let aimFolderURL = documentsURL.appendingPathComponent("SmartAimCache/\(remoteItem.id)", isDirectory: true)
-        
-        if fileManager.fileExists(atPath: aimFolderURL.path) {
-            try? fileManager.removeItem(at: aimFolderURL) 
-        }
-        try fileManager.createDirectory(at: aimFolderURL, withIntermediateDirectories: true)
-        
-        // Đặt tên tệp vật lý độc lập với UUID ngắn
-        let fileURL = aimFolderURL.appendingPathComponent("Aim_\(remoteItem.id)_\(UUID().uuidString.prefix(6)).3105")
-        try finalData.write(to: fileURL)
+        try data.write(to: fileURL)
         return fileURL
     }
 }
@@ -219,16 +202,19 @@ struct PatchProjectsView: View {
     }
 }
 
-// MARK: - 3. SMART TOGGLE ROW (ĐỘC LẬP & ÉP NHẬN FILE MỚI)
+// MARK: - 3. SMART TOGGLE ROW (VŨ KHÍ TỐI THƯỢNG ÉP BUỘC PHÂN BIỆT FILE)
 struct CyberpunkToggleAimRow: View {
     let remoteItem: RemoteAimItem
     @ObservedObject var store: PatchProjectStore
     let onLog: (String) -> Void
     
     @State private var isWorking = false
-    @State private var mappedItemID: UUID? = nil
+    @State private var internalProjectUUID: UUID? = nil
     
-    private var isApplied: Bool { guard let id = mappedItemID else { return false }; return DevicePatchService.latestReceipt(projectID: id) != nil }
+    private var isApplied: Bool {
+        guard let id = internalProjectUUID else { return false }
+        return DevicePatchService.latestReceipt(projectID: id) != nil
+    }
     
     var body: some View {
         HStack(spacing: 14) {
@@ -245,8 +231,8 @@ struct CyberpunkToggleAimRow: View {
             else { Toggle("", isOn: Binding(get: { isApplied }, set: { val in executeSmartAction(on: val) })).labelsHidden().tint(.white) }
         }.padding(14).background(Color.black).cornerRadius(18).overlay(RoundedRectangle(cornerRadius: 18).stroke(Color.white.opacity(isApplied ? 0.6 : 0.2), lineWidth: isApplied ? 1.5 : 1))
         .onAppear {
-            if let found = store.items.first(where: { $0.packageURL.path.contains("SmartAimCache/\(remoteItem.id)") }) {
-                mappedItemID = found.id
+            if let savedIDStr = UserDefaults.standard.string(forKey: "AimID_\(remoteItem.id)"), let uuid = UUID(uuidString: savedIDStr) {
+                internalProjectUUID = uuid
             }
         }
     }
@@ -258,65 +244,57 @@ struct CyberpunkToggleAimRow: View {
         Task.detached(priority: .userInitiated) {
             do {
                 if on {
-                    onLog("📥 Đang tải gói độc lập cho: [\(remoteItem.name)]...")
+                    onLog("📥 Đang tải riêng tính năng: [\(remoteItem.name)]...")
                     
-                    // 1. Dọn dẹp sạch toàn bộ biên lai cũ
-                    let allExistingItems = await MainActor.run { store.items }
-                    for existingItem in allExistingItems {
-                        if let receipt = DevicePatchService.latestReceipt(projectID: existingItem.id) {
-                            try? DevicePatchService.restore(receipt: receipt, allowChangedTargets: true)
-                        }
+                    // 1. Tải file về máy ảo
+                    let localFileURL = try await RemoteAPIManager.shared.downloadFile(for: remoteItem)
+                    
+                    // 2. Import file vào Store
+                    await MainActor.run { store.importPackage(at: localFileURL) }
+                    
+                    // Lấy chính xác Item vừa tải dựa trên tên file độc nhất
+                    let currentStoreItems = await MainActor.run { store.items }
+                    guard let targetItem = currentStoreItems.first(where: { $0.packageURL.path == localFileURL.path }) ?? currentStoreItems.last else {
+                        throw NSError(domain: "StoreError", code: 0, userInfo: [NSLocalizedDescriptionKey: "Lỗi nạp file vào Store."])
                     }
                     
-                    // 2. Tải tệp mới đã được biến đổi mã băm độc lập
-                    let fileURL = try await RemoteAPIManager.shared.downloadAndTransformFile(for: remoteItem)
-                    
-                    // 3. Bắt buộc Store nạp tệp mới này như một thực thể độc lập hoàn toàn
-                    let targetItem: PatchLibraryItem = try await MainActor.run {
-                        store.importPackage(at: fileURL)
-                        store.reload()
-                        
-                        // Khớp chính xác tệp vừa tải theo đường dẫn tuyệt đối
-                        if let matched = store.items.first(where: { $0.packageURL.path == fileURL.path }) {
-                            return matched
-                        }
-                        guard let latest = store.items.last else {
-                            throw NSError(domain: "StoreError", code: 0, userInfo: [NSLocalizedDescriptionKey: "Không thể nạp file vào Store."])
-                        }
-                        return latest
-                    }
-                    
-                    await MainActor.run { mappedItemID = targetItem.id }
-                    
-                    // 4. Giải mã và áp dụng bản vá chuẩn xác
+                    // 3. Giải mã Project
                     var project: PatchProject
                     if targetItem.summary.schemaVersion >= 2 && targetItem.canInspectContents {
                         project = try PatchProjectLibrary.synchronizeWorkspace(item: targetItem)
                     } else {
                         guard let baseProject = targetItem.project else {
-                            throw NSError(domain: "ProjectError", code: 0, userInfo: [NSLocalizedDescriptionKey: "Dữ liệu cấu trúc project bị rỗng hoặc không hợp lệ."])
+                            throw NSError(domain: "ProjectError", code: 0, userInfo: [NSLocalizedDescriptionKey: "Project rỗng hoặc hỏng."])
                         }
                         project = baseProject
                     }
-                        
+                    
+                    // CHÌA KHÓA GIẢI QUYẾT: GHI ĐÈ THỦ CÔNG ID ĐỂ ÉP APP NHẬN ĐÂY LÀ 1 BẢN VÁ MỚI 100% (CHỐNG TRÙNG FILE)
+                    let freshUUID = UUID()
+                    project.id = freshUUID
                     project.name = "\(remoteItem.name) [ID:\(remoteItem.id)]"
                     
+                    await MainActor.run {
+                        internalProjectUUID = freshUUID
+                        UserDefaults.standard.set(freshUUID.uuidString, forKey: "AimID_\(remoteItem.id)")
+                    }
+                    
+                    // 4. Kích hoạt
                     _ = try DevicePatchService.apply(project: project)
-                    onLog("🎉 Apply THÀNH CÔNG tính năng: \(remoteItem.name)!")
+                    onLog("🎉 Apply THÀNH CÔNG: \(remoteItem.name)!")
                     
                 } else {
-                    let currentID = await MainActor.run { mappedItemID }
-                    if let id = currentID, let receipt = DevicePatchService.latestReceipt(projectID: id) {
+                    let activeUUID = await MainActor.run { internalProjectUUID }
+                    if let id = activeUUID, let receipt = DevicePatchService.latestReceipt(projectID: id) {
                         try DevicePatchService.restore(receipt: receipt, allowChangedTargets: true)
-                        onLog("🔄 Khôi phục file gốc cho [\(remoteItem.name)] thành công.")
+                        onLog("🔄 Tắt thành công: [\(remoteItem.name)].")
                     } else {
-                        let allExistingItems = await MainActor.run { store.items }
-                        for existingItem in allExistingItems {
-                            if let receipt = DevicePatchService.latestReceipt(projectID: existingItem.id) {
-                                try? DevicePatchService.restore(receipt: receipt, allowChangedTargets: true)
-                            }
-                        }
-                        onLog("🔄 Đã dọn dẹp hệ thống về trạng thái an toàn.")
+                        onLog("⚠️ Không tìm thấy biên lai đang chạy.")
+                    }
+                    
+                    await MainActor.run {
+                        internalProjectUUID = nil
+                        UserDefaults.standard.removeObject(forKey: "AimID_\(remoteItem.id)")
                     }
                 }
                 
