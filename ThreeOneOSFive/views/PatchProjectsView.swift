@@ -1,4 +1,3 @@
-
 import SwiftUI
 import UIKit
 import UniformTypeIdentifiers
@@ -247,7 +246,7 @@ struct CyberpunkToggleAimRow: View {
                 if on {
                     onLog("📥 Đang tải gói độc lập cho: [\(remoteItem.name)]...")
                     
-                    // Xóa triệt để các biên lai cũ
+                    // Lấy danh sách item hiện tại trên MainActor an toàn trước khi chạy vòng lặp
                     let allExistingItems = await MainActor.run { store.items }
                     for existingItem in allExistingItems {
                         if let receipt = DevicePatchService.latestReceipt(projectID: existingItem.id) {
@@ -270,7 +269,6 @@ struct CyberpunkToggleAimRow: View {
                         throw NSError(domain: "StoreError", code: 0, userInfo: [NSLocalizedDescriptionKey: "Lỗi nạp file vào Store."])
                     }
                     
-                    // BẮT ĐẦU FIX LỖI TẠI ĐÂY: Dùng if/else thay cho toán tử ba ngôi để tránh lỗi thiếu rỗng PatchProject()
                     var project: PatchProject
                     if targetItem.summary.schemaVersion >= 2 && targetItem.canInspectContents {
                         project = try PatchProjectLibrary.synchronizeWorkspace(item: targetItem)
@@ -281,14 +279,15 @@ struct CyberpunkToggleAimRow: View {
                         project = baseProject
                     }
                         
-                    // Ép buộc hệ thống phân biệt bằng cách đổi tên dự án
                     project.name = "\(remoteItem.name) [ID:\(remoteItem.id)]"
                     
                     _ = try DevicePatchService.apply(project: project)
                     onLog("🎉 Apply THÀNH CÔNG tính năng: \(remoteItem.name)!")
                     
                 } else {
-                    if let id = await MainActor.run({ mappedItemID }), let receipt = DevicePatchService.latestReceipt(projectID: id) {
+                    // Tránh lỗi MainActor.run bằng cách đọc giá trịmappedItemID trước, hoặc bọc an toàn
+                    let currentID = await MainActor.run { mappedItemID }
+                    if let id = currentID, let receipt = DevicePatchService.latestReceipt(projectID: id) {
                         try DevicePatchService.restore(receipt: receipt, allowChangedTargets: true)
                         onLog("🔄 Khôi phục file gốc cho [\(remoteItem.name)] thành công.")
                     } else {
