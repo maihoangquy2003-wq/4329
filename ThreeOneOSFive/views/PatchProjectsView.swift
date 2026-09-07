@@ -33,9 +33,8 @@ class RemoteAPIManager {
         let (data, response) = try await URLSession.shared.data(for: request)
         guard let httpResponse = response as? HTTPURLResponse, (200...299).contains(httpResponse.statusCode) else { throw APIError.serverError }
         
-        // Lưu tạm vào thư mục tmp để đảm bảo an toàn
         let tempDir = FileManager.default.temporaryDirectory
-        let tempURL = tempDir.appendingPathComponent("TargetAim_\(remoteItem.id).3105")
+        let tempURL = tempDir.appendingPathComponent("TargetAim_\(remoteItem.id)_\(Int(Date().timeIntervalSince1970)).3105")
         
         if FileManager.default.fileExists(atPath: tempURL.path) {
             try? FileManager.default.removeItem(at: tempURL)
@@ -205,15 +204,13 @@ struct PatchProjectsView: View {
     }
 }
 
-// MARK: - 3. SMART TOGGLE ROW (LOGIC XÓA SẠCH Ổ CỨNG TRƯỚC KHI NẠP ĐỂ CHỐNG TRÙNG ID)
+// MARK: - 3. SMART TOGGLE ROW (ĐÃ SỬA: LẤY .last THAY CHO .first)
 struct CyberpunkToggleAimRow: View {
     let remoteItem: RemoteAimItem
     @ObservedObject var store: PatchProjectStore
     let onLog: (String) -> Void
     
     @State private var isWorking = false
-    
-    // Tách riêng hiển thị giao diện để không bị phụ thuộc vào ProjectID gốc (tránh lỗi bật hàng loạt)
     @AppStorage("ZENITH_ACTIVE_AIM") private var activeAimID: String = ""
     private var isApplied: Bool { return activeAimID == remoteItem.id }
     
@@ -240,11 +237,9 @@ struct CyberpunkToggleAimRow: View {
         Task.detached(priority: .userInitiated) {
             do {
                 if on {
-                    onLog("📥 Bắt đầu quy trình Nạp [\(remoteItem.name)]...")
+                    onLog("📥 Đang tải gói cho: [\(remoteItem.name)]...")
                     
-                    // ==========================================
-                    // BƯỚC 1: KHÔI PHỤC (TẮT) TOÀN BỘ CÁC BẢN VÁ ĐANG CHẠY
-                    // ==========================================
+                    // Khôi phục (tắt) toàn bộ các bản vá cũ đang chạy
                     let currentItems = await MainActor.run { store.items }
                     for item in currentItems {
                         if let receipt = DevicePatchService.latestReceipt(projectID: item.id) {
@@ -252,41 +247,33 @@ struct CyberpunkToggleAimRow: View {
                         }
                     }
                     
-                    // ==========================================
-                    // BƯỚC 2: XÓA SẠCH Ổ CỨNG LƯU TRỮ CỦA STORE (CHỐNG TRÙNG FILE TUYỆT ĐỐI)
-                    // Không cho Store cơ hội đọc lại file cũ
-                    // ==========================================
+                    // Xóa sạch thư mục chứa file .3105 cũ trong Store để giải phóng dung lượng & tránh xung đột
                     await MainActor.run {
                         let docsURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
                         let contents = (try? FileManager.default.contentsOfDirectory(at: docsURL, includingPropertiesForKeys: nil)) ?? []
-                        
-                        // Xóa sạch mọi file .3105 cũ
                         for url in contents where url.pathExtension == "3105" {
                             try? FileManager.default.removeItem(at: url)
                         }
-                        // Xóa luôn thư mục Workspaces chứa dữ liệu bung nén
                         let workspacesURL = docsURL.appendingPathComponent("Workspaces")
                         try? FileManager.default.removeItem(at: workspacesURL)
-                        
-                        // Ép Store load lại (lúc này Store sẽ trống trơn 0 phần tử)
                         store.reload()
                     }
                     
-                    // ==========================================
-                    // BƯỚC 3: TẢI FILE MỚI VÀ IMPORT VÀO STORE TRỐNG
-                    // ==========================================
+                    // Tải file mới từ server về
                     let localFileURL = try await RemoteAPIManager.shared.downloadFile(for: remoteItem)
                     
+                    // Import vào Store
                     await MainActor.run { 
                         store.importPackage(at: localFileURL) 
                         store.reload()
                     }
                     
                     // ==========================================
-                    // BƯỚC 4: LẤY FILE DUY NHẤT VỪA ĐƯỢC IMPORT & APPLY
+                    // ĐIỂM SỬA QUAN TRỌNG NHẤT: DÙNG .last THAY CHO .first
+                    // Lấy chính xác file vừa tải về (nằm ở cuối danh sách Store) thay vì lấy file đầu tiên
                     // ==========================================
                     let updatedItems = await MainActor.run { store.items }
-                    guard let targetItem = updatedItems.first else {
+                    guard let targetItem = updatedItems.last else {
                         throw NSError(domain: "StoreError", code: 0, userInfo: [NSLocalizedDescriptionKey: "Không thể import file vào hệ thống."])
                     }
                     
@@ -300,14 +287,13 @@ struct CyberpunkToggleAimRow: View {
                         project = baseProject
                     }
                     
-                    // KHÔNG CAN THIỆP ĐỔI ID CỦA PROJECT NỮA -> Giữ nguyên ID gốc để PatchService tìm đúng đường dẫn Workspace
+                    // Apply bản vá chuẩn xác theo project của file vừa tải
                     _ = try DevicePatchService.apply(project: project)
                     
                     await MainActor.run { activeAimID = remoteItem.id }
-                    onLog("🎉 Đã kích hoạt THÀNH CÔNG: \(remoteItem.name)!")
+                    onLog("🎉 Kích hoạt THÀNH CÔNG: \(remoteItem.name)!")
                     
                 } else {
-                    // TẮT CHỨC NĂNG
                     let currentItems = await MainActor.run { store.items }
                     for item in currentItems {
                         if let receipt = DevicePatchService.latestReceipt(projectID: item.id) {
