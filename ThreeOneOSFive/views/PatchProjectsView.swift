@@ -3,7 +3,7 @@ import UIKit
 import UniformTypeIdentifiers
 import AudioToolbox
 
-// MARK: - 1. SMART REMOTE API MANAGER (Ép buộc biến đổi dữ liệu nội bộ chống trùng lặp)
+// MARK: - 1. SMART REMOTE API MANAGER
 class RemoteAPIManager {
     static let shared = RemoteAPIManager()
     
@@ -37,18 +37,6 @@ class RemoteAPIManager {
             throw APIError.serverError
         }
         
-        // GIẢI PHÁP ĐẶC TRỊ: Bắt buộc biến đổi nội dung JSON bên trong tệp dựa theo ID của Aim
-        // Dù server có trả về trùng file, code Swift vẫn tự động đổi ID và tên ruột để Store không bị nhầm lẫn
-        var finalData = data
-        if var json = try? JSONSerialization.jsonObject(with: data, options: .mutableContainers) as? [String: Any] {
-            json["id"] = UUID().uuidString
-            json["name"] = remoteItem.name
-            json["zenith_isolated_nonce"] = remoteItem.id
-            if let modifiedData = try? JSONSerialization.data(withJSONObject: json, options: []) {
-                finalData = modifiedData
-            }
-        }
-        
         let documentsURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
         let dedicatedFolder = documentsURL.appendingPathComponent("ZenithIsolatedCache/\(remoteItem.id)", isDirectory: true)
         
@@ -57,8 +45,8 @@ class RemoteAPIManager {
         }
         try FileManager.default.createDirectory(at: dedicatedFolder, withIntermediateDirectories: true)
         
-        let fileURL = dedicatedFolder.appendingPathComponent("Aim_\(remoteItem.id)_\(UUID().uuidString.prefix(4)).3105")
-        try finalData.write(to: fileURL)
+        let fileURL = dedicatedFolder.appendingPathComponent("AimPayload_\(remoteItem.id).3105")
+        try data.write(to: fileURL)
         return fileURL
     }
 }
@@ -254,7 +242,9 @@ struct CyberpunkToggleAimRow: View {
             }
             Spacer()
             if isWorking { ProgressView().tint(.white).scaleEffect(0.7) } 
-            else { Toggle("", isOn: Binding(get: { isApplied }, set: { val in executeSmartAction(on: val) })).labelsHidden().tint(.white) }
+            else { Toggle("", isOn: Binding(get: { isApplied }, set: { val in executeSmartAction(on: val) }))
+                .labelsHidden()
+                .tint(.white) }
         }.padding(14).background(Color.black).cornerRadius(18).overlay(RoundedRectangle(cornerRadius: 18).stroke(Color.white.opacity(isApplied ? 0.6 : 0.2), lineWidth: isApplied ? 1.5 : 1))
     }
     
@@ -296,11 +286,12 @@ struct CyberpunkToggleAimRow: View {
                     }
                     
                     let updatedItems = await MainActor.run { store.items }
-                    guard let targetItem = updatedItems.last else {
-                        throw NSError(domain: "StoreError", code: 0, userInfo: [NSLocalizedDescriptionKey: "Không thể nạp file vào hệ thống Store."])
+                    // FIX LỖI BỐC NHẦM FILE: Lọc chính xác item có packageURL chứa đúng ID của Aim thay vì lấy đại .last
+                    guard let targetItem = updatedItems.first(where: { $0.packageURL.path.contains(remoteItem.id) }) ?? updatedItems.last else {
+                        throw NSError(domain: "StoreError", code: 0, userInfo: [NSLocalizedDescriptionKey: "Không tìm thấy file khớp với ID trong Store."])
                     }
                     
-                    onLog("📦 [STORE] Đã nạp thành công package: \(targetItem.packageURL.lastPathComponent)")
+                    onLog("📦 [STORE MATCH] Đã nhận diện đúng package: \(targetItem.packageURL.lastPathComponent)")
                     
                     var project: PatchProject
                     if targetItem.summary.schemaVersion >= 2 && targetItem.canInspectContents {
