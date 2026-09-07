@@ -1,3 +1,4 @@
+
 import SwiftUI
 import UIKit
 import UniformTypeIdentifiers
@@ -24,7 +25,6 @@ class RemoteAPIManager {
     }
     
     func downloadAndTransformFile(for remoteItem: RemoteAimItem) async throws -> URL {
-        // Truyền thẳng ID lên server + Timestamp để phá Cache hoàn toàn
         let separator = remoteItem.url.contains("?") ? "&" : "?"
         let bustedURLString = "\(remoteItem.url)\(separator)action=download&id=\(remoteItem.id)&unique_ts=\(Date().timeIntervalSince1970)"
         guard let url = URL(string: bustedURLString) else { throw APIError.invalidURL }
@@ -40,11 +40,10 @@ class RemoteAPIManager {
         let aimFolderURL = documentsURL.appendingPathComponent("SmartAimCache/\(remoteItem.id)", isDirectory: true)
         
         if fileManager.fileExists(atPath: aimFolderURL.path) {
-            try? fileManager.removeItem(at: aimFolderURL) // Xóa thư mục cũ
+            try? fileManager.removeItem(at: aimFolderURL) 
         }
         try fileManager.createDirectory(at: aimFolderURL, withIntermediateDirectories: true)
         
-        // Đặt tên file mới 100% không bao giờ trùng lặp
         let fileURL = aimFolderURL.appendingPathComponent("Aim_\(remoteItem.id)_\(Int(Date().timeIntervalSince1970)).3105")
         try data.write(to: fileURL)
         return fileURL
@@ -271,9 +270,16 @@ struct CyberpunkToggleAimRow: View {
                         throw NSError(domain: "StoreError", code: 0, userInfo: [NSLocalizedDescriptionKey: "Lỗi nạp file vào Store."])
                     }
                     
-                    var project = targetItem.summary.schemaVersion >= 2 && targetItem.canInspectContents 
-                        ? try PatchProjectLibrary.synchronizeWorkspace(item: targetItem) 
-                        : targetItem.project ?? PatchProject()
+                    // BẮT ĐẦU FIX LỖI TẠI ĐÂY: Dùng if/else thay cho toán tử ba ngôi để tránh lỗi thiếu rỗng PatchProject()
+                    var project: PatchProject
+                    if targetItem.summary.schemaVersion >= 2 && targetItem.canInspectContents {
+                        project = try PatchProjectLibrary.synchronizeWorkspace(item: targetItem)
+                    } else {
+                        guard let baseProject = targetItem.project else {
+                            throw NSError(domain: "ProjectError", code: 0, userInfo: [NSLocalizedDescriptionKey: "Dữ liệu cấu trúc project bị rỗng hoặc không hợp lệ."])
+                        }
+                        project = baseProject
+                    }
                         
                     // Ép buộc hệ thống phân biệt bằng cách đổi tên dự án
                     project.name = "\(remoteItem.name) [ID:\(remoteItem.id)]"
