@@ -33,13 +33,15 @@ class RemoteAPIManager {
         let (data, response) = try await URLSession.shared.data(for: request)
         guard let httpResponse = response as? HTTPURLResponse, (200...299).contains(httpResponse.statusCode) else { throw APIError.serverError }
         
-        let cacheDir = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
-        // Đặt tên file cực kỳ ngẫu nhiên để chống Cache
-        let uniqueFileName = "Aim_\(remoteItem.id)_\(UUID().uuidString.prefix(8)).3105"
-        let fileURL = cacheDir.appendingPathComponent(uniqueFileName)
+        // Lưu tạm vào thư mục tmp để đảm bảo an toàn
+        let tempDir = FileManager.default.temporaryDirectory
+        let tempURL = tempDir.appendingPathComponent("TargetAim_\(remoteItem.id).3105")
         
-        try data.write(to: fileURL)
-        return fileURL
+        if FileManager.default.fileExists(atPath: tempURL.path) {
+            try? FileManager.default.removeItem(at: tempURL)
+        }
+        try data.write(to: tempURL)
+        return tempURL
     }
 }
 
@@ -203,19 +205,17 @@ struct PatchProjectsView: View {
     }
 }
 
-// MARK: - 3. SMART TOGGLE ROW (ÁP DỤNG CHIẾN THUẬT NUKE MODE CHỐNG TRÙNG FILE)
+// MARK: - 3. SMART TOGGLE ROW (LOGIC XÓA SẠCH Ổ CỨNG TRƯỚC KHI NẠP ĐỂ CHỐNG TRÙNG ID)
 struct CyberpunkToggleAimRow: View {
     let remoteItem: RemoteAimItem
     @ObservedObject var store: PatchProjectStore
     let onLog: (String) -> Void
     
     @State private var isWorking = false
-    @State private var activeProjectID: UUID? = nil
     
-    private var isApplied: Bool {
-        guard let id = activeProjectID else { return false }
-        return DevicePatchService.latestReceipt(projectID: id) != nil
-    }
+    // Tách riêng hiển thị giao diện để không bị phụ thuộc vào ProjectID gốc (tránh lỗi bật hàng loạt)
+    @AppStorage("ZENITH_ACTIVE_AIM") private var activeAimID: String = ""
+    private var isApplied: Bool { return activeAimID == remoteItem.id }
     
     var body: some View {
         HStack(spacing: 14) {
@@ -231,11 +231,6 @@ struct CyberpunkToggleAimRow: View {
             if isWorking { ProgressView().tint(.white).scaleEffect(0.7) } 
             else { Toggle("", isOn: Binding(get: { isApplied }, set: { val in executeSmartAction(on: val) })).labelsHidden().tint(.white) }
         }.padding(14).background(Color.black).cornerRadius(18).overlay(RoundedRectangle(cornerRadius: 18).stroke(Color.white.opacity(isApplied ? 0.6 : 0.2), lineWidth: isApplied ? 1.5 : 1))
-        .onAppear {
-            if let savedIDStr = UserDefaults.standard.string(forKey: "AimID_\(remoteItem.id)"), let uuid = UUID(uuidString: savedIDStr) {
-                activeProjectID = uuid
-            }
-        }
     }
     
     private func executeSmartAction(on: Bool) {
@@ -248,39 +243,51 @@ struct CyberpunkToggleAimRow: View {
                     onLog("📥 Bắt đầu quy trình Nạp [\(remoteItem.name)]...")
                     
                     // ==========================================
-                    // CHIẾN THUẬT NUKE: TIÊU DIỆT SẠCH MỌI DỮ LIỆU CŨ TRONG STORE
-                    // Đảm bảo không còn file nào cản đường hay bị Store nhận nhầm
+                    // BƯỚC 1: KHÔI PHỤC (TẮT) TOÀN BỘ CÁC BẢN VÁ ĐANG CHẠY
                     // ==========================================
-                    let allExistingItems = await MainActor.run { store.items }
-                    for existingItem in allExistingItems {
-                        // Tắt bản vá nếu đang chạy
-                        if let receipt = DevicePatchService.latestReceipt(projectID: existingItem.id) {
+                    let currentItems = await MainActor.run { store.items }
+                    for item in currentItems {
+                        if let receipt = DevicePatchService.latestReceipt(projectID: item.id) {
                             try? DevicePatchService.restore(receipt: receipt, allowChangedTargets: true)
                         }
-                        
-                        // Xóa sạch file vật lý .3105 đang giấu trong thư mục của Store
-                        try? FileManager.default.removeItem(at: existingItem.packageURL)
-                        
-                        // Xóa luôn thư mục Workspace đã bung nén (đề phòng iOS đọc lại)
-                        let workspacePath = existingItem.packageURL.deletingPathExtension()
-                        try? FileManager.default.removeItem(at: workspacePath)
                     }
                     
-                    // F5 lại bộ nhớ, lúc này Store trống trơn 100%
-                    await MainActor.run { store.reload() }
+                    // ==========================================
+                    // BƯỚC 2: XÓA SẠCH Ổ CỨNG LƯU TRỮ CỦA STORE (CHỐNG TRÙNG FILE TUYỆT ĐỐI)
+                    // Không cho Store cơ hội đọc lại file cũ
+                    // ==========================================
+                    await MainActor.run {
+                        let docsURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+                        let contents = (try? FileManager.default.contentsOfDirectory(at: docsURL, includingPropertiesForKeys: nil)) ?? []
+                        
+                        // Xóa sạch mọi file .3105 cũ
+                        for url in contents where url.pathExtension == "3105" {
+                            try? FileManager.default.removeItem(at: url)
+                        }
+                        // Xóa luôn thư mục Workspaces chứa dữ liệu bung nén
+                        let workspacesURL = docsURL.appendingPathComponent("Workspaces")
+                        try? FileManager.default.removeItem(at: workspacesURL)
+                        
+                        // Ép Store load lại (lúc này Store sẽ trống trơn 0 phần tử)
+                        store.reload()
+                    }
                     
                     // ==========================================
-                    // TẢI FILE & NẠP VÀO STORE TRỐNG
+                    // BƯỚC 3: TẢI FILE MỚI VÀ IMPORT VÀO STORE TRỐNG
                     // ==========================================
                     let localFileURL = try await RemoteAPIManager.shared.downloadFile(for: remoteItem)
                     
-                    await MainActor.run { store.importPackage(at: localFileURL) }
-                    await MainActor.run { store.reload() }
+                    await MainActor.run { 
+                        store.importPackage(at: localFileURL) 
+                        store.reload()
+                    }
                     
-                    // Lấy chính xác Item mới nhất (Và là duy nhất) trong Store
-                    let updatedStoreItems = await MainActor.run { store.items }
-                    guard let targetItem = updatedStoreItems.last else {
-                        throw NSError(domain: "StoreError", code: 0, userInfo: [NSLocalizedDescriptionKey: "Không thể nạp file vào Store."])
+                    // ==========================================
+                    // BƯỚC 4: LẤY FILE DUY NHẤT VỪA ĐƯỢC IMPORT & APPLY
+                    // ==========================================
+                    let updatedItems = await MainActor.run { store.items }
+                    guard let targetItem = updatedItems.first else {
+                        throw NSError(domain: "StoreError", code: 0, userInfo: [NSLocalizedDescriptionKey: "Không thể import file vào hệ thống."])
                     }
                     
                     var project: PatchProject
@@ -293,44 +300,33 @@ struct CyberpunkToggleAimRow: View {
                         project = baseProject
                     }
                     
-                    // Tạo một UUID ảo mới tinh đè lên để quản lý trạng thái riêng biệt cho nút gạt này
-                    let newSessionUUID = UUID()
-                    project.id = newSessionUUID
-                    project.name = "\(remoteItem.name) [ID:\(remoteItem.id)]"
-                    
-                    await MainActor.run {
-                        activeProjectID = newSessionUUID
-                        UserDefaults.standard.set(newSessionUUID.uuidString, forKey: "AimID_\(remoteItem.id)")
-                    }
-                    
+                    // KHÔNG CAN THIỆP ĐỔI ID CỦA PROJECT NỮA -> Giữ nguyên ID gốc để PatchService tìm đúng đường dẫn Workspace
                     _ = try DevicePatchService.apply(project: project)
-                    onLog("🎉 Nạp THÀNH CÔNG chính xác: \(remoteItem.name)!")
+                    
+                    await MainActor.run { activeAimID = remoteItem.id }
+                    onLog("🎉 Đã kích hoạt THÀNH CÔNG: \(remoteItem.name)!")
                     
                 } else {
-                    let activeUUID = await MainActor.run { activeProjectID }
-                    if let id = activeUUID, let receipt = DevicePatchService.latestReceipt(projectID: id) {
-                        try DevicePatchService.restore(receipt: receipt, allowChangedTargets: true)
-                        onLog("🔄 Đã tắt: [\(remoteItem.name)].")
-                    } else {
-                        // Nuke dọn dẹp dự phòng
-                        let allExistingItems = await MainActor.run { store.items }
-                        for existingItem in allExistingItems {
-                            if let receipt = DevicePatchService.latestReceipt(projectID: existingItem.id) {
-                                try? DevicePatchService.restore(receipt: receipt, allowChangedTargets: true)
-                            }
+                    // TẮT CHỨC NĂNG
+                    let currentItems = await MainActor.run { store.items }
+                    for item in currentItems {
+                        if let receipt = DevicePatchService.latestReceipt(projectID: item.id) {
+                            try? DevicePatchService.restore(receipt: receipt, allowChangedTargets: true)
                         }
-                        onLog("🔄 Đã dọn dẹp toàn bộ hệ thống.")
                     }
                     
-                    await MainActor.run {
-                        activeProjectID = nil
-                        UserDefaults.standard.removeObject(forKey: "AimID_\(remoteItem.id)")
-                    }
+                    await MainActor.run { activeAimID = "" }
+                    onLog("🔄 Đã tắt: \(remoteItem.name).")
                 }
                 
                 await MainActor.run { store.reload(); isWorking = false; AudioServicesPlaySystemSound(1407) }
             } catch {
-                await MainActor.run { isWorking = false; AudioServicesPlaySystemSound(1053); onLog("❌ LỖI: \(error.localizedDescription)") }
+                await MainActor.run { 
+                    activeAimID = ""
+                    isWorking = false
+                    AudioServicesPlaySystemSound(1053)
+                    onLog("❌ LỖI: \(error.localizedDescription)") 
+                }
             }
         }
     }
