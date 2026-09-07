@@ -3,7 +3,7 @@ import UIKit
 import UniformTypeIdentifiers
 import AudioToolbox
 
-// MARK: - 1. SMART REMOTE API MANAGER
+// MARK: - 1. SMART REMOTE API MANAGER (Ép buộc tạo mã băm mới cho tệp để chống trùng lặp Store)
 class RemoteAPIManager {
     static let shared = RemoteAPIManager()
     private let fileManager = FileManager.default
@@ -35,6 +35,15 @@ class RemoteAPIManager {
         let (data, response) = try await URLSession.shared.data(for: request)
         guard let httpResponse = response as? HTTPURLResponse, (200...299).contains(httpResponse.statusCode) else { throw APIError.serverError }
         
+        // KỸ THUẬT CHỐNG CACHE STORE: Biến đổi nhẹ dữ liệu tệp để mã băm (hash) thay đổi hoàn toàn
+        var finalData = data
+        if var json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+            json["unique_stamp"] = "\(remoteItem.id)_\(UUID().uuidString)"
+            if let modifiedData = try? JSONSerialization.data(withJSONObject: json, options: [.prettyPrinted]) {
+                finalData = modifiedData
+            }
+        }
+        
         let documentsURL = fileManager.urls(for: .documentDirectory, in: .userDomainMask)[0]
         let aimFolderURL = documentsURL.appendingPathComponent("SmartAimCache/\(remoteItem.id)", isDirectory: true)
         
@@ -43,8 +52,9 @@ class RemoteAPIManager {
         }
         try fileManager.createDirectory(at: aimFolderURL, withIntermediateDirectories: true)
         
-        let fileURL = aimFolderURL.appendingPathComponent("Aim_\(remoteItem.id)_\(Int(Date().timeIntervalSince1970)).3105")
-        try data.write(to: fileURL)
+        // Đặt tên tệp vật lý độc lập với UUID ngắn
+        let fileURL = aimFolderURL.appendingPathComponent("Aim_\(remoteItem.id)_\(UUID().uuidString.prefix(6)).3105")
+        try finalData.write(to: fileURL)
         return fileURL
     }
 }
@@ -209,7 +219,7 @@ struct PatchProjectsView: View {
     }
 }
 
-// MARK: - 3. SMART TOGGLE ROW (ĐỘC LẬP & ÉP ĐỊNH DANH)
+// MARK: - 3. SMART TOGGLE ROW (ĐỘC LẬP & ÉP NHẬN FILE MỚI)
 struct CyberpunkToggleAimRow: View {
     let remoteItem: RemoteAimItem
     @ObservedObject var store: PatchProjectStore
@@ -235,7 +245,7 @@ struct CyberpunkToggleAimRow: View {
             else { Toggle("", isOn: Binding(get: { isApplied }, set: { val in executeSmartAction(on: val) })).labelsHidden().tint(.white) }
         }.padding(14).background(Color.black).cornerRadius(18).overlay(RoundedRectangle(cornerRadius: 18).stroke(Color.white.opacity(isApplied ? 0.6 : 0.2), lineWidth: isApplied ? 1.5 : 1))
         .onAppear {
-            if let found = store.items.first(where: { $0.packageURL.lastPathComponent.contains(remoteItem.id) }) {
+            if let found = store.items.first(where: { $0.packageURL.path.contains("SmartAimCache/\(remoteItem.id)") }) {
                 mappedItemID = found.id
             }
         }
@@ -258,16 +268,16 @@ struct CyberpunkToggleAimRow: View {
                         }
                     }
                     
-                    // 2. Tải tệp tạm xuống
+                    // 2. Tải tệp mới đã được biến đổi mã băm độc lập
                     let fileURL = try await RemoteAPIManager.shared.downloadAndTransformFile(for: remoteItem)
                     
-                    // 3. Import vào Store một cách an toàn và lấy đúng item vừa nạp dựa theo ID của remoteItem
+                    // 3. Bắt buộc Store nạp tệp mới này như một thực thể độc lập hoàn toàn
                     let targetItem: PatchLibraryItem = try await MainActor.run {
                         store.importPackage(at: fileURL)
                         store.reload()
                         
-                        // Tìm kiếm item trong store khớp với ID của remote item hoặc lấy phần tử cuối cùng
-                        if let matched = store.items.first(where: { $0.packageURL.lastPathComponent.contains(remoteItem.id) }) {
+                        // Khớp chính xác tệp vừa tải theo đường dẫn tuyệt đối
+                        if let matched = store.items.first(where: { $0.packageURL.path == fileURL.path }) {
                             return matched
                         }
                         guard let latest = store.items.last else {
@@ -278,7 +288,7 @@ struct CyberpunkToggleAimRow: View {
                     
                     await MainActor.run { mappedItemID = targetItem.id }
                     
-                    // 4. Đồng bộ Workspace hoặc lấy Project trực tiếp
+                    // 4. Giải mã và áp dụng bản vá chuẩn xác
                     var project: PatchProject
                     if targetItem.summary.schemaVersion >= 2 && targetItem.canInspectContents {
                         project = try PatchProjectLibrary.synchronizeWorkspace(item: targetItem)
@@ -289,10 +299,8 @@ struct CyberpunkToggleAimRow: View {
                         project = baseProject
                     }
                         
-                    // Ép buộc phân biệt tên dự án độc lập
                     project.name = "\(remoteItem.name) [ID:\(remoteItem.id)]"
                     
-                    // 5. Thực hiện Apply bản vá
                     _ = try DevicePatchService.apply(project: project)
                     onLog("🎉 Apply THÀNH CÔNG tính năng: \(remoteItem.name)!")
                     
