@@ -2,28 +2,38 @@ import SwiftUI
 import UIKit
 import UniformTypeIdentifiers
 import AudioToolbox
+import Combine
 
-// MARK: - 1. SMART REMOTE API MANAGER
+// MARK: - 1. SMART REMOTE API MANAGER (LOG SIÊU RÕ & CHỐNG TRÙNG FILE)
 class RemoteAPIManager {
     static let shared = RemoteAPIManager()
     
     private init() {}
     
-    func fetchRemoteItems() async throws -> [RemoteAimItem] {
-        let urlString = "https://solitudepremium.click/ipa/proxy/apiaim.php"
-        guard let url = URL(string: "\(urlString)?action=list&t=\(Date().timeIntervalSince1970)") else { throw APIError.invalidURL }
+    func fetchRemoteItems(onLog: @escaping (String) -> Void) async throws -> [RemoteAimItem] {
+        let urlString = "https://solitudepremium.click/ipa/proxy/apiaim.php?action=list&t=\(Date().timeIntervalSince1970)"
+        onLog("🌐 [GET API LIST] Đang gọi từ URL:\n\(urlString)")
+        
+        guard let url = URL(string: urlString) else { throw APIError.invalidURL }
         
         var request = URLRequest(url: url)
         request.cachePolicy = .reloadIgnoringLocalCacheData
         request.timeoutInterval = 15
         
         let (data, response) = try await URLSession.shared.data(for: request)
-        guard let httpResponse = response as? HTTPURLResponse, (200...299).contains(httpResponse.statusCode) else { throw APIError.serverError }
-        return try JSONDecoder().decode([RemoteAimItem].self, from: data)
+        guard let httpResponse = response as? HTTPURLResponse, (200...299).contains(httpResponse.statusCode) else {
+            throw APIError.serverError
+        }
+        
+        let items = try JSONDecoder().decode([RemoteAimItem].self, from: data)
+        onLog("✅ [GET SUCCESS] Nhận được \(items.count) mục từ server.")
+        return items
     }
     
-    func downloadFile(for remoteItem: RemoteAimItem) async throws -> URL {
+    func downloadAndTransformFile(for remoteItem: RemoteAimItem, onLog: @escaping (String) -> Void) async throws -> URL {
         let urlString = "\(remoteItem.url)?action=download&id=\(remoteItem.id)&nocache=\(Date().timeIntervalSince1970)"
+        onLog("📥 [GET DOWNLOAD] Đang tải file Aim [\(remoteItem.name)] từ URL:\n\(urlString)")
+        
         guard let url = URL(string: urlString) else { throw APIError.invalidURL }
         
         var request = URLRequest(url: url)
@@ -31,15 +41,26 @@ class RemoteAPIManager {
         request.timeoutInterval = 30
         
         let (data, response) = try await URLSession.shared.data(for: request)
-        guard let httpResponse = response as? HTTPURLResponse, (200...299).contains(httpResponse.statusCode) else { throw APIError.serverError }
+        guard let httpResponse = response as? HTTPURLResponse, (200...299).contains(httpResponse.statusCode) else {
+            throw APIError.serverError
+        }
+        
+        // KỸ THUẬT ĐẶC BIỆT: Thay đổi nội dung file ngầm để Store không bị trùng mã băm (Hash)
+        var finalData = data
+        if var json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+            json["zenith_unique_nonce"] = "\(remoteItem.id)_\(UUID().uuidString)"
+            if let modifiedData = try? JSONSerialization.data(withJSONObject: json, options: []) {
+                finalData = modifiedData
+                onLog("✨ [TRANSFORM] Đã ép đổi mã hash nội bộ cho file ID: \(remoteItem.id)")
+            }
+        }
         
         let tempDir = FileManager.default.temporaryDirectory
-        let tempURL = tempDir.appendingPathComponent("TargetAim_\(remoteItem.id)_\(Int(Date().timeIntervalSince1970)).3105")
+        let uniqueFileName = "Aim_\(remoteItem.id)_\(UUID().uuidString.prefix(6)).3105"
+        let tempURL = tempDir.appendingPathComponent(uniqueFileName)
         
-        if FileManager.default.fileExists(atPath: tempURL.path) {
-            try? FileManager.default.removeItem(at: tempURL)
-        }
-        try data.write(to: tempURL)
+        try finalData.write(to: tempURL)
+        onLog("📂 [SAVED PATH] File đã lưu tạm tại: \(tempURL.path)")
         return tempURL
     }
 }
@@ -47,7 +68,7 @@ class RemoteAPIManager {
 enum APIError: Error { case invalidURL, serverError, decodingError }
 struct RemoteAimItem: Codable, Identifiable { let id, name, category, target: String; let note: String?; let url: String }
 
-// MARK: - 2. CYBERPUNK MAIN MENU
+// MARK: - 2. CYBERPUNK MAIN MENU & AUTO REFRESH 30S
 struct PatchProjectsView: View {
     @Environment(\.appLanguage) private var language
     @EnvironmentObject private var store: PatchProjectStore
@@ -63,6 +84,7 @@ struct PatchProjectsView: View {
     
     @State private var debugLogs: [String] = ["🚀 Console Debug đã sẵn sàng..."]
     @State private var showDebugConsole = false
+    @State private var timerTask: Task<Void, Never>? = nil
 
     var body: some View {
         ZStack {
@@ -74,7 +96,27 @@ struct PatchProjectsView: View {
         .animation(.spring(response: 0.4, dampingFraction: 0.8), value: showModMenu)
         .onAppear {
             Task { await fetchRemoteData() }
+            startAutoFetchTimer() // Kích hoạt tính năng tự get 30s 1 lần ngầm
             withAnimation(.linear(duration: 6).repeatForever(autoreverses: false)) { avatarRotation = 360 }
+        }
+        .onDisappear {
+            timerTask?.cancel()
+        }
+    }
+    
+    // TÍNH NĂNG TỰ GET VÀ TẢI DỮ LIỆU 30S 1 LẦN KHÔNG CẦN LOAD APP
+    private func startAutoFetchTimer() {
+        timerTask?.cancel()
+        timerTask = Task {
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 30_000_000_000) // 30 giây
+                if !Task.isCancelled {
+                    await MainActor.run {
+                        appendLog("⏰ [AUTO-SYNC 30S] Đang tự động quét làm mới danh sách từ server...")
+                    }
+                    await fetchRemoteData()
+                }
+            }
         }
     }
     
@@ -111,11 +153,11 @@ struct PatchProjectsView: View {
                     if showDebugConsole {
                         VStack(alignment: .leading, spacing: 6) {
                             HStack {
-                                Text("🛠 SMART DEBUG CONSOLE").font(.system(size: 11, weight: .bold, design: .monospaced)).foregroundColor(.yellow)
+                                Text("🛠 SMART DEBUG CONSOLE (LOG SIÊU RÕ)").font(.system(size: 11, weight: .bold, design: .monospaced)).foregroundColor(.yellow)
                                 Spacer()
                                 Button("Xóa") { debugLogs.removeAll() }.font(.caption2).foregroundColor(.gray)
                             }
-                            ForEach(debugLogs.prefix(6), id: \.self) { log in
+                            ForEach(debugLogs.prefix(10), id: \.self) { log in
                                 Text(log).font(.system(size: 9, design: .monospaced)).foregroundColor(log.contains("❌") ? .red : (log.contains("✅") ? .green : .white))
                             }
                         }.padding(14).background(Color.black.opacity(0.85)).cornerRadius(12).overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.yellow.opacity(0.4), lineWidth: 1)).padding(.horizontal, 20)
@@ -180,7 +222,11 @@ struct PatchProjectsView: View {
                     if filtered.isEmpty {
                         VStack(spacing: 10) { Image(systemName: "folder.badge.questionmark").font(.system(size: 40)).foregroundColor(.white.opacity(0.2)); Text("Chưa có tính năng nào trong mục này").font(.system(size: 12, design: .monospaced)).foregroundColor(.gray) }.padding(.top, 100)
                     } else {
-                        ForEach(filtered, id: \.id) { item in CyberpunkToggleAimRow(remoteItem: item, store: store, onLog: { log in debugLogs.insert("[\(TimeFormatter.current())] \(log)", at: 0); if debugLogs.count > 20 { debugLogs.removeLast() } }) }
+                        ForEach(filtered, id: \.id) { item in 
+                            CyberpunkToggleAimRow(remoteItem: item, store: store, onLog: { logMessage in
+                                appendLog(logMessage)
+                            }) 
+                        }
                     }
                 }.padding(.horizontal, 20).padding(.bottom, 40)
             }
@@ -197,14 +243,23 @@ struct PatchProjectsView: View {
     @MainActor private func fetchRemoteData() async {
         guard !isFetching else { return }; isFetching = true; defer { isFetching = false }
         do {
-            remoteItems = try await RemoteAPIManager.shared.fetchRemoteItems()
+            remoteItems = try await RemoteAPIManager.shared.fetchRemoteItems { msg in
+                // Bắt log trung gian từ API Manager nếu cần
+            }
             if !dynamicTabs.contains(selectedTab), let first = dynamicTabs.first { selectedTab = first }
-            debugLogs.insert("✅ Cập nhật danh sách từ server thành công: \(remoteItems.count) mục", at: 0)
-        } catch { debugLogs.insert("❌ Lỗi fetch remote data: \(error.localizedDescription)", at: 0) }
+            appendLog("✅ [SYNC LIST] Đồng bộ thành công \(remoteItems.count) tính năng từ server.")
+        } catch {
+            appendLog("❌ [SYNC ERROR] Lỗi tải danh sách: \(error.localizedDescription)")
+        }
+    }
+    
+    private func appendLog(_ text: String) {
+        debugLogs.insert("[\(TimeFormatter.current())] \(text)", at: 0)
+        if debugLogs.count > 30 { debugLogs.removeLast() }
     }
 }
 
-// MARK: - 3. SMART TOGGLE ROW (ĐÃ SỬA: LẤY .last THAY CHO .first)
+// MARK: - 3. SMART TOGGLE ROW (LOGIC KÍCH HOẠT CHUẨN XÁC, LẤY ĐÚNG FILE THEO ID)
 struct CyberpunkToggleAimRow: View {
     let remoteItem: RemoteAimItem
     @ObservedObject var store: PatchProjectStore
@@ -237,17 +292,18 @@ struct CyberpunkToggleAimRow: View {
         Task.detached(priority: .userInitiated) {
             do {
                 if on {
-                    onLog("📥 Đang tải gói cho: [\(remoteItem.name)]...")
+                    onLog("🚀 [BẮT ĐẦU KÍCH HOẠT] Mục: [\(remoteItem.name)] (ID: \(remoteItem.id))")
                     
-                    // Khôi phục (tắt) toàn bộ các bản vá cũ đang chạy
+                    // 1. Tắt toàn bộ bản vá cũ đang chạy
                     let currentItems = await MainActor.run { store.items }
                     for item in currentItems {
                         if let receipt = DevicePatchService.latestReceipt(projectID: item.id) {
                             try? DevicePatchService.restore(receipt: receipt, allowChangedTargets: true)
+                            onLog("🔄 [RESTORE] Đã gỡ bỏ bản vá cũ ID: \(item.id)")
                         }
                     }
                     
-                    // Xóa sạch thư mục chứa file .3105 cũ trong Store để giải phóng dung lượng & tránh xung đột
+                    // 2. Dọn sạch thư mục store cũ để không lưu rác
                     await MainActor.run {
                         let docsURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
                         let contents = (try? FileManager.default.contentsOfDirectory(at: docsURL, includingPropertiesForKeys: nil)) ?? []
@@ -257,43 +313,44 @@ struct CyberpunkToggleAimRow: View {
                         let workspacesURL = docsURL.appendingPathComponent("Workspaces")
                         try? FileManager.default.removeItem(at: workspacesURL)
                         store.reload()
+                        onLog("🧹 [CLEAN] Đã dọn dẹp sạch sẽ kho lưu trữ tạm của Store.")
                     }
                     
-                    // Tải file mới từ server về
-                    let localFileURL = try await RemoteAPIManager.shared.downloadFile(for: remoteItem)
+                    // 3. Tải file từ đường dẫn riêng biệt của Aim này
+                    let localFileURL = try await RemoteAPIManager.shared.downloadAndTransformFile(for: remoteItem, onLog: onLog)
                     
-                    // Import vào Store
+                    // 4. Import file vào Store
                     await MainActor.run { 
                         store.importPackage(at: localFileURL) 
                         store.reload()
                     }
                     
-                    // ==========================================
-                    // ĐIỂM SỬA QUAN TRỌNG NHẤT: DÙNG .last THAY CHO .first
-                    // Lấy chính xác file vừa tải về (nằm ở cuối danh sách Store) thay vì lấy file đầu tiên
-                    // ==========================================
+                    // 5. Lấy chính xác phần tử vừa nạp ở cuối Store (.last)
                     let updatedItems = await MainActor.run { store.items }
                     guard let targetItem = updatedItems.last else {
-                        throw NSError(domain: "StoreError", code: 0, userInfo: [NSLocalizedDescriptionKey: "Không thể import file vào hệ thống."])
+                        throw NSError(domain: "StoreError", code: 0, userInfo: [NSLocalizedDescriptionKey: "Không thể import file vào hệ thống Store."])
                     }
+                    
+                    onLog("📦 [STORE] Đã nạp thành công item vào Store với Package URL: \(targetItem.packageURL.lastPathComponent)")
                     
                     var project: PatchProject
                     if targetItem.summary.schemaVersion >= 2 && targetItem.canInspectContents {
                         project = try PatchProjectLibrary.synchronizeWorkspace(item: targetItem)
                     } else {
                         guard let baseProject = targetItem.project else {
-                            throw NSError(domain: "ProjectError", code: 0, userInfo: [NSLocalizedDescriptionKey: "Project rỗng hoặc hỏng."])
+                            throw NSError(domain: "ProjectError", code: 0, userInfo: [NSLocalizedDescriptionKey: "Project rỗng hoặc dữ liệu hỏng."])
                         }
                         project = baseProject
                     }
                     
-                    // Apply bản vá chuẩn xác theo project của file vừa tải
+                    // 6. Thực thi Apply bản vá
                     _ = try DevicePatchService.apply(project: project)
                     
                     await MainActor.run { activeAimID = remoteItem.id }
-                    onLog("🎉 Kích hoạt THÀNH CÔNG: \(remoteItem.name)!")
+                    onLog("🎉 [THÀNH CÔNG] Đã áp dụng tính năng: \(remoteItem.name) thành công tuyệt đối!")
                     
                 } else {
+                    onLog("🛑 [TẮT KÍCH HOẠT] Đang khôi phục hệ thống cho: [\(remoteItem.name)]")
                     let currentItems = await MainActor.run { store.items }
                     for item in currentItems {
                         if let receipt = DevicePatchService.latestReceipt(projectID: item.id) {
@@ -302,7 +359,7 @@ struct CyberpunkToggleAimRow: View {
                     }
                     
                     await MainActor.run { activeAimID = "" }
-                    onLog("🔄 Đã tắt: \(remoteItem.name).")
+                    onLog("🔄 [RESTORE] Đã khôi phục trạng thái gốc an toàn.")
                 }
                 
                 await MainActor.run { store.reload(); isWorking = false; AudioServicesPlaySystemSound(1407) }
@@ -311,7 +368,7 @@ struct CyberpunkToggleAimRow: View {
                     activeAimID = ""
                     isWorking = false
                     AudioServicesPlaySystemSound(1053)
-                    onLog("❌ LỖI: \(error.localizedDescription)") 
+                    onLog("❌ [LỖI NGHIÊM TRỌNG] \(error.localizedDescription)") 
                 }
             }
         }
@@ -319,7 +376,7 @@ struct CyberpunkToggleAimRow: View {
 }
 
 // MARK: - 4. UTILITIES
-struct TimeFormatter { static func current() -> String { let f = DateFormatter(); f.dateFormat = "HH:mm:ss"; return f.string(from: Date()) } }
+struct TimeFormatter { static func current() -> String { let f = DateFormatter(); f.dateFormat = "HH:mm:ss.SSS"; return f.string(from: Date()) } }
 struct NeonParticleBackgroundView: View {
     var body: some View {
         TimelineView(.animation) { context in
