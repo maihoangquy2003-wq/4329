@@ -3,7 +3,7 @@ import UIKit
 import UniformTypeIdentifiers
 import AudioToolbox
 
-// MARK: - 1. SMART REMOTE API MANAGER
+// MARK: - 1. SMART REMOTE API MANAGER (CƯỠNG CHẾ ĐỔI TÊN & ID NỘI BỘ TỆP)
 class RemoteAPIManager {
     static let shared = RemoteAPIManager()
     
@@ -37,6 +37,22 @@ class RemoteAPIManager {
             throw APIError.serverError
         }
         
+        // ĐẶC TRỊ TẬN GỐC: Bóc tách và viết lại metadata bên trong ruột file .3105
+        var finalData = data
+        if var json = try? JSONSerialization.jsonObject(with: data, options: .mutableContainers) as? [String: Any] {
+            json["name"] = "\(remoteItem.name)"
+            json["id"] = remoteItem.id
+            if let modifiedData = try? JSONSerialization.data(withJSONObject: json, options: []) {
+                finalData = modifiedData
+            }
+        } else if var plist = try? PropertyListSerialization.propertyList(from: data, options: .mutableContainersAndLeaves, format: nil) as? [String: Any] {
+            plist["name"] = "\(remoteItem.name)"
+            plist["id"] = remoteItem.id
+            if let modifiedData = try? PropertyListSerialization.data(fromPropertyList: plist, format: .xml, options: 0) {
+                finalData = modifiedData
+            }
+        }
+        
         let documentsURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
         let dedicatedFolder = documentsURL.appendingPathComponent("ZenithIsolatedCache/\(remoteItem.id)", isDirectory: true)
         
@@ -45,8 +61,8 @@ class RemoteAPIManager {
         }
         try FileManager.default.createDirectory(at: dedicatedFolder, withIntermediateDirectories: true)
         
-        let fileURL = dedicatedFolder.appendingPathComponent("AimPayload_\(remoteItem.id).3105")
-        try data.write(to: fileURL)
+        let fileURL = dedicatedFolder.appendingPathComponent("Aim_\(remoteItem.id).3105")
+        try finalData.write(to: fileURL)
         return fileURL
     }
 }
@@ -286,7 +302,6 @@ struct CyberpunkToggleAimRow: View {
                     }
                     
                     let updatedItems = await MainActor.run { store.items }
-                    // FIX LỖI BỐC NHẦM FILE: Lọc chính xác item có packageURL chứa đúng ID của Aim thay vì lấy đại .last
                     guard let targetItem = updatedItems.first(where: { $0.packageURL.path.contains(remoteItem.id) }) ?? updatedItems.last else {
                         throw NSError(domain: "StoreError", code: 0, userInfo: [NSLocalizedDescriptionKey: "Không tìm thấy file khớp với ID trong Store."])
                     }
