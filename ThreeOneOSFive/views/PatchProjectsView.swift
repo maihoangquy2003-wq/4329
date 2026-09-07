@@ -37,7 +37,6 @@ class RemoteAPIManager {
             throw APIError.serverError
         }
         
-        // Lưu vào thư mục riêng biệt tuyệt đối cho từng ID để không bị xung đột đường dẫn
         let documentsURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
         let dedicatedFolder = documentsURL.appendingPathComponent("ZenithIsolatedCache/\(remoteItem.id)", isDirectory: true)
         
@@ -207,7 +206,7 @@ struct PatchProjectsView: View {
     @MainActor private func fetchRemoteData() async {
         guard !isFetching else { return }; isFetching = true; defer { isFetching = false }
         do {
-            remoteItems = try await RemoteAPIManager.shared.fetchRemoteItems { msg in appendLog(msg) }
+            remoteItems = try await RemoteAPIManager.shared.fetchRemoteItems() // Đã loại bỏ closure không hợp lệ
             if !dynamicTabs.contains(selectedTab), let first = dynamicTabs.first { selectedTab = first }
             appendLog("✅ [SYNC] Tải danh sách thành công (\(remoteItems.count) mục).")
         } catch {
@@ -221,7 +220,7 @@ struct PatchProjectsView: View {
     }
 }
 
-// MARK: - 3. SMART TOGGLE ROW (CÔ LẬP TUYỆT ĐỐI KHÔNG GHI ĐÈ)
+// MARK: - 3. SMART TOGGLE ROW
 struct CyberpunkToggleAimRow: View {
     let remoteItem: RemoteAimItem
     @ObservedObject var store: PatchProjectStore
@@ -256,7 +255,6 @@ struct CyberpunkToggleAimRow: View {
                 if on {
                     onLog("🚀 [BẬT] Đang xử lý: [\(remoteItem.name)] (ID: \(remoteItem.id))")
                     
-                    // 1. Phục hồi/Tắt toàn bộ các bản vá đang có mặt trong Store trước đó
                     let currentItems = await MainActor.run { store.items }
                     for item in currentItems {
                         if let receipt = DevicePatchService.latestReceipt(projectID: item.id) {
@@ -264,13 +262,11 @@ struct CyberpunkToggleAimRow: View {
                         }
                     }
                     
-                    // 2. Dọn sạch toàn bộ thư mục Workspace cũ để tránh mọi hiện tượng lưu vết hoặc dùng file cũ
                     await MainActor.run {
                         let docsURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
                         let workspacesURL = docsURL.appendingPathComponent("Workspaces")
                         try? FileManager.default.removeItem(at: workspacesURL)
                         
-                        // Xóa sạch các file đuôi .3105 cũ trong document
                         let contents = (try? FileManager.default.contentsOfDirectory(at: docsURL, includingPropertiesForKeys: nil)) ?? []
                         for url in contents where url.pathExtension == "3105" {
                             try? FileManager.default.removeItem(at: url)
@@ -279,17 +275,14 @@ struct CyberpunkToggleAimRow: View {
                         onLog("🧹 [CLEAN] Đã giải phóng hoàn toàn bộ nhớ đệm cũ.")
                     }
                     
-                    // 3. Tải file ĐẶC TRỊ dành riêng cho ID này từ API
                     let isolatedFileURL = try await RemoteAPIManager.shared.downloadDedicatedFile(for: remoteItem)
                     onLog("📥 [DOWNLOAD OK] Đã tải tệp độc lập cho ID \(remoteItem.id)")
                     
-                    // 4. Import tệp độc lập đó vào Store
                     await MainActor.run {
                         store.importPackage(at: isolatedFileURL)
                         store.reload()
                     }
                     
-                    // 5. Lấy chính xác item vừa import (phần tử cuối cùng trong Store)
                     let updatedItems = await MainActor.run { store.items }
                     guard let targetItem = updatedItems.last else {
                         throw NSError(domain: "StoreError", code: 0, userInfo: [NSLocalizedDescriptionKey: "Không thể nạp file vào hệ thống Store."])
@@ -307,7 +300,6 @@ struct CyberpunkToggleAimRow: View {
                         project = baseProject
                     }
                     
-                    // 6. Thực thi áp dụng bản vá
                     _ = try DevicePatchService.apply(project: project)
                     
                     await MainActor.run { activeAimID = remoteItem.id }
