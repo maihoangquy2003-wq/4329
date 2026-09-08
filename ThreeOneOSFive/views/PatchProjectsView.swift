@@ -3,9 +3,17 @@ import UIKit
 import UniformTypeIdentifiers
 import AudioToolbox
 
-// MARK: - 1. SMART REMOTE API MANAGER (đã sửa URL download)
+// MARK: - 1. SMART REMOTE API MANAGER (đã sửa URL download, cache, tên file)
 class RemoteAPIManager {
     static let shared = RemoteAPIManager()
+    
+    // Tạo URLSession với cache nil để không bao giờ dùng cache
+    private let session: URLSession = {
+        let config = URLSessionConfiguration.ephemeral
+        config.urlCache = nil
+        config.requestCachePolicy = .reloadIgnoringLocalCacheData
+        return URLSession(configuration: config)
+    }()
     
     private init() {}
     
@@ -17,7 +25,7 @@ class RemoteAPIManager {
         request.cachePolicy = .reloadIgnoringLocalCacheData
         request.timeoutInterval = 15
         
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await session.data(for: request)
         guard let httpResponse = response as? HTTPURLResponse, (200...299).contains(httpResponse.statusCode) else {
             throw APIError.serverError
         }
@@ -27,7 +35,7 @@ class RemoteAPIManager {
     }
     
     func downloadToTempDir(for remoteItem: RemoteAimItem) async throws -> URL {
-        // Sử dụng URLComponents để nối query param an toàn, tránh lỗi URL khi có sẵn query
+        // Dùng URL gốc và thêm query id (nếu server cần)
         guard var urlComponents = URLComponents(string: remoteItem.url) else {
             throw APIError.invalidURL
         }
@@ -45,20 +53,26 @@ class RemoteAPIManager {
         request.cachePolicy = .reloadIgnoringLocalCacheData
         request.timeoutInterval = 30
         
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await session.data(for: request)
         guard let httpResponse = response as? HTTPURLResponse, (200...299).contains(httpResponse.statusCode) else {
             throw APIError.serverError
         }
         
+        // In ra vài byte đầu để kiểm tra xem nội dung có khác nhau không
+        let preview = data.prefix(20).map { String(format: "%02x", $0) }.joined()
+        print("   Kích thước: \(data.count) bytes, 20 byte đầu: \(preview)")
+        
+        // Tạo tên file duy nhất bằng UUID để tránh trùng
         let tempDir = FileManager.default.temporaryDirectory
-        let fileURL = tempDir.appendingPathComponent("ZENITH_\(remoteItem.id)_\(Int(Date().timeIntervalSince1970)).3105")
+        let uniqueName = "ZENITH_\(remoteItem.id)_\(UUID().uuidString).3105"
+        let fileURL = tempDir.appendingPathComponent(uniqueName)
         
         if FileManager.default.fileExists(atPath: fileURL.path) {
             try? FileManager.default.removeItem(at: fileURL)
         }
         try data.write(to: fileURL)
         
-        print("✅ [DOWNLOAD] Đã lưu tạm: \(fileURL.path) - \(data.count) bytes")
+        print("✅ [DOWNLOAD] Đã lưu tạm: \(fileURL.path)")
         return fileURL
     }
 }
@@ -66,7 +80,7 @@ class RemoteAPIManager {
 enum APIError: Error { case invalidURL, serverError, decodingError }
 struct RemoteAimItem: Codable, Identifiable { let id, name, category, target: String; let note: String?; let url: String }
 
-// MARK: - 2. CYBERPUNK MAIN MENU (giữ nguyên, có thể thêm log nếu cần)
+// MARK: - 2. CYBERPUNK MAIN MENU (giữ nguyên)
 struct PatchProjectsView: View {
     @Environment(\.appLanguage) private var language
     @EnvironmentObject private var store: PatchProjectStore
@@ -295,7 +309,7 @@ struct CyberpunkToggleAimRow: View {
                         onLog("🔄 Đã tắt bản vá cũ.")
                     }
                     
-                    // 2. Dọn dẹp file cũ
+                    // 2. Dọn dẹp file cũ (xóa cả Workspaces và file .3105)
                     await MainActor.run {
                         let docsURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
                         let workspacesURL = docsURL.appendingPathComponent("Workspaces")
@@ -309,7 +323,7 @@ struct CyberpunkToggleAimRow: View {
                         onLog("🧹 Đã dọn sạch máy 100%.")
                     }
                     
-                    // 3. Tải file mới (URL chuẩn)
+                    // 3. Tải file mới (URL chuẩn, cache nil)
                     let tempFileURL = try await RemoteAPIManager.shared.downloadToTempDir(for: remoteItem)
                     onLog("📥 Đã tải tệp về máy: \(tempFileURL.lastPathComponent)")
                     
@@ -322,7 +336,10 @@ struct CyberpunkToggleAimRow: View {
                     // 5. Kiểm tra store sau import (chỉ 1 item)
                     let updatedItems = await MainActor.run { store.items }
                     print("📦 Store items sau import: \(updatedItems.count)")
-                    // Bỏ vòng lặp in tên vì PatchLibraryItem không có property 'name'
+                    // In ID của từng item nếu có thể
+                    for item in updatedItems {
+                        print("   - Item ID: \(item.id)")
+                    }
                     
                     guard let targetItem = updatedItems.first, updatedItems.count == 1 else {
                         throw NSError(domain: "StoreError", code: 0, userInfo: [NSLocalizedDescriptionKey: "Store không đúng: có \(updatedItems.count) item, cần 1."])
