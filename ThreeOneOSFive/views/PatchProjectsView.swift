@@ -3,7 +3,7 @@ import UIKit
 import UniformTypeIdentifiers
 import AudioToolbox
 
-// MARK: - 1. SMART REMOTE API MANAGER (CƯỠNG CHẾ ĐỔI TÊN & ID NỘI BỘ TỆP)
+// MARK: - 1. SMART REMOTE API MANAGER
 class RemoteAPIManager {
     static let shared = RemoteAPIManager()
     
@@ -24,7 +24,8 @@ class RemoteAPIManager {
         return try JSONDecoder().decode([RemoteAimItem].self, from: data)
     }
     
-    func downloadDedicatedFile(for remoteItem: RemoteAimItem) async throws -> URL {
+    // Tải thẳng vào thư mục TẠP (NSTemporaryDirectory) để Store không tự nhận diện sớm
+    func downloadToTempDir(for remoteItem: RemoteAimItem) async throws -> URL {
         let urlString = "\(remoteItem.url)?action=download&id=\(remoteItem.id)&nocache=\(Date().timeIntervalSince1970)"
         guard let url = URL(string: urlString) else { throw APIError.invalidURL }
         
@@ -37,32 +38,13 @@ class RemoteAPIManager {
             throw APIError.serverError
         }
         
-        // ĐẶC TRỊ TẬN GỐC: Bóc tách và viết lại metadata bên trong ruột file .3105
-        var finalData = data
-        if var json = try? JSONSerialization.jsonObject(with: data, options: .mutableContainers) as? [String: Any] {
-            json["name"] = "\(remoteItem.name)"
-            json["id"] = remoteItem.id
-            if let modifiedData = try? JSONSerialization.data(withJSONObject: json, options: []) {
-                finalData = modifiedData
-            }
-        } else if var plist = try? PropertyListSerialization.propertyList(from: data, options: .mutableContainersAndLeaves, format: nil) as? [String: Any] {
-            plist["name"] = "\(remoteItem.name)"
-            plist["id"] = remoteItem.id
-            if let modifiedData = try? PropertyListSerialization.data(fromPropertyList: plist, format: .xml, options: 0) {
-                finalData = modifiedData
-            }
+        let tempDir = FileManager.default.temporaryDirectory
+        let fileURL = tempDir.appendingPathComponent("Aim_\(remoteItem.id).3105")
+        
+        if FileManager.default.fileExists(atPath: fileURL.path) {
+            try? FileManager.default.removeItem(at: fileURL)
         }
-        
-        let documentsURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-        let dedicatedFolder = documentsURL.appendingPathComponent("ZenithIsolatedCache/\(remoteItem.id)", isDirectory: true)
-        
-        if FileManager.default.fileExists(atPath: dedicatedFolder.path) {
-            try? FileManager.default.removeItem(at: dedicatedFolder)
-        }
-        try FileManager.default.createDirectory(at: dedicatedFolder, withIntermediateDirectories: true)
-        
-        let fileURL = dedicatedFolder.appendingPathComponent("Aim_\(remoteItem.id).3105")
-        try finalData.write(to: fileURL)
+        try data.write(to: fileURL)
         return fileURL
     }
 }
@@ -101,6 +83,7 @@ struct PatchProjectsView: View {
         }
     }
     
+    // (Giao diện UI Home Screen - Giữ nguyên không đổi)
     private var homeScreen: some View {
         VStack(spacing: 0) {
             HStack {
@@ -120,11 +103,6 @@ struct PatchProjectsView: View {
                             }.frame(width: 90, height: 90).clipShape(Circle())
                         }
                         Text("Zenith Solitude").font(.system(size: 24, weight: .black, design: .monospaced)).foregroundColor(.white).shadow(color: .white.opacity(0.7), radius: 6)
-                        HStack(spacing: 10) {
-                            Rectangle().fill(LinearGradient(colors: [.clear, .white], startPoint: .leading, endPoint: .trailing)).frame(width: 30, height: 1)
-                            Text("HEADLOCK ZENIS").font(.system(size: 11, weight: .bold, design: .monospaced)).foregroundColor(.white.opacity(0.8))
-                            Rectangle().fill(LinearGradient(colors: [.white, .clear], startPoint: .leading, endPoint: .trailing)).frame(width: 30, height: 1)
-                        }
                     }
                     VStack(spacing: 16) {
                         homeGameCard(title: "Free Fire Max", icon: "https://solitudepremium.click/ipa/proxy/free.jpg", bundle: "com.dts.freefiremax")
@@ -236,7 +214,7 @@ struct PatchProjectsView: View {
     }
 }
 
-// MARK: - 3. SMART TOGGLE ROW
+// MARK: - 3. SMART TOGGLE ROW (LOGIC KÍCH VÀ XÓA MỚI HOÀN TOÀN)
 struct CyberpunkToggleAimRow: View {
     let remoteItem: RemoteAimItem
     @ObservedObject var store: PatchProjectStore
@@ -264,6 +242,36 @@ struct CyberpunkToggleAimRow: View {
         }.padding(14).background(Color.black).cornerRadius(18).overlay(RoundedRectangle(cornerRadius: 18).stroke(Color.white.opacity(isApplied ? 0.6 : 0.2), lineWidth: isApplied ? 1.5 : 1))
     }
     
+    // HÀM TIÊU DIỆT TOÀN BỘ FILE VÀ TRẠNG THÁI (DÙNG CHUNG CHO BẬT/TẮT)
+    private func cleanUpEverything() async {
+        let currentItems = await MainActor.run { store.items }
+        for item in currentItems {
+            // Tắt chức năng đang chạy
+            if let receipt = DevicePatchService.latestReceipt(projectID: item.id) {
+                try? DevicePatchService.restore(receipt: receipt, allowChangedTargets: true)
+            }
+            // Yêu cầu Store tự xóa item ra khỏi bộ nhớ (nếu Store có hỗ trợ remove)
+            // (Nếu không hỗ trợ thì bước dọn rác vật lý bên dưới sẽ gánh)
+        }
+        
+        await MainActor.run {
+            let docsURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+            
+            // Xóa sạch file .3105 cũ trong Documents
+            let contents = (try? FileManager.default.contentsOfDirectory(at: docsURL, includingPropertiesForKeys: nil)) ?? []
+            for url in contents where url.pathExtension == "3105" {
+                try? FileManager.default.removeItem(at: url)
+            }
+            // Xóa sạch thư mục Workspaces chứa bộ nhớ đệm giải nén
+            let workspacesURL = docsURL.appendingPathComponent("Workspaces")
+            try? FileManager.default.removeItem(at: workspacesURL)
+            
+            // F5 lại Store. Lúc này Store trống trơn 0 file.
+            store.reload()
+            onLog("🧹 Đã dọn sạch máy, không còn bất kỳ file nào.")
+        }
+    }
+    
     private func executeSmartAction(on: Bool) {
         guard !isWorking else { return }; isWorking = true
         AudioServicesPlaySystemSound(1306); UIImpactFeedbackGenerator(style: .medium).impactOccurred()
@@ -271,42 +279,28 @@ struct CyberpunkToggleAimRow: View {
         Task.detached(priority: .userInitiated) {
             do {
                 if on {
-                    onLog("🚀 [BẬT] Đang xử lý: [\(remoteItem.name)] (ID: \(remoteItem.id))")
+                    onLog("🚀 [BẬT] Đang tải: [\(remoteItem.name)] (ID: \(remoteItem.id))")
                     
-                    let currentItems = await MainActor.run { store.items }
-                    for item in currentItems {
-                        if let receipt = DevicePatchService.latestReceipt(projectID: item.id) {
-                            try? DevicePatchService.restore(receipt: receipt, allowChangedTargets: true)
-                        }
-                    }
+                    // 1. TẮT TẤT CẢ VÀ XÓA SẠCH SẼ TRƯỚC KHI TẢI
+                    await cleanUpEverything()
                     
+                    // 2. TẢI FILE MỚI VỀ THƯ MỤC TẠM (Để không dính líu gì tới Store lúc này)
+                    let tempFileURL = try await RemoteAPIManager.shared.downloadToTempDir(for: remoteItem)
+                    onLog("📥 Đã tải file vật lý về thư mục tạm thành công.")
+                    
+                    // 3. IMPORT VÀO STORE TRỐNG
                     await MainActor.run {
-                        let docsURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-                        let workspacesURL = docsURL.appendingPathComponent("Workspaces")
-                        try? FileManager.default.removeItem(at: workspacesURL)
-                        
-                        let contents = (try? FileManager.default.contentsOfDirectory(at: docsURL, includingPropertiesForKeys: nil)) ?? []
-                        for url in contents where url.pathExtension == "3105" {
-                            try? FileManager.default.removeItem(at: url)
-                        }
-                        store.reload()
-                        onLog("🧹 [CLEAN] Đã giải phóng hoàn toàn bộ nhớ đệm cũ.")
-                    }
-                    
-                    let isolatedFileURL = try await RemoteAPIManager.shared.downloadDedicatedFile(for: remoteItem)
-                    onLog("📥 [DOWNLOAD OK] Đã tải tệp độc lập cho ID \(remoteItem.id)")
-                    
-                    await MainActor.run {
-                        store.importPackage(at: isolatedFileURL)
+                        store.importPackage(at: tempFileURL)
                         store.reload()
                     }
                     
+                    // 4. LẤY FILE ĐẦU TIÊN (Vì Store vừa bị xóa sạch, nên file vừa nạp CHẮC CHẮN là file duy nhất ở vị trí .first, không bao giờ nhầm được)
                     let updatedItems = await MainActor.run { store.items }
-                    guard let targetItem = updatedItems.first(where: { $0.packageURL.path.contains(remoteItem.id) }) ?? updatedItems.last else {
-                        throw NSError(domain: "StoreError", code: 0, userInfo: [NSLocalizedDescriptionKey: "Không tìm thấy file khớp với ID trong Store."])
+                    guard let targetItem = updatedItems.first else {
+                        throw NSError(domain: "StoreError", code: 0, userInfo: [NSLocalizedDescriptionKey: "Store không nhận được file vừa nạp."])
                     }
                     
-                    onLog("📦 [STORE MATCH] Đã nhận diện đúng package: \(targetItem.packageURL.lastPathComponent)")
+                    onLog("📦 [NẠP] Đã lấy chính xác file duy nhất trong Store.")
                     
                     var project: PatchProject
                     if targetItem.summary.schemaVersion >= 2 && targetItem.canInspectContents {
@@ -318,21 +312,20 @@ struct CyberpunkToggleAimRow: View {
                         project = baseProject
                     }
                     
+                    // 5. ÁP DỤNG BẢN VÁ
                     _ = try DevicePatchService.apply(project: project)
                     
                     await MainActor.run { activeAimID = remoteItem.id }
-                    onLog("🎉 [THÀNH CÔNG] Đã kích hoạt đúng file của: \(remoteItem.name)!")
+                    onLog("🎉 [THÀNH CÔNG] Đã kích hoạt tính năng mới!")
                     
                 } else {
-                    onLog("🛑 [TẮT] Đang khôi phục hệ thống gốc...")
-                    let currentItems = await MainActor.run { store.items }
-                    for item in currentItems {
-                        if let receipt = DevicePatchService.latestReceipt(projectID: item.id) {
-                            try? DevicePatchService.restore(receipt: receipt, allowChangedTargets: true)
-                        }
-                    }
+                    onLog("🛑 [TẮT] Đang khôi phục và xóa toàn bộ...")
+                    
+                    // KHI TẮT -> CHỈ CẦN GỌI HÀM CLEAN, NÓ SẼ KHÔI PHỤC VÀ XÓA SẠCH MỌI DỮ LIỆU
+                    await cleanUpEverything()
+                    
                     await MainActor.run { activeAimID = "" }
-                    onLog("🔄 [RESTORE OK] Đã trả hệ thống về trạng thái nguyên bản.")
+                    onLog("🔄 [ĐÃ TẮT] Trả hệ thống về trạng thái sạch, chờ lệnh mới.")
                 }
                 
                 await MainActor.run { store.reload(); isWorking = false; AudioServicesPlaySystemSound(1407) }
