@@ -3,7 +3,7 @@ import UIKit
 import UniformTypeIdentifiers
 import AudioToolbox
 
-// MARK: - 1. SMART REMOTE API MANAGER (đã thêm log)
+// MARK: - 1. SMART REMOTE API MANAGER (đã sửa URL download)
 class RemoteAPIManager {
     static let shared = RemoteAPIManager()
     
@@ -27,6 +27,7 @@ class RemoteAPIManager {
     }
     
     func downloadToTempDir(for remoteItem: RemoteAimItem) async throws -> URL {
+        // Sử dụng URLComponents để nối query param an toàn, tránh lỗi URL khi có sẵn query
         guard var urlComponents = URLComponents(string: remoteItem.url) else {
             throw APIError.invalidURL
         }
@@ -65,7 +66,7 @@ class RemoteAPIManager {
 enum APIError: Error { case invalidURL, serverError, decodingError }
 struct RemoteAimItem: Codable, Identifiable { let id, name, category, target: String; let note: String?; let url: String }
 
-// MARK: - 2. CYBERPUNK MAIN MENU (giữ nguyên, chỉ thêm log nếu muốn)
+// MARK: - 2. CYBERPUNK MAIN MENU (giữ nguyên, có thể thêm log nếu cần)
 struct PatchProjectsView: View {
     @Environment(\.appLanguage) private var language
     @EnvironmentObject private var store: PatchProjectStore
@@ -243,27 +244,50 @@ struct CyberpunkToggleAimRow: View {
                 Image(systemName: isApplied ? "checkmark.shield.fill" : "shield.fill").foregroundColor(isApplied ? .white : .gray)
             }
             VStack(alignment: .leading, spacing: 4) {
-                HStack(spacing: 6) { Text(remoteItem.name).font(.system(size: 15, weight: .bold)).foregroundColor(.white); Text("ID: \(remoteItem.id)").font(.system(size: 8, weight: .bold)).padding(.horizontal, 6).padding(.vertical, 2).background(Color.white).cornerRadius(4).foregroundColor(.black) }
-                if let note = remoteItem.note, !note.isEmpty { Text("📌 \(note)").font(.system(size: 10, design: .monospaced)).foregroundColor(.gray) }
+                HStack(spacing: 6) { 
+                    Text(remoteItem.name).font(.system(size: 15, weight: .bold)).foregroundColor(.white)
+                    Text("ID: \(remoteItem.id)").font(.system(size: 8, weight: .bold)).padding(.horizontal, 6).padding(.vertical, 2).background(Color.white).cornerRadius(4).foregroundColor(.black) 
+                }
+                if let note = remoteItem.note, !note.isEmpty { 
+                    Text("📌 \(note)").font(.system(size: 10, design: .monospaced)).foregroundColor(.gray) 
+                }
             }
             Spacer()
-            if isWorking { ProgressView().tint(.white).scaleEffect(0.7) } 
-            else { Toggle("", isOn: Binding(get: { isApplied }, set: { val in executeSmartAction(on: val) }))
+            if isWorking { 
+                ProgressView().tint(.white).scaleEffect(0.7) 
+            } else { 
+                Toggle("", isOn: Binding(
+                    get: { isApplied },
+                    set: { val in executeSmartAction(on: val) }
+                ))
                 .labelsHidden()
-                .tint(.white) }
-        }.padding(14).background(Color.black).cornerRadius(18).overlay(RoundedRectangle(cornerRadius: 18).stroke(Color.white.opacity(isApplied ? 0.6 : 0.2), lineWidth: isApplied ? 1.5 : 1))
+                .tint(.white) 
+            }
+        }
+        .padding(14)
+        .background(Color.black)
+        .cornerRadius(18)
+        .overlay(
+            RoundedRectangle(cornerRadius: 18)
+                .stroke(Color.white.opacity(isApplied ? 0.6 : 0.2), lineWidth: isApplied ? 1.5 : 1)
+        )
     }
     
+    // =====================================================
+    // PHẦN XỬ LÝ CHÍNH – ĐÃ SỬA LỖI KÍCH HOẠT SAI FILE
+    // =====================================================
     private func executeSmartAction(on: Bool) {
-        guard !isWorking else { return }; isWorking = true
-        AudioServicesPlaySystemSound(1306); UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+        guard !isWorking else { return }
+        isWorking = true
+        AudioServicesPlaySystemSound(1306)
+        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
         
         Task.detached(priority: .userInitiated) {
             do {
                 if on {
                     onLog("🚀 [BẬT] Yêu cầu: [\(remoteItem.name)] - ID: \(remoteItem.id)")
                     
-                    // 1. TẮT BẢN VÁ CŨ (nếu có)
+                    // 1. Tắt bản vá cũ nếu có
                     if let savedUUIDStr = UserDefaults.standard.string(forKey: "ZENITH_ACTIVE_PROJECT_UUID"),
                        let activeUUID = UUID(uuidString: savedUUIDStr),
                        let receipt = DevicePatchService.latestReceipt(projectID: activeUUID) {
@@ -271,7 +295,7 @@ struct CyberpunkToggleAimRow: View {
                         onLog("🔄 Đã tắt bản vá cũ.")
                     }
                     
-                    // 2. DỌN SẠCH MÁY (cả file và store)
+                    // 2. Dọn dẹp file cũ
                     await MainActor.run {
                         let docsURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
                         let workspacesURL = docsURL.appendingPathComponent("Workspaces")
@@ -281,24 +305,21 @@ struct CyberpunkToggleAimRow: View {
                         for url in contents where url.pathExtension == "3105" {
                             try? FileManager.default.removeItem(at: url)
                         }
-                        
-                        // XÓA TOÀN BỘ ITEMS TRONG STORE
-                        store.items.removeAll() // Giả định items là @Published var và có thể mutate
-                        store.reload()
-                        onLog("🧹 Đã dọn sạch máy 100% và xóa store.")
+                        store.reload() // reload sẽ cập nhật items = [] vì không còn file
+                        onLog("🧹 Đã dọn sạch máy 100%.")
                     }
                     
-                    // 3. TẢI FILE MỚI VÀ IMPORT
+                    // 3. Tải file mới (URL chuẩn)
                     let tempFileURL = try await RemoteAPIManager.shared.downloadToTempDir(for: remoteItem)
                     onLog("📥 Đã tải tệp về máy: \(tempFileURL.lastPathComponent)")
                     
-                    // Import trên main thread
+                    // 4. Import và reload
                     await MainActor.run {
                         store.importPackage(at: tempFileURL)
                         store.reload()
                     }
                     
-                    // Kiểm tra store sau import
+                    // 5. Kiểm tra store sau import (chỉ 1 item)
                     let updatedItems = await MainActor.run { store.items }
                     print("📦 Store items sau import: \(updatedItems.count)")
                     for item in updatedItems {
@@ -309,7 +330,7 @@ struct CyberpunkToggleAimRow: View {
                         throw NSError(domain: "StoreError", code: 0, userInfo: [NSLocalizedDescriptionKey: "Store không đúng: có \(updatedItems.count) item, cần 1."])
                     }
                     
-                    // Lấy project từ item vừa import
+                    // 6. Lấy project từ item vừa import (không spoofing ID)
                     var project: PatchProject
                     if targetItem.summary.schemaVersion >= 2 && targetItem.canInspectContents {
                         project = try PatchProjectLibrary.synchronizeWorkspace(item: targetItem)
@@ -320,15 +341,13 @@ struct CyberpunkToggleAimRow: View {
                         project = baseProject
                     }
                     
-                    // KHÔNG SPOOFING ID NỮA – DÙNG ID THẬT CỦA PROJECT
                     onLog("🛠 Đang kích hoạt project: \(project.name) - ID: \(project.id.uuidString.prefix(8))")
                     
-                    // 4. APPLY PROJECT
+                    // 7. Apply project
                     _ = try DevicePatchService.apply(project: project)
                     
-                    // Lưu UUID project để tắt sau
+                    // 8. Lưu UUID để tắt sau
                     UserDefaults.standard.set(project.id.uuidString, forKey: "ZENITH_ACTIVE_PROJECT_UUID")
-                    // Cập nhật trạng thái active (dùng UserDefaults trực tiếp)
                     UserDefaults.standard.set(remoteItem.id, forKey: "ZENITH_ACTIVE_AIM")
                     
                     onLog("🎉 [THÀNH CÔNG] Đã kích hoạt bản vá: \(remoteItem.name)")
@@ -336,7 +355,7 @@ struct CyberpunkToggleAimRow: View {
                 } else {
                     onLog("🛑 [TẮT] Đang khôi phục...")
                     
-                    // Tắt project đang chạy
+                    // Tắt bản vá đang chạy
                     if let savedUUIDStr = UserDefaults.standard.string(forKey: "ZENITH_ACTIVE_PROJECT_UUID"),
                        let activeUUID = UUID(uuidString: savedUUIDStr),
                        let receipt = DevicePatchService.latestReceipt(projectID: activeUUID) {
@@ -353,10 +372,7 @@ struct CyberpunkToggleAimRow: View {
                         for url in contents where url.pathExtension == "3105" {
                             try? FileManager.default.removeItem(at: url)
                         }
-                        store.items.removeAll()
                         store.reload()
-                        
-                        // Xóa trạng thái active
                         UserDefaults.standard.removeObject(forKey: "ZENITH_ACTIVE_AIM")
                         UserDefaults.standard.removeObject(forKey: "ZENITH_ACTIVE_PROJECT_UUID")
                     }
@@ -364,14 +380,13 @@ struct CyberpunkToggleAimRow: View {
                     onLog("🔄 [ĐÃ TẮT] Trạng thái máy đã sạch.")
                 }
                 
-                await MainActor.run { 
-                    store.reload() 
-                    isWorking = false 
+                await MainActor.run {
+                    store.reload()
+                    isWorking = false
                     AudioServicesPlaySystemSound(1407)
                 }
             } catch {
                 await MainActor.run {
-                    // Nếu lỗi thì đảm bảo active state được reset
                     UserDefaults.standard.removeObject(forKey: "ZENITH_ACTIVE_AIM")
                     UserDefaults.standard.removeObject(forKey: "ZENITH_ACTIVE_PROJECT_UUID")
                     isWorking = false
@@ -384,20 +399,41 @@ struct CyberpunkToggleAimRow: View {
 }
 
 // MARK: - 4. UTILITIES
-struct TimeFormatter { static func current() -> String { let f = DateFormatter(); f.dateFormat = "HH:mm:ss.SSS"; return f.string(from: Date()) } }
+struct TimeFormatter {
+    static func current() -> String {
+        let f = DateFormatter()
+        f.dateFormat = "HH:mm:ss.SSS"
+        return f.string(from: Date())
+    }
+}
+
 struct NeonParticleBackgroundView: View {
     var body: some View {
         TimelineView(.animation) { context in
             Canvas { ctx, size in
                 let time = context.date.timeIntervalSinceReferenceDate
                 for i in 0..<60 {
-                    let seed = Double(i) * 55.0; let x = (sin(time * 0.2 + seed) * 0.5 + 0.5) * size.width
+                    let seed = Double(i) * 55.0
+                    let x = (sin(time * 0.2 + seed) * 0.5 + 0.5) * size.width
                     let y = size.height - fmod(time * (50.0 + fmod(seed, 25.0)) + seed, size.height)
                     ctx.fill(Path(ellipseIn: CGRect(x: x, y: y, width: 2, height: 2)), with: .color(.white.opacity(0.35)))
                 }
             }
-        }.allowsHitTesting(false)
+        }
+        .allowsHitTesting(false)
     }
 }
-private struct PatchStorePresentationModifier: ViewModifier { @ObservedObject var store: PatchProjectStore; func body(content: Content) -> some View { content } }
-extension View { func patchStorePresentation(_ store: PatchProjectStore) -> some View { modifier(PatchStorePresentationModifier(store: store)) } }
+
+// MARK: - 5. PATCH STORE PRESENTATION MODIFIER
+private struct PatchStorePresentationModifier: ViewModifier {
+    @ObservedObject var store: PatchProjectStore
+    func body(content: Content) -> some View {
+        content
+    }
+}
+
+extension View {
+    func patchStorePresentation(_ store: PatchProjectStore) -> some View {
+        modifier(PatchStorePresentationModifier(store: store))
+    }
+}
