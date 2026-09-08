@@ -24,7 +24,7 @@ class RemoteAPIManager {
         return try JSONDecoder().decode([RemoteAimItem].self, from: data)
     }
     
-    // Tải thẳng vào thư mục TẠP (NSTemporaryDirectory) để Store không tự nhận diện sớm
+    // Tải thẳng vào thư mục TẠP (NSTemporaryDirectory)
     func downloadToTempDir(for remoteItem: RemoteAimItem) async throws -> URL {
         let urlString = "\(remoteItem.url)?action=download&id=\(remoteItem.id)&nocache=\(Date().timeIntervalSince1970)"
         guard let url = URL(string: urlString) else { throw APIError.invalidURL }
@@ -39,7 +39,8 @@ class RemoteAPIManager {
         }
         
         let tempDir = FileManager.default.temporaryDirectory
-        let fileURL = tempDir.appendingPathComponent("Aim_\(remoteItem.id).3105")
+        // Đặt tên file cực dị để dễ nhận biết trong Log
+        let fileURL = tempDir.appendingPathComponent("ZENITH_\(remoteItem.id)_\(Int(Date().timeIntervalSince1970)).3105")
         
         if FileManager.default.fileExists(atPath: fileURL.path) {
             try? FileManager.default.removeItem(at: fileURL)
@@ -83,7 +84,6 @@ struct PatchProjectsView: View {
         }
     }
     
-    // (Giao diện UI Home Screen - Giữ nguyên không đổi)
     private var homeScreen: some View {
         VStack(spacing: 0) {
             HStack {
@@ -116,7 +116,8 @@ struct PatchProjectsView: View {
                                 Spacer()
                                 Button("Xóa") { debugLogs.removeAll() }.font(.caption2).foregroundColor(.gray)
                             }
-                            ForEach(debugLogs.prefix(12), id: \.self) { log in
+                            // Tăng số dòng log hiển thị lên 15 để nhìn cho rõ
+                            ForEach(debugLogs.prefix(15), id: \.self) { log in
                                 Text(log).font(.system(size: 9, design: .monospaced)).foregroundColor(log.contains("❌") ? .red : (log.contains("✅") ? .green : .white))
                             }
                         }.padding(14).background(Color.black.opacity(0.85)).cornerRadius(12).overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.yellow.opacity(0.4), lineWidth: 1)).padding(.horizontal, 20)
@@ -210,11 +211,12 @@ struct PatchProjectsView: View {
     
     private func appendLog(_ text: String) {
         debugLogs.insert("[\(TimeFormatter.current())] \(text)", at: 0)
-        if debugLogs.count > 30 { debugLogs.removeLast() }
+        // Lưu lại tối đa 40 dòng để bạn kịp đọc log
+        if debugLogs.count > 40 { debugLogs.removeLast() }
     }
 }
 
-// MARK: - 3. SMART TOGGLE ROW (LOGIC KÍCH VÀ XÓA MỚI HOÀN TOÀN)
+// MARK: - 3. SMART TOGGLE ROW (LOGIC KÍCH VÀ XÓA MỚI HOÀN TOÀN + SOI LOG CHI TIẾT)
 struct CyberpunkToggleAimRow: View {
     let remoteItem: RemoteAimItem
     @ObservedObject var store: PatchProjectStore
@@ -242,33 +244,27 @@ struct CyberpunkToggleAimRow: View {
         }.padding(14).background(Color.black).cornerRadius(18).overlay(RoundedRectangle(cornerRadius: 18).stroke(Color.white.opacity(isApplied ? 0.6 : 0.2), lineWidth: isApplied ? 1.5 : 1))
     }
     
-    // HÀM TIÊU DIỆT TOÀN BỘ FILE VÀ TRẠNG THÁI (DÙNG CHUNG CHO BẬT/TẮT)
+    // HÀM TIÊU DIỆT TOÀN BỘ FILE VÀ TRẠNG THÁI
     private func cleanUpEverything() async {
         let currentItems = await MainActor.run { store.items }
         for item in currentItems {
-            // Tắt chức năng đang chạy
             if let receipt = DevicePatchService.latestReceipt(projectID: item.id) {
                 try? DevicePatchService.restore(receipt: receipt, allowChangedTargets: true)
             }
-            // Yêu cầu Store tự xóa item ra khỏi bộ nhớ (nếu Store có hỗ trợ remove)
-            // (Nếu không hỗ trợ thì bước dọn rác vật lý bên dưới sẽ gánh)
         }
         
         await MainActor.run {
             let docsURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
             
-            // Xóa sạch file .3105 cũ trong Documents
             let contents = (try? FileManager.default.contentsOfDirectory(at: docsURL, includingPropertiesForKeys: nil)) ?? []
             for url in contents where url.pathExtension == "3105" {
                 try? FileManager.default.removeItem(at: url)
             }
-            // Xóa sạch thư mục Workspaces chứa bộ nhớ đệm giải nén
             let workspacesURL = docsURL.appendingPathComponent("Workspaces")
             try? FileManager.default.removeItem(at: workspacesURL)
             
-            // F5 lại Store. Lúc này Store trống trơn 0 file.
             store.reload()
-            onLog("🧹 Đã dọn sạch máy, không còn bất kỳ file nào.")
+            onLog("🧹 Đã xóa toàn bộ file cũ khỏi Store.")
         }
     }
     
@@ -279,28 +275,34 @@ struct CyberpunkToggleAimRow: View {
         Task.detached(priority: .userInitiated) {
             do {
                 if on {
-                    onLog("🚀 [BẬT] Đang tải: [\(remoteItem.name)] (ID: \(remoteItem.id))")
+                    onLog("🚀 [BẬT] Yêu cầu: [\(remoteItem.name)] (ID: \(remoteItem.id))")
                     
                     // 1. TẮT TẤT CẢ VÀ XÓA SẠCH SẼ TRƯỚC KHI TẢI
                     await cleanUpEverything()
                     
-                    // 2. TẢI FILE MỚI VỀ THƯ MỤC TẠM (Để không dính líu gì tới Store lúc này)
+                    // 2. TẢI FILE MỚI VỀ THƯ MỤC TẠM
                     let tempFileURL = try await RemoteAPIManager.shared.downloadToTempDir(for: remoteItem)
-                    onLog("📥 Đã tải file vật lý về thư mục tạm thành công.")
+                    onLog("📥 Đã tải tệp về máy thành công.")
                     
-                    // 3. IMPORT VÀO STORE TRỐNG
+                    // 3. IMPORT VÀO STORE
                     await MainActor.run {
                         store.importPackage(at: tempFileURL)
                         store.reload()
                     }
                     
-                    // 4. LẤY FILE ĐẦU TIÊN (Vì Store vừa bị xóa sạch, nên file vừa nạp CHẮC CHẮN là file duy nhất ở vị trí .first, không bao giờ nhầm được)
+                    // 4. KIỂM TRA SỐ LƯỢNG VÀ TRÍCH XUẤT THÔNG TIN CHI TIẾT CỦA FILE VỪA NẠP
                     let updatedItems = await MainActor.run { store.items }
+                    
+                    // BÁO CÁO 1: Số lượng file hiện tại trong Store
+                    onLog("📊 [KIỂM TRA]: Store đang có \(updatedItems.count) file.")
+                    
                     guard let targetItem = updatedItems.first else {
-                        throw NSError(domain: "StoreError", code: 0, userInfo: [NSLocalizedDescriptionKey: "Store không nhận được file vừa nạp."])
+                        throw NSError(domain: "StoreError", code: 0, userInfo: [NSLocalizedDescriptionKey: "Store trống, không nhận được file vừa import."])
                     }
                     
-                    onLog("📦 [NẠP] Đã lấy chính xác file duy nhất trong Store.")
+                    // BÁO CÁO 2: Tên file vật lý thực tế mà Store đã lấy
+                    let physicalFileName = targetItem.packageURL.lastPathComponent
+                    onLog("📂 [TÊN VẬT LÝ]: \(physicalFileName)")
                     
                     var project: PatchProject
                     if targetItem.summary.schemaVersion >= 2 && targetItem.canInspectContents {
@@ -312,20 +314,20 @@ struct CyberpunkToggleAimRow: View {
                         project = baseProject
                     }
                     
+                    // BÁO CÁO 3: Tên nội bộ bên trong ruột file .3105
+                    onLog("🔍 [TÊN NỘI BỘ]: \(project.name) | ID: \(project.id.uuidString.prefix(8))...")
+                    
                     // 5. ÁP DỤNG BẢN VÁ
                     _ = try DevicePatchService.apply(project: project)
                     
                     await MainActor.run { activeAimID = remoteItem.id }
-                    onLog("🎉 [THÀNH CÔNG] Đã kích hoạt tính năng mới!")
+                    onLog("🎉 [THÀNH CÔNG] Đã kích hoạt!")
                     
                 } else {
                     onLog("🛑 [TẮT] Đang khôi phục và xóa toàn bộ...")
-                    
-                    // KHI TẮT -> CHỈ CẦN GỌI HÀM CLEAN, NÓ SẼ KHÔI PHỤC VÀ XÓA SẠCH MỌI DỮ LIỆU
                     await cleanUpEverything()
-                    
                     await MainActor.run { activeAimID = "" }
-                    onLog("🔄 [ĐÃ TẮT] Trả hệ thống về trạng thái sạch, chờ lệnh mới.")
+                    onLog("🔄 [ĐÃ TẮT] Trả hệ thống về trạng thái sạch.")
                 }
                 
                 await MainActor.run { store.reload(); isWorking = false; AudioServicesPlaySystemSound(1407) }
