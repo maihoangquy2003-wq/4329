@@ -189,19 +189,17 @@ enum PatchTransaction {
             resolvedRules.append(ResolvedRule(rule: rule, containerRoot: root, target: target))
         }
 
-        let occupied = appliedTargetKeys(
-            backupRoot: backupRoot,
-            excludingProjectID: project.id,
-            fileManager: fileManager
-        )
-        for resolved in resolvedRules {
-            let occupancyKey = resolved.rule.bundleID + "\0" + resolved.rule.relativePath
-            if occupied.contains(occupancyKey) {
-                throw PatchPackageError.targetOccupied(
-                    resolved.rule.bundleID + "/" + resolved.rule.relativePath
-                )
-            }
-        }
+        // NOTE: Cross-project "target occupied" checking has been intentionally
+        // removed here. Multiple patch projects are now allowed to target the
+        // same relative path within the same container. Each apply still takes
+        // its own backup of whatever is on disk at apply time (see the loop
+        // below), so patches correctly stack: patch B's backup is whatever
+        // patch A left behind, not necessarily the original file. Restoring
+        // out of order is still safely caught by `inspectRestore` /
+        // `changedTargets`, which compares the current file's digest against
+        // what was recorded at apply time and surfaces
+        // `PatchPackageError.restoreTargetsChanged` for confirmation before
+        // proceeding (see `restore(allowChangedTargets:)`).
 
         let transactionID = UUID()
         let transactionDirectory = backupRoot
