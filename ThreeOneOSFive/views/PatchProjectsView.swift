@@ -24,7 +24,6 @@ class RemoteAPIManager {
         return try JSONDecoder().decode([RemoteAimItem].self, from: data)
     }
     
-    // Tải thẳng vào thư mục TẠP (NSTemporaryDirectory)
     func downloadToTempDir(for remoteItem: RemoteAimItem) async throws -> URL {
         let urlString = "\(remoteItem.url)?action=download&id=\(remoteItem.id)&nocache=\(Date().timeIntervalSince1970)"
         guard let url = URL(string: urlString) else { throw APIError.invalidURL }
@@ -39,7 +38,6 @@ class RemoteAPIManager {
         }
         
         let tempDir = FileManager.default.temporaryDirectory
-        // Đặt tên file cực dị để dễ nhận biết trong Log
         let fileURL = tempDir.appendingPathComponent("ZENITH_\(remoteItem.id)_\(Int(Date().timeIntervalSince1970)).3105")
         
         if FileManager.default.fileExists(atPath: fileURL.path) {
@@ -116,7 +114,6 @@ struct PatchProjectsView: View {
                                 Spacer()
                                 Button("Xóa") { debugLogs.removeAll() }.font(.caption2).foregroundColor(.gray)
                             }
-                            // Tăng số dòng log hiển thị lên 15 để nhìn cho rõ
                             ForEach(debugLogs.prefix(15), id: \.self) { log in
                                 Text(log).font(.system(size: 9, design: .monospaced)).foregroundColor(log.contains("❌") ? .red : (log.contains("✅") ? .green : .white))
                             }
@@ -211,12 +208,11 @@ struct PatchProjectsView: View {
     
     private func appendLog(_ text: String) {
         debugLogs.insert("[\(TimeFormatter.current())] \(text)", at: 0)
-        // Lưu lại tối đa 40 dòng để bạn kịp đọc log
         if debugLogs.count > 40 { debugLogs.removeLast() }
     }
 }
 
-// MARK: - 3. SMART TOGGLE ROW (LOGIC KÍCH VÀ XÓA MỚI HOÀN TOÀN + SOI LOG CHI TIẾT)
+// MARK: - 3. SMART TOGGLE ROW (THUẬT TOÁN SPOOFING UUID & BYPASS CACHE)
 struct CyberpunkToggleAimRow: View {
     let remoteItem: RemoteAimItem
     @ObservedObject var store: PatchProjectStore
@@ -244,30 +240,6 @@ struct CyberpunkToggleAimRow: View {
         }.padding(14).background(Color.black).cornerRadius(18).overlay(RoundedRectangle(cornerRadius: 18).stroke(Color.white.opacity(isApplied ? 0.6 : 0.2), lineWidth: isApplied ? 1.5 : 1))
     }
     
-    // HÀM TIÊU DIỆT TOÀN BỘ FILE VÀ TRẠNG THÁI
-    private func cleanUpEverything() async {
-        let currentItems = await MainActor.run { store.items }
-        for item in currentItems {
-            if let receipt = DevicePatchService.latestReceipt(projectID: item.id) {
-                try? DevicePatchService.restore(receipt: receipt, allowChangedTargets: true)
-            }
-        }
-        
-        await MainActor.run {
-            let docsURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-            
-            let contents = (try? FileManager.default.contentsOfDirectory(at: docsURL, includingPropertiesForKeys: nil)) ?? []
-            for url in contents where url.pathExtension == "3105" {
-                try? FileManager.default.removeItem(at: url)
-            }
-            let workspacesURL = docsURL.appendingPathComponent("Workspaces")
-            try? FileManager.default.removeItem(at: workspacesURL)
-            
-            store.reload()
-            onLog("🧹 Đã xóa toàn bộ file cũ khỏi Store.")
-        }
-    }
-    
     private func executeSmartAction(on: Bool) {
         guard !isWorking else { return }; isWorking = true
         AudioServicesPlaySystemSound(1306); UIImpactFeedbackGenerator(style: .medium).impactOccurred()
@@ -275,59 +247,110 @@ struct CyberpunkToggleAimRow: View {
         Task.detached(priority: .userInitiated) {
             do {
                 if on {
-                    onLog("🚀 [BẬT] Yêu cầu: [\(remoteItem.name)] (ID: \(remoteItem.id))")
+                    onLog("🚀 [BẬT] Yêu cầu: [\(remoteItem.name)]")
                     
-                    // 1. TẮT TẤT CẢ VÀ XÓA SẠCH SẼ TRƯỚC KHI TẢI
-                    await cleanUpEverything()
+                    // 1. TÌM VÀ KHÔI PHỤC BẢN VÁ ĐANG CHẠY BẰNG UUID ĐÃ LƯU
+                    let savedUUIDStr = UserDefaults.standard.string(forKey: "ZENITH_SPOOFED_UUID") ?? ""
+                    if let activeUUID = UUID(uuidString: savedUUIDStr),
+                       let receipt = DevicePatchService.latestReceipt(projectID: activeUUID) {
+                        try? DevicePatchService.restore(receipt: receipt, allowChangedTargets: true)
+                        onLog("🔄 Đã tắt bản vá cũ đang chạy.")
+                    }
                     
-                    // 2. TẢI FILE MỚI VỀ THƯ MỤC TẠM
+                    // 2. DỌN SẠCH Ổ CỨNG VẬT LÝ
+                    await MainActor.run {
+                        let docsURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+                        let workspacesURL = docsURL.appendingPathComponent("Workspaces")
+                        try? FileManager.default.removeItem(at: workspacesURL)
+                        
+                        let contents = (try? FileManager.default.contentsOfDirectory(at: docsURL, includingPropertiesForKeys: nil)) ?? []
+                        for url in contents where url.pathExtension == "3105" {
+                            try? FileManager.default.removeItem(at: url)
+                        }
+                        store.reload()
+                        onLog("🧹 Đã dọn sạch máy 100%.")
+                    }
+                    
+                    // 3. TẢI FILE MỚI & NẠP VÀO
                     let tempFileURL = try await RemoteAPIManager.shared.downloadToTempDir(for: remoteItem)
                     onLog("📥 Đã tải tệp về máy thành công.")
                     
-                    // 3. IMPORT VÀO STORE
                     await MainActor.run {
                         store.importPackage(at: tempFileURL)
                         store.reload()
                     }
                     
-                    // 4. KIỂM TRA SỐ LƯỢNG VÀ TRÍCH XUẤT THÔNG TIN CHI TIẾT CỦA FILE VỪA NẠP
                     let updatedItems = await MainActor.run { store.items }
-                    
-                    // BÁO CÁO 1: Số lượng file hiện tại trong Store
-                    onLog("📊 [KIỂM TRA]: Store đang có \(updatedItems.count) file.")
-                    
                     guard let targetItem = updatedItems.first else {
-                        throw NSError(domain: "StoreError", code: 0, userInfo: [NSLocalizedDescriptionKey: "Store trống, không nhận được file vừa import."])
+                        throw NSError(domain: "StoreError", code: 0, userInfo: [NSLocalizedDescriptionKey: "Store trống trơn!"])
                     }
-                    
-                    // BÁO CÁO 2: Tên file vật lý thực tế mà Store đã lấy
-                    let physicalFileName = targetItem.packageURL.lastPathComponent
-                    onLog("📂 [TÊN VẬT LÝ]: \(physicalFileName)")
                     
                     var project: PatchProject
                     if targetItem.summary.schemaVersion >= 2 && targetItem.canInspectContents {
                         project = try PatchProjectLibrary.synchronizeWorkspace(item: targetItem)
                     } else {
                         guard let baseProject = targetItem.project else {
-                            throw NSError(domain: "ProjectError", code: 0, userInfo: [NSLocalizedDescriptionKey: "Cấu trúc project bên trong file bị hỏng."])
+                            throw NSError(domain: "ProjectError", code: 0, userInfo: [NSLocalizedDescriptionKey: "Project hỏng."])
                         }
                         project = baseProject
                     }
                     
-                    // BÁO CÁO 3: Tên nội bộ bên trong ruột file .3105
-                    onLog("🔍 [TÊN NỘI BỘ]: \(project.name) | ID: \(project.id.uuidString.prefix(8))...")
+                    // ====================================================
+                    // BƯỚC HACK LÕI: GIẢ MẠO ID VÀ ĐỔI TÊN THƯ MỤC LÀM VIỆC
+                    // Phá vỡ hoàn toàn cơ chế nhận diện trùng lặp của iOS
+                    // ====================================================
+                    let originalID = project.id
+                    let spoofedID = UUID() // Tạo mã định danh mới tinh
                     
-                    // 5. ÁP DỤNG BẢN VÁ
+                    let docsURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+                    let oldWorkspace = docsURL.appendingPathComponent("Workspaces/\(originalID.uuidString)")
+                    let newWorkspace = docsURL.appendingPathComponent("Workspaces/\(spoofedID.uuidString)")
+                    
+                    // Can thiệp đổi tên thư mục giải nén vật lý
+                    if FileManager.default.fileExists(atPath: oldWorkspace.path) {
+                        try? FileManager.default.moveItem(at: oldWorkspace, to: newWorkspace)
+                        onLog("🛠 [SPOOFING] Đã ép đổi ID lõi: \(originalID.uuidString.prefix(6)) -> \(spoofedID.uuidString.prefix(6))")
+                    }
+                    
+                    // Ép thay đổi metadata trên RAM
+                    project.id = spoofedID
+                    project.name = remoteItem.name
+                    
+                    // KÍCH HOẠT VỚI ID ĐÃ BỊ GIẢ MẠO
                     _ = try DevicePatchService.apply(project: project)
                     
+                    // Lưu lại ID giả này để lát sau có cái mà tắt
+                    UserDefaults.standard.set(spoofedID.uuidString, forKey: "ZENITH_SPOOFED_UUID")
                     await MainActor.run { activeAimID = remoteItem.id }
-                    onLog("🎉 [THÀNH CÔNG] Đã kích hoạt!")
+                    
+                    onLog("🎉 [THÀNH CÔNG] Đã kích hoạt bản vá ĐỘC LẬP!")
                     
                 } else {
-                    onLog("🛑 [TẮT] Đang khôi phục và xóa toàn bộ...")
-                    await cleanUpEverything()
-                    await MainActor.run { activeAimID = "" }
-                    onLog("🔄 [ĐÃ TẮT] Trả hệ thống về trạng thái sạch.")
+                    onLog("🛑 [TẮT] Đang khôi phục...")
+                    
+                    // TẮT BẰNG ID GIẢ MẠO ĐÃ LƯU
+                    let savedUUIDStr = UserDefaults.standard.string(forKey: "ZENITH_SPOOFED_UUID") ?? ""
+                    if let activeUUID = UUID(uuidString: savedUUIDStr),
+                       let receipt = DevicePatchService.latestReceipt(projectID: activeUUID) {
+                        try? DevicePatchService.restore(receipt: receipt, allowChangedTargets: true)
+                    }
+                    
+                    // Dọn rác
+                    await MainActor.run {
+                        let docsURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+                        let workspacesURL = docsURL.appendingPathComponent("Workspaces")
+                        try? FileManager.default.removeItem(at: workspacesURL)
+                        
+                        let contents = (try? FileManager.default.contentsOfDirectory(at: docsURL, includingPropertiesForKeys: nil)) ?? []
+                        for url in contents where url.pathExtension == "3105" {
+                            try? FileManager.default.removeItem(at: url)
+                        }
+                        store.reload()
+                        
+                        activeAimID = ""
+                    }
+                    UserDefaults.standard.removeObject(forKey: "ZENITH_SPOOFED_UUID")
+                    onLog("🔄 [ĐÃ TẮT] Trạng thái máy đã sạch.")
                 }
                 
                 await MainActor.run { store.reload(); isWorking = false; AudioServicesPlaySystemSound(1407) }
