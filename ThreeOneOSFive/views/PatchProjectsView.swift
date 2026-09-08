@@ -619,7 +619,8 @@ struct PatchUnlockView: View {
                             store.clearUnlockError()
                         }
                     if let errorKey = store.unlockErrorKey {
-                        Text(language.text(errorKey))
+                        Text(store.unlockErrorArgument.map { language.text(errorKey, $0) }
+                            ?? language.text(errorKey))
                             .font(.footnote)
                             .foregroundStyle(.red)
                     }
