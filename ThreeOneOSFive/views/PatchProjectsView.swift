@@ -1,14 +1,14 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
-// MARK: - Remote Import Logic
+// MARK: - Remote Import Logic (Get từ Web về App)
 final class RemotePatchImporter: ObservableObject {
     @Published var isWorking = false
     @Published var errorMsg: String?
     
     func importFromURL(_ urlString: String, store: PatchProjectStore) {
         guard let url = URL(string: urlString) else {
-            self.errorMsg = "Invalid URL"
+            self.errorMsg = "Link không hợp lệ"
             return
         }
         
@@ -25,7 +25,7 @@ final class RemotePatchImporter: ObservableObject {
                 }
                 
                 guard let localURL = localURL else {
-                    self.errorMsg = "File download failed."
+                    self.errorMsg = "Tải file thất bại."
                     return
                 }
                 
@@ -40,7 +40,7 @@ final class RemotePatchImporter: ObservableObject {
                     try FileManager.default.moveItem(at: localURL, to: destinationURL)
                     store.importPackage(at: destinationURL)
                 } catch {
-                    self.errorMsg = "File system error: \(error.localizedDescription)"
+                    self.errorMsg = "Lỗi hệ thống file: \(error.localizedDescription)"
                 }
             }
         }
@@ -79,6 +79,7 @@ struct PatchProjectsView: View {
     @State private var showSimulatedWallpaperDetail = false
     @State private var simulatedWallpaperDetailGate = OneShotPresentationGate()
     
+    // Quản lý get link từ web
     @StateObject private var remoteImporter = RemotePatchImporter()
     @State private var showRemoteImportPrompt = false
     @State private var remoteURLString = ""
@@ -106,13 +107,8 @@ struct PatchProjectsView: View {
         return wallpaperPackages.filter { $0.displayName.localizedCaseInsensitiveContains(query) }
     }
 
-    private var hasLocalContent: Bool {
-        !store.items.isEmpty || !wallpaperPackages.isEmpty
-    }
-
-    private var hasSearchResults: Bool {
-        !filteredItems.isEmpty || !filteredWallpaperPackages.isEmpty
-    }
+    private var hasLocalContent: Bool { !store.items.isEmpty || !wallpaperPackages.isEmpty }
+    private var hasSearchResults: Bool { !filteredItems.isEmpty || !filteredWallpaperPackages.isEmpty }
 
     init(onOpenSettings: @escaping () -> Void = {}, onOpenLogs: @escaping () -> Void = {}) {
         self.onOpenSettings = onOpenSettings
@@ -141,12 +137,8 @@ struct PatchProjectsView: View {
                     } else {
                         if !filteredItems.isEmpty {
                             Section(language.text("patch.title")) {
-                                ForEach(filteredItems) { item in
-                                    itemRow(item)
-                                }
-                                .onDelete { offsets in
-                                    offsets.map { filteredItems[$0] }.forEach(store.delete)
-                                }
+                                ForEach(filteredItems) { item in itemRow(item) }
+                                .onDelete { offsets in offsets.map { filteredItems[$0] }.forEach(store.delete) }
                             }
                         }
                         if !filteredWallpaperPackages.isEmpty {
@@ -158,9 +150,7 @@ struct PatchProjectsView: View {
                                         wallpaperRow(package)
                                     }
                                     .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                                        Button(role: .destructive) {
-                                            wallpaperPendingDeletion = package
-                                        } label: {
+                                        Button(role: .destructive) { wallpaperPendingDeletion = package } label: {
                                             Label(language.text("common.delete"), systemImage: "trash")
                                         }
                                     }
@@ -181,7 +171,8 @@ struct PatchProjectsView: View {
                     Menu {
                         Button { showCreate = true } label: { Label(language.text("patch.new"), systemImage: "doc.badge.plus") }
                         Button { showImporter = true } label: { Label(language.text("patch.import"), systemImage: "square.and.arrow.down") }
-                        Button { showRemoteImportPrompt = true } label: { Label("Download from URL", systemImage: "icloud.and.arrow.down") }
+                        // Nút get file từ web
+                        Button { showRemoteImportPrompt = true } label: { Label("Get from Web URL", systemImage: "icloud.and.arrow.down") }
                         Button { showWallpaperImporter = true } label: { Label(language.text("wallpaper.import"), systemImage: "photo.badge.plus") }
                     } label: {
                         if store.isBusy || isImportingWallpapers || remoteImporter.isWorking {
@@ -194,15 +185,15 @@ struct PatchProjectsView: View {
                 }
                 AppUtilityToolbar(language: language, onOpenSettings: onOpenSettings, onOpenLogs: onOpenLogs)
             }
-            .alert("Import Patch from URL", isPresented: $showRemoteImportPrompt) {
+            .alert("Nhập Link Web .3105", isPresented: $showRemoteImportPrompt) {
                 TextField("https://solitudepremium.click/ipa/proxy/...", text: $remoteURLString).keyboardType(.URL)
-                Button("Download") {
+                Button("Tải & Import") {
                     remoteImporter.importFromURL(remoteURLString, store: store)
                     remoteURLString = ""
                 }
-                Button("Cancel", role: .cancel) { remoteURLString = "" }
+                Button("Hủy", role: .cancel) { remoteURLString = "" }
             }
-            .alert("Download Error", isPresented: Binding(
+            .alert("Lỗi tải file", isPresented: Binding(
                 get: { remoteImporter.errorMsg != nil },
                 set: { if !$0 { remoteImporter.errorMsg = nil } }
             )) {
@@ -247,11 +238,7 @@ struct PatchProjectsView: View {
                 ).ignoresSafeArea()
             }
             .alert(item: $wallpaperImportFeedback) { feedback in
-                Alert(
-                    title: Text(language.text(feedback.titleKey)),
-                    message: Text(feedback.message),
-                    dismissButton: .default(Text(language.text("common.ok")))
-                )
+                Alert(title: Text(language.text(feedback.titleKey)), message: Text(feedback.message), dismissButton: .default(Text(language.text("common.ok"))))
             }
             .alert(item: $wallpaperPendingDeletion) { package in
                 Alert(
@@ -264,18 +251,7 @@ struct PatchProjectsView: View {
             .onAppear {
                 reloadWallpaperPackages()
                 consumeExternalImport()
-#if targetEnvironment(simulator)
-                if ProcessInfo.processInfo.arguments.contains("--simulate-wallpaper-detail"), !wallpaperPackages.isEmpty, simulatedWallpaperDetailGate.claim() {
-                    DispatchQueue.main.async { showSimulatedWallpaperDetail = true }
-                }
-#endif
             }
-            .navigationDestination(isPresented: $showSimulatedWallpaperDetail) {
-                if let package = wallpaperPackages.first {
-                    InstalledWallpaperPackageDetailView(package: package, onApplied: reloadWallpaperPackages)
-                }
-            }
-            .onChange(of: draftCoordinator.importRequest?.id) { _ in consumeExternalImport() }
         }
     }
 
@@ -391,7 +367,7 @@ struct PatchProjectsView: View {
     }
 }
 
-// MARK: - Subcomponents
+// MARK: - Subcomponents & Detail View (Có nút gạt Toggle Áp dụng / Khôi phục)
 private struct WallpaperImportFeedback: Identifiable {
     let id = UUID()
     let titleKey: String
@@ -493,7 +469,6 @@ extension View {
     func patchStorePresentation(_ store: PatchProjectStore) -> some View { modifier(PatchStorePresentationModifier(store: store)) }
 }
 
-// MARK: - Detail View (With Toggle)
 private struct PatchProjectDetailView: View {
     @Environment(\.appLanguage) private var language
     @ObservedObject var store: PatchProjectStore
@@ -562,6 +537,7 @@ private struct PatchProjectDetailView: View {
                     }
                 }
 
+                // NÚT GẠT (TOGGLE) CHUYỂN ĐỔI ÁP DỤNG & KHÔI PHỤC
                 Section {
                     Toggle(isOn: Binding(
                         get: { receipt != nil },
