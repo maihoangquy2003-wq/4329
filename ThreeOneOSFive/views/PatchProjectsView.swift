@@ -196,11 +196,13 @@ struct PatchProjectsView: View {
                 FileDocumentPicker(
                     allowedContentTypes: PatchPackagePickerPolicy.allowedContentTypes,
                     copiesSelectedDocument: PatchPackagePickerPolicy.copiesSelectedDocument,
-                    allowsMultipleSelection: false,
+                    allowsMultipleSelection: true, // Cho phép chọn nhiều file cùng lúc
                     onSelection: { result in
                         showImporter = false
-                        if case .success(let urls) = result, let url = urls.first {
-                            store.importPackage(at: url)
+                        if case .success(let urls) = result, !urls.isEmpty {
+                            for url in urls {
+                                store.importPackage(at: url)
+                            }
                         }
                     },
                     onCancel: {
