@@ -3,7 +3,7 @@ import UIKit
 import UniformTypeIdentifiers
 import AudioToolbox
 
-// MARK: - 1. SMART REMOTE API MANAGER
+// MARK: - 1. SMART REMOTE API MANAGER (đã thêm log)
 class RemoteAPIManager {
     static let shared = RemoteAPIManager()
     
@@ -21,12 +21,24 @@ class RemoteAPIManager {
         guard let httpResponse = response as? HTTPURLResponse, (200...299).contains(httpResponse.statusCode) else {
             throw APIError.serverError
         }
-        return try JSONDecoder().decode([RemoteAimItem].self, from: data)
+        let items = try JSONDecoder().decode([RemoteAimItem].self, from: data)
+        print("✅ [API] Đã tải danh sách \(items.count) mục từ server")
+        return items
     }
     
     func downloadToTempDir(for remoteItem: RemoteAimItem) async throws -> URL {
-        let urlString = "\(remoteItem.url)?action=download&id=\(remoteItem.id)&nocache=\(Date().timeIntervalSince1970)"
-        guard let url = URL(string: urlString) else { throw APIError.invalidURL }
+        guard var urlComponents = URLComponents(string: remoteItem.url) else {
+            throw APIError.invalidURL
+        }
+        urlComponents.queryItems = [
+            URLQueryItem(name: "action", value: "download"),
+            URLQueryItem(name: "id", value: remoteItem.id),
+            URLQueryItem(name: "nocache", value: "\(Date().timeIntervalSince1970)")
+        ]
+        guard let url = urlComponents.url else { throw APIError.invalidURL }
+        
+        print("📥 [DOWNLOAD] Bắt đầu tải: \(remoteItem.name) - ID: \(remoteItem.id)")
+        print("   URL: \(url.absoluteString)")
         
         var request = URLRequest(url: url)
         request.cachePolicy = .reloadIgnoringLocalCacheData
@@ -44,6 +56,8 @@ class RemoteAPIManager {
             try? FileManager.default.removeItem(at: fileURL)
         }
         try data.write(to: fileURL)
+        
+        print("✅ [DOWNLOAD] Đã lưu tạm: \(fileURL.path) - \(data.count) bytes")
         return fileURL
     }
 }
@@ -51,7 +65,7 @@ class RemoteAPIManager {
 enum APIError: Error { case invalidURL, serverError, decodingError }
 struct RemoteAimItem: Codable, Identifiable { let id, name, category, target: String; let note: String?; let url: String }
 
-// MARK: - 2. CYBERPUNK MAIN MENU
+// MARK: - 2. CYBERPUNK MAIN MENU (giữ nguyên, chỉ thêm log nếu muốn)
 struct PatchProjectsView: View {
     @Environment(\.appLanguage) private var language
     @EnvironmentObject private var store: PatchProjectStore
@@ -212,7 +226,7 @@ struct PatchProjectsView: View {
     }
 }
 
-// MARK: - 3. SMART TOGGLE ROW (THUẬT TOÁN SPOOFING UUID & BYPASS CACHE)
+// MARK: - 3. SMART TOGGLE ROW (ĐÃ SỬA LỖI KÍCH HOẠT SAI FILE)
 struct CyberpunkToggleAimRow: View {
     let remoteItem: RemoteAimItem
     @ObservedObject var store: PatchProjectStore
@@ -247,17 +261,17 @@ struct CyberpunkToggleAimRow: View {
         Task.detached(priority: .userInitiated) {
             do {
                 if on {
-                    onLog("🚀 [BẬT] Yêu cầu: [\(remoteItem.name)]")
+                    onLog("🚀 [BẬT] Yêu cầu: [\(remoteItem.name)] - ID: \(remoteItem.id)")
                     
-                    // 1. TÌM VÀ KHÔI PHỤC BẢN VÁ ĐANG CHẠY BẰNG UUID ĐÃ LƯU
-                    let savedUUIDStr = UserDefaults.standard.string(forKey: "ZENITH_SPOOFED_UUID") ?? ""
-                    if let activeUUID = UUID(uuidString: savedUUIDStr),
+                    // 1. TẮT BẢN VÁ CŨ (nếu có)
+                    if let savedUUIDStr = UserDefaults.standard.string(forKey: "ZENITH_ACTIVE_PROJECT_UUID"),
+                       let activeUUID = UUID(uuidString: savedUUIDStr),
                        let receipt = DevicePatchService.latestReceipt(projectID: activeUUID) {
                         try? DevicePatchService.restore(receipt: receipt, allowChangedTargets: true)
-                        onLog("🔄 Đã tắt bản vá cũ đang chạy.")
+                        onLog("🔄 Đã tắt bản vá cũ.")
                     }
                     
-                    // 2. DỌN SẠCH Ổ CỨNG VẬT LÝ
+                    // 2. DỌN SẠCH MÁY (cả file và store)
                     await MainActor.run {
                         let docsURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
                         let workspacesURL = docsURL.appendingPathComponent("Workspaces")
@@ -267,24 +281,35 @@ struct CyberpunkToggleAimRow: View {
                         for url in contents where url.pathExtension == "3105" {
                             try? FileManager.default.removeItem(at: url)
                         }
+                        
+                        // XÓA TOÀN BỘ ITEMS TRONG STORE
+                        store.items.removeAll() // Giả định items là @Published var và có thể mutate
                         store.reload()
-                        onLog("🧹 Đã dọn sạch máy 100%.")
+                        onLog("🧹 Đã dọn sạch máy 100% và xóa store.")
                     }
                     
-                    // 3. TẢI FILE MỚI & NẠP VÀO
+                    // 3. TẢI FILE MỚI VÀ IMPORT
                     let tempFileURL = try await RemoteAPIManager.shared.downloadToTempDir(for: remoteItem)
-                    onLog("📥 Đã tải tệp về máy thành công.")
+                    onLog("📥 Đã tải tệp về máy: \(tempFileURL.lastPathComponent)")
                     
+                    // Import trên main thread
                     await MainActor.run {
                         store.importPackage(at: tempFileURL)
                         store.reload()
                     }
                     
+                    // Kiểm tra store sau import
                     let updatedItems = await MainActor.run { store.items }
-                    guard let targetItem = updatedItems.first else {
-                        throw NSError(domain: "StoreError", code: 0, userInfo: [NSLocalizedDescriptionKey: "Store trống trơn!"])
+                    print("📦 Store items sau import: \(updatedItems.count)")
+                    for item in updatedItems {
+                        print("   - \(item.name) - ID: \(item.id)")
                     }
                     
+                    guard let targetItem = updatedItems.first, updatedItems.count == 1 else {
+                        throw NSError(domain: "StoreError", code: 0, userInfo: [NSLocalizedDescriptionKey: "Store không đúng: có \(updatedItems.count) item, cần 1."])
+                    }
+                    
+                    // Lấy project từ item vừa import
                     var project: PatchProject
                     if targetItem.summary.schemaVersion >= 2 && targetItem.canInspectContents {
                         project = try PatchProjectLibrary.synchronizeWorkspace(item: targetItem)
@@ -295,47 +320,30 @@ struct CyberpunkToggleAimRow: View {
                         project = baseProject
                     }
                     
-                    // ====================================================
-                    // BƯỚC HACK LÕI: GIẢ MẠO ID VÀ ĐỔI TÊN THƯ MỤC LÀM VIỆC
-                    // Phá vỡ hoàn toàn cơ chế nhận diện trùng lặp của iOS
-                    // ====================================================
-                    let originalID = project.id
-                    let spoofedID = UUID() // Tạo mã định danh mới tinh
+                    // KHÔNG SPOOFING ID NỮA – DÙNG ID THẬT CỦA PROJECT
+                    onLog("🛠 Đang kích hoạt project: \(project.name) - ID: \(project.id.uuidString.prefix(8))")
                     
-                    let docsURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-                    let oldWorkspace = docsURL.appendingPathComponent("Workspaces/\(originalID.uuidString)")
-                    let newWorkspace = docsURL.appendingPathComponent("Workspaces/\(spoofedID.uuidString)")
-                    
-                    // Can thiệp đổi tên thư mục giải nén vật lý
-                    if FileManager.default.fileExists(atPath: oldWorkspace.path) {
-                        try? FileManager.default.moveItem(at: oldWorkspace, to: newWorkspace)
-                        onLog("🛠 [SPOOFING] Đã ép đổi ID lõi: \(originalID.uuidString.prefix(6)) -> \(spoofedID.uuidString.prefix(6))")
-                    }
-                    
-                    // Ép thay đổi metadata trên RAM
-                    project.id = spoofedID
-                    project.name = remoteItem.name
-                    
-                    // KÍCH HOẠT VỚI ID ĐÃ BỊ GIẢ MẠO
+                    // 4. APPLY PROJECT
                     _ = try DevicePatchService.apply(project: project)
                     
-                    // Lưu lại ID giả này để lát sau có cái mà tắt
-                    UserDefaults.standard.set(spoofedID.uuidString, forKey: "ZENITH_SPOOFED_UUID")
-                    await MainActor.run { activeAimID = remoteItem.id }
+                    // Lưu UUID project để tắt sau
+                    UserDefaults.standard.set(project.id.uuidString, forKey: "ZENITH_ACTIVE_PROJECT_UUID")
+                    // Cập nhật trạng thái active (dùng UserDefaults trực tiếp)
+                    UserDefaults.standard.set(remoteItem.id, forKey: "ZENITH_ACTIVE_AIM")
                     
-                    onLog("🎉 [THÀNH CÔNG] Đã kích hoạt bản vá ĐỘC LẬP!")
+                    onLog("🎉 [THÀNH CÔNG] Đã kích hoạt bản vá: \(remoteItem.name)")
                     
                 } else {
                     onLog("🛑 [TẮT] Đang khôi phục...")
                     
-                    // TẮT BẰNG ID GIẢ MẠO ĐÃ LƯU
-                    let savedUUIDStr = UserDefaults.standard.string(forKey: "ZENITH_SPOOFED_UUID") ?? ""
-                    if let activeUUID = UUID(uuidString: savedUUIDStr),
+                    // Tắt project đang chạy
+                    if let savedUUIDStr = UserDefaults.standard.string(forKey: "ZENITH_ACTIVE_PROJECT_UUID"),
+                       let activeUUID = UUID(uuidString: savedUUIDStr),
                        let receipt = DevicePatchService.latestReceipt(projectID: activeUUID) {
                         try? DevicePatchService.restore(receipt: receipt, allowChangedTargets: true)
                     }
                     
-                    // Dọn rác
+                    // Dọn dẹp
                     await MainActor.run {
                         let docsURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
                         let workspacesURL = docsURL.appendingPathComponent("Workspaces")
@@ -345,18 +353,27 @@ struct CyberpunkToggleAimRow: View {
                         for url in contents where url.pathExtension == "3105" {
                             try? FileManager.default.removeItem(at: url)
                         }
+                        store.items.removeAll()
                         store.reload()
                         
-                        activeAimID = ""
+                        // Xóa trạng thái active
+                        UserDefaults.standard.removeObject(forKey: "ZENITH_ACTIVE_AIM")
+                        UserDefaults.standard.removeObject(forKey: "ZENITH_ACTIVE_PROJECT_UUID")
                     }
-                    UserDefaults.standard.removeObject(forKey: "ZENITH_SPOOFED_UUID")
+                    
                     onLog("🔄 [ĐÃ TẮT] Trạng thái máy đã sạch.")
                 }
                 
-                await MainActor.run { store.reload(); isWorking = false; AudioServicesPlaySystemSound(1407) }
+                await MainActor.run { 
+                    store.reload() 
+                    isWorking = false 
+                    AudioServicesPlaySystemSound(1407)
+                }
             } catch {
                 await MainActor.run {
-                    activeAimID = ""
+                    // Nếu lỗi thì đảm bảo active state được reset
+                    UserDefaults.standard.removeObject(forKey: "ZENITH_ACTIVE_AIM")
+                    UserDefaults.standard.removeObject(forKey: "ZENITH_ACTIVE_PROJECT_UUID")
                     isWorking = false
                     AudioServicesPlaySystemSound(1053)
                     onLog("❌ [LỖI] \(error.localizedDescription)")
