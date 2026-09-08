@@ -27,6 +27,7 @@ struct PatchProjectsView: View {
     @State private var wallpaperImportFeedback: WallpaperImportFeedback?
     @State private var wallpaperPendingDeletion: WallpaperStagedPackage?
     @State private var isImportingWallpapers = false
+    @State private var isImportingPatches = false
     @State private var showSimulatedWallpaperDetail = false
     @State private var simulatedWallpaperDetailGate = OneShotPresentationGate()
     let onOpenSettings: () -> Void
@@ -97,7 +98,7 @@ struct PatchProjectsView: View {
                 )
                 Divider()
                 List {
-                    if !hasLocalContent && (store.isBusy || isImportingWallpapers) {
+                    if !hasLocalContent && (store.isBusy || isImportingWallpapers || isImportingPatches) {
                         loadingState
                             .listRowSeparator(.hidden)
                     } else if !hasLocalContent {
@@ -177,13 +178,13 @@ struct PatchProjectsView: View {
                             )
                         }
                     } label: {
-                        if store.isBusy || isImportingWallpapers {
+                        if store.isBusy || isImportingWallpapers || isImportingPatches {
                             ProgressView()
                         } else {
                             Image(systemName: "plus")
                         }
                     }
-                    .disabled(store.isBusy || isImportingWallpapers)
+                    .disabled(store.isBusy || isImportingWallpapers || isImportingPatches)
                     .accessibilityLabel(language.text("patch.add"))
                 }
                 AppUtilityToolbar(
@@ -196,13 +197,11 @@ struct PatchProjectsView: View {
                 FileDocumentPicker(
                     allowedContentTypes: PatchPackagePickerPolicy.allowedContentTypes,
                     copiesSelectedDocument: PatchPackagePickerPolicy.copiesSelectedDocument,
-                    allowsMultipleSelection: true, // Cho phép chọn nhiều file cùng lúc
+                    allowsMultipleSelection: true,
                     onSelection: { result in
                         showImporter = false
                         if case .success(let urls) = result, !urls.isEmpty {
-                            for url in urls {
-                                store.importPackage(at: url)
-                            }
+                            importPatchPackages(urls)
                         }
                     },
                     onCancel: {
@@ -303,6 +302,24 @@ struct PatchProjectsView: View {
         guard let request = draftCoordinator.importRequest else { return }
         draftCoordinator.clearImport()
         store.importPackage(from: request.source)
+    }
+
+    /// Imports one or more `.3105` patch packages selected from the file
+    /// picker. Files may come from the same source folder / share the same
+    /// origin path — each URL is staged independently so duplicates by
+    /// source location never block the import.
+    private func importPatchPackages(_ urls: [URL]) {
+        guard !isImportingPatches else { return }
+        isImportingPatches = true
+        DispatchQueue.global(qos: .userInitiated).async {
+            for url in urls {
+                store.importPackage(at: url)
+                log("patch: staged \(url.lastPathComponent)")
+            }
+            DispatchQueue.main.async {
+                isImportingPatches = false
+            }
+        }
     }
 
     private func wallpaperRow(_ package: WallpaperStagedPackage) -> some View {
