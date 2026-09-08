@@ -1,482 +1,718 @@
 import SwiftUI
-import UIKit
 import UniformTypeIdentifiers
-import AudioToolbox
 
-// MARK: - 1. SMART REMOTE API MANAGER (cache nil, URL chuẩn, log chi tiết)
-class RemoteAPIManager {
-    static let shared = RemoteAPIManager()
+// MARK: - Remote Import Logic
+final class RemotePatchImporter: ObservableObject {
+    @Published var isWorking = false
+    @Published var errorMsg: String?
     
-    private let session: URLSession = {
-        let config = URLSessionConfiguration.ephemeral
-        config.urlCache = nil
-        config.requestCachePolicy = .reloadIgnoringLocalCacheData
-        return URLSession(configuration: config)
-    }()
-    
-    private init() {}
-    
-    func fetchRemoteItems() async throws -> [RemoteAimItem] {
-        let urlString = "https://solitudepremium.click/ipa/proxy/apiaim.php?action=list&t=\(Date().timeIntervalSince1970)"
-        guard let url = URL(string: urlString) else { throw APIError.invalidURL }
-        
-        var request = URLRequest(url: url)
-        request.cachePolicy = .reloadIgnoringLocalCacheData
-        request.timeoutInterval = 15
-        
-        let (data, response) = try await session.data(for: request)
-        guard let httpResponse = response as? HTTPURLResponse, (200...299).contains(httpResponse.statusCode) else {
-            throw APIError.serverError
-        }
-        let items = try JSONDecoder().decode([RemoteAimItem].self, from: data)
-        print("✅ [API] Đã tải danh sách \(items.count) mục từ server")
-        return items
-    }
-    
-    func downloadToTempDir(for remoteItem: RemoteAimItem) async throws -> URL {
-        // Sử dụng URL gốc và thêm query id (nếu server cần)
-        guard var urlComponents = URLComponents(string: remoteItem.url) else {
-            throw APIError.invalidURL
-        }
-        urlComponents.queryItems = [
-            URLQueryItem(name: "action", value: "download"),
-            URLQueryItem(name: "id", value: remoteItem.id),
-            URLQueryItem(name: "nocache", value: "\(Date().timeIntervalSince1970)")
-        ]
-        guard let url = urlComponents.url else { throw APIError.invalidURL }
-        
-        print("📥 [DOWNLOAD] Bắt đầu tải: \(remoteItem.name) - ID: \(remoteItem.id)")
-        print("   URL: \(url.absoluteString)")
-        
-        var request = URLRequest(url: url)
-        request.cachePolicy = .reloadIgnoringLocalCacheData
-        request.timeoutInterval = 30
-        
-        let (data, response) = try await session.data(for: request)
-        guard let httpResponse = response as? HTTPURLResponse, (200...299).contains(httpResponse.statusCode) else {
-            throw APIError.serverError
+    func importFromURL(_ urlString: String, store: PatchProjectStore) {
+        guard let url = URL(string: urlString) else {
+            self.errorMsg = "Invalid URL"
+            return
         }
         
-        let preview = data.prefix(20).map { String(format: "%02x", $0) }.joined()
-        print("   Kích thước: \(data.count) bytes, 20 byte đầu: \(preview)")
+        isWorking = true
+        errorMsg = nil
         
-        let tempDir = FileManager.default.temporaryDirectory
-        let uniqueName = "ZENITH_\(remoteItem.id)_\(UUID().uuidString).3105"
-        let fileURL = tempDir.appendingPathComponent(uniqueName)
-        
-        if FileManager.default.fileExists(atPath: fileURL.path) {
-            try? FileManager.default.removeItem(at: fileURL)
+        let task = URLSession.shared.downloadTask(with: url) { localURL, response, error in
+            DispatchQueue.main.async {
+                self.isWorking = false
+                
+                if let error = error {
+                    self.errorMsg = error.localizedDescription
+                    return
+                }
+                
+                guard let localURL = localURL else {
+                    self.errorMsg = "File download failed."
+                    return
+                }
+                
+                let tempDir = FileManager.default.temporaryDirectory
+                let filename = response?.suggestedFilename ?? "remote_patch.3105"
+                let destinationURL = tempDir.appendingPathComponent(filename)
+                
+                do {
+                    if FileManager.default.fileExists(atPath: destinationURL.path) {
+                        try FileManager.default.removeItem(at: destinationURL)
+                    }
+                    try FileManager.default.moveItem(at: localURL, to: destinationURL)
+                    store.importPackage(at: destinationURL)
+                } catch {
+                    self.errorMsg = "File system error: \(error.localizedDescription)"
+                }
+            }
         }
-        try data.write(to: fileURL)
-        
-        print("✅ [DOWNLOAD] Đã lưu tạm: \(fileURL.path)")
-        return fileURL
+        task.resume()
     }
 }
 
-enum APIError: Error { case invalidURL, serverError, decodingError }
-struct RemoteAimItem: Codable, Identifiable { let id, name, category, target: String; let note: String?; let url: String }
+// MARK: - Picker Policies
+private enum PatchPackagePickerPolicy {
+    static let packageType = UTType(filenameExtension: "3105") ?? .data
+    static let allowedContentTypes: [UTType] = [packageType, .data]
+    static let copiesSelectedDocument = true
+}
 
-// MARK: - 2. CYBERPUNK MAIN MENU
+private enum WallpaperPackagePickerPolicy {
+    static let packageType = UTType(filenameExtension: "tendies") ?? .data
+    static let allowedContentTypes: [UTType] = [packageType, .data]
+}
+
+// MARK: - Main View
 struct PatchProjectsView: View {
     @Environment(\.appLanguage) private var language
+    @EnvironmentObject private var draftCoordinator: PatchDraftCoordinator
     @EnvironmentObject private var store: PatchProjectStore
+    @AppStorage(FeatureVisibility.cleanerStorageKey) private var cleanerEnabled = true
+    
+    @State private var showCreate = false
+    @State private var showImporter = false
+    @State private var showWallpaperImporter = false
+    @State private var showCleaner = false
+    @State private var searchText = ""
+    @State private var wallpaperPackages: [WallpaperStagedPackage] = []
+    @State private var wallpaperImportFeedback: WallpaperImportFeedback?
+    @State private var wallpaperPendingDeletion: WallpaperStagedPackage?
+    @State private var isImportingWallpapers = false
+    @State private var showSimulatedWallpaperDetail = false
+    @State private var simulatedWallpaperDetailGate = OneShotPresentationGate()
+    
+    @StateObject private var remoteImporter = RemotePatchImporter()
+    @State private var showRemoteImportPrompt = false
+    @State private var remoteURLString = ""
+    
     let onOpenSettings: () -> Void
     let onOpenLogs: () -> Void
-    
-    @State private var showModMenu = false
-    @AppStorage("selected_game_bundle") private var selectedGameBundle: String = "com.dts.freefiremax"
-    @State private var remoteItems: [RemoteAimItem] = []
-    @State private var selectedTab: String = ""
-    @State private var isFetching = false
-    @State private var avatarRotation: Double = 0.0
-    
-    @State private var debugLogs: [String] = ["🚀 Console Debug đã sẵn sàng..."]
-    @State private var showDebugConsole = false
+
+    private var filteredItems: [PatchLibraryItem] {
+        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else { return store.items }
+        return store.items.filter { item in
+            if item.packageURL.lastPathComponent.localizedCaseInsensitiveContains(query) { return true }
+            guard let project = item.project else { return false }
+            if project.name.localizedCaseInsensitiveContains(query) || project.author.localizedCaseInsensitiveContains(query) { return true }
+            guard item.canInspectContents else { return false }
+            return project.allBundleIdentifiers.contains { $0.localizedCaseInsensitiveContains(query) }
+                || project.directories.contains { $0.relativePath.localizedCaseInsensitiveContains(query) }
+                || project.rules.contains { $0.relativePath.localizedCaseInsensitiveContains(query) || $0.replacementFilename.localizedCaseInsensitiveContains(query) }
+        }
+    }
+
+    private var filteredWallpaperPackages: [WallpaperStagedPackage] {
+        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else { return wallpaperPackages }
+        return wallpaperPackages.filter { $0.displayName.localizedCaseInsensitiveContains(query) }
+    }
+
+    private var hasLocalContent: Bool {
+        !store.items.isEmpty || !wallpaperPackages.isEmpty
+    }
+
+    private var hasSearchResults: Bool {
+        !filteredItems.isEmpty || !filteredWallpaperPackages.isEmpty
+    }
+
+    init(onOpenSettings: @escaping () -> Void = {}, onOpenLogs: @escaping () -> Void = {}) {
+        self.onOpenSettings = onOpenSettings
+        self.onOpenLogs = onOpenLogs
+#if targetEnvironment(simulator)
+        _showCreate = State(initialValue: ProcessInfo.processInfo.arguments.contains("--simulate-patch-editor"))
+#endif
+    }
 
     var body: some View {
-        ZStack {
-            Color.black.ignoresSafeArea()
-            NeonParticleBackgroundView()
-            if !showModMenu { homeScreen.transition(.opacity.combined(with: .scale(scale: 0.95))) } 
-            else { modMenuScreen.transition(.move(edge: .trailing)) }
-        }
-        .animation(.spring(response: 0.4, dampingFraction: 0.8), value: showModMenu)
-        .onAppear {
-            Task { await fetchRemoteData() }
-            withAnimation(.linear(duration: 6).repeatForever(autoreverses: false)) { avatarRotation = 360 }
-        }
-    }
-    
-    private var homeScreen: some View {
-        VStack(spacing: 0) {
-            HStack {
-                Spacer()
-                Button(action: { showDebugConsole.toggle() }) {
-                    Image(systemName: "ladybug.fill").foregroundColor(.yellow).padding(10).background(Circle().stroke(Color.yellow.opacity(0.5), lineWidth: 1))
-                }.padding(.trailing, 20).padding(.top, 10)
-            }
-            ScrollView(showsIndicators: false) {
-                VStack(spacing: 30) {
-                    VStack(spacing: 16) {
-                        ZStack {
-                            Circle().stroke(AngularGradient(gradient: Gradient(colors: [.white, .gray, .black, .white]), center: .center), lineWidth: 3)
-                                .frame(width: 104, height: 104).rotationEffect(.degrees(avatarRotation)).shadow(color: .white.opacity(0.5), radius: 10)
-                            AsyncImage(url: URL(string: "https://solitudepremium.click/ipa/proxy/li.jpg")) { phase in
-                                if let image = phase.image { image.resizable().scaledToFill() } else { Image(systemName: "person.circle.fill").resizable().foregroundColor(.white) }
-                            }.frame(width: 90, height: 90).clipShape(Circle())
-                        }
-                        Text("Zenith Solitude").font(.system(size: 24, weight: .black, design: .monospaced)).foregroundColor(.white).shadow(color: .white.opacity(0.7), radius: 6)
-                    }
-                    VStack(spacing: 16) {
-                        homeGameCard(title: "Free Fire Max", icon: "https://solitudepremium.click/ipa/proxy/free.jpg", bundle: "com.dts.freefiremax")
-                        homeGameCard(title: "Free Fire Thường", icon: "https://solitudepremium.click/ipa/proxy/free.jpg", bundle: "com.dts.freefireth")
-                    }.padding(.horizontal, 20)
-                    
-                    if showDebugConsole {
-                        VStack(alignment: .leading, spacing: 6) {
-                            HStack {
-                                Text("🛠 SMART DEBUG CONSOLE").font(.system(size: 11, weight: .bold, design: .monospaced)).foregroundColor(.yellow)
-                                Spacer()
-                                Button("Xóa") { debugLogs.removeAll() }.font(.caption2).foregroundColor(.gray)
-                            }
-                            ForEach(debugLogs.prefix(15), id: \.self) { log in
-                                Text(log).font(.system(size: 9, design: .monospaced)).foregroundColor(log.contains("❌") ? .red : (log.contains("✅") ? .green : .white))
-                            }
-                        }.padding(14).background(Color.black.opacity(0.85)).cornerRadius(12).overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.yellow.opacity(0.4), lineWidth: 1)).padding(.horizontal, 20)
-                    }
-                }.padding(.bottom, 40)
-            }
-        }
-    }
-    
-    private func homeGameCard(title: String, icon: String, bundle: String) -> some View {
-        Button(action: {
-            AudioServicesPlaySystemSound(1306); UIImpactFeedbackGenerator(style: .medium).impactOccurred(); selectedGameBundle = bundle
-            if !dynamicTabs.contains(selectedTab), let first = dynamicTabs.first { selectedTab = first }
-            withAnimation { showModMenu = true }
-        }) {
-            HStack(spacing: 16) {
-                AsyncImage(url: URL(string: icon)) { phase in
-                    if let image = phase.image { image.resizable().scaledToFill() } else { Image(systemName: "gamecontroller.fill").foregroundColor(.white) }
-                }.frame(width: 52, height: 52).clipShape(RoundedRectangle(cornerRadius: 14)).overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.white.opacity(0.3), lineWidth: 1))
-                VStack(alignment: .leading, spacing: 5) {
-                    Text(title).font(.system(size: 17, weight: .bold)).foregroundColor(.white)
-                    Text("Hệ thống sẵn sàng").font(.system(size: 11, design: .monospaced)).foregroundColor(.white.opacity(0.5))
-                }
-                Spacer()
-                HStack(spacing: 6) { Text("MỞ MENU").font(.system(size: 11, weight: .black, design: .monospaced)); Image(systemName: "chevron.right").font(.system(size: 10, weight: .bold)) }
-                .foregroundColor(.black).padding(.horizontal, 16).padding(.vertical, 12).background(Color.white).cornerRadius(16).shadow(color: .white.opacity(0.3), radius: 6)
-            }.padding(16).background(Color.black).cornerRadius(20).overlay(RoundedRectangle(cornerRadius: 20).stroke(Color.white.opacity(0.25), lineWidth: 1.5)).shadow(color: .white.opacity(0.1), radius: 8, x: 0, y: 4)
-        }.buttonStyle(NeonScaleButtonStyle())
-    }
-    
-    private var modMenuScreen: some View {
-        VStack(spacing: 0) {
-            HStack(spacing: 12) {
-                Button(action: { AudioServicesPlaySystemSound(1306); withAnimation { showModMenu = false } }) {
-                    Image(systemName: "chevron.left").font(.system(size: 16, weight: .bold)).foregroundColor(.black).frame(width: 40, height: 40).background(Color.white).clipShape(Circle()).shadow(color: .white.opacity(0.4), radius: 4)
-                }.buttonStyle(NeonScaleButtonStyle())
-                Text(selectedGameBundle == "com.dts.freefiremax" ? "Free Fire Max" : "Free Fire Thường").font(.system(size: 18, weight: .bold)).foregroundColor(.white)
-                Spacer()
-                Button(action: { Task { await fetchRemoteData() } }) {
-                    Image(systemName: "arrow.triangle.2.circlepath").font(.system(size: 14, weight: .bold)).foregroundColor(.white).padding(10).background(Circle().stroke(Color.white.opacity(0.4), lineWidth: 1.5))
-                }.disabled(isFetching).buttonStyle(NeonScaleButtonStyle())
-            }.padding(.horizontal, 20).padding(.top, 15)
-            
-            if !dynamicTabs.isEmpty {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 10) {
-                        ForEach(dynamicTabs, id: \.self) { tab in
-                            let isSelected = selectedTab.lowercased() == tab.lowercased()
-                            Button(action: { AudioServicesPlaySystemSound(1306); selectedTab = tab }) {
-                                Text(tab).font(.system(size: 13, weight: .bold, design: .monospaced)).padding(.horizontal, 20).padding(.vertical, 10)
-                                    .background(isSelected ? Color.white : Color.black).foregroundColor(isSelected ? .black : .white).cornerRadius(20)
-                                    .overlay(RoundedRectangle(cornerRadius: 20).stroke(Color.white.opacity(isSelected ? 1.0 : 0.3), lineWidth: 1.5)).shadow(color: isSelected ? .white.opacity(0.4) : .clear, radius: 6)
-                            }.buttonStyle(NeonScaleButtonStyle())
-                        }
-                    }.padding(.horizontal, 20).padding(.vertical, 16)
-                }
-            }
-            
-            ScrollView(showsIndicators: false) {
-                VStack(spacing: 14) {
-                    let filtered = remoteItems.filter { $0.target == selectedGameBundle && $0.category.lowercased() == selectedTab.lowercased() }
-                    if filtered.isEmpty {
-                        VStack(spacing: 10) { Image(systemName: "folder.badge.questionmark").font(.system(size: 40)).foregroundColor(.white.opacity(0.2)); Text("Chưa có tính năng nào trong mục này").font(.system(size: 12, design: .monospaced)).foregroundColor(.gray) }.padding(.top, 100)
+        NavigationStack {
+            VStack(spacing: 0) {
+                AppSearchField(
+                    text: $searchText,
+                    prompt: language.text("installed.search"),
+                    clearLabel: language.text("common.clear")
+                )
+                Divider()
+                List {
+                    if !hasLocalContent && (store.isBusy || isImportingWallpapers) {
+                        loadingState.listRowSeparator(.hidden)
+                    } else if !hasLocalContent {
+                        emptyState.listRowSeparator(.hidden)
+                    } else if !hasSearchResults && !store.isBusy {
+                        searchEmptyState.listRowSeparator(.hidden)
                     } else {
-                        ForEach(filtered, id: \.id) { item in 
-                            CyberpunkToggleAimRow(remoteItem: item, store: store, onLog: { msg in appendLog(msg) }) 
-                        }
-                    }
-                }.padding(.horizontal, 20).padding(.bottom, 40)
-            }
-            Spacer()
-        }
-    }
-    
-    private var dynamicTabs: [String] {
-        var tabs: [String] = []
-        for item in remoteItems where item.target == selectedGameBundle { if !tabs.contains(where: { $0.caseInsensitiveCompare(item.category) == .orderedSame }) { tabs.append(item.category) } }
-        return tabs
-    }
-    
-    @MainActor private func fetchRemoteData() async {
-        guard !isFetching else { return }; isFetching = true; defer { isFetching = false }
-        do {
-            remoteItems = try await RemoteAPIManager.shared.fetchRemoteItems()
-            if !dynamicTabs.contains(selectedTab), let first = dynamicTabs.first { selectedTab = first }
-            appendLog("✅ [SYNC] Tải danh sách thành công (\(remoteItems.count) mục).")
-        } catch {
-            appendLog("❌ [SYNC] Lỗi tải danh sách: \(error.localizedDescription)")
-        }
-    }
-    
-    private func appendLog(_ text: String) {
-        debugLogs.insert("[\(TimeFormatter.current())] \(text)", at: 0)
-        if debugLogs.count > 40 { debugLogs.removeLast() }
-    }
-}
-
-// MARK: - 3. SMART TOGGLE ROW (ĐÃ SỬA LỖI KÍCH HOẠT SAI FILE)
-struct CyberpunkToggleAimRow: View {
-    let remoteItem: RemoteAimItem
-    @ObservedObject var store: PatchProjectStore
-    let onLog: (String) -> Void
-    
-    @State private var isWorking = false
-    @AppStorage("ZENITH_ACTIVE_AIM") private var activeAimID: String = ""
-    private var isApplied: Bool { return activeAimID == remoteItem.id }
-    
-    var body: some View {
-        HStack(spacing: 14) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.1)).frame(width: 42, height: 42)
-                Image(systemName: isApplied ? "checkmark.shield.fill" : "shield.fill").foregroundColor(isApplied ? .white : .gray)
-            }
-            VStack(alignment: .leading, spacing: 4) {
-                HStack(spacing: 6) { 
-                    Text(remoteItem.name).font(.system(size: 15, weight: .bold)).foregroundColor(.white)
-                    Text("ID: \(remoteItem.id)").font(.system(size: 8, weight: .bold)).padding(.horizontal, 6).padding(.vertical, 2).background(Color.white).cornerRadius(4).foregroundColor(.black) 
-                }
-                if let note = remoteItem.note, !note.isEmpty { 
-                    Text("📌 \(note)").font(.system(size: 10, design: .monospaced)).foregroundColor(.gray) 
-                }
-            }
-            Spacer()
-            if isWorking { 
-                ProgressView().tint(.white).scaleEffect(0.7) 
-            } else { 
-                Toggle("", isOn: Binding(
-                    get: { isApplied },
-                    set: { val in executeSmartAction(on: val) }
-                ))
-                .labelsHidden()
-                .tint(.white) 
-            }
-        }
-        .padding(14)
-        .background(Color.black)
-        .cornerRadius(18)
-        .overlay(
-            RoundedRectangle(cornerRadius: 18)
-                .stroke(Color.white.opacity(isApplied ? 0.6 : 0.2), lineWidth: isApplied ? 1.5 : 1)
-        )
-    }
-    
-    // =====================================================
-    // PHẦN XỬ LÝ CHÍNH – ĐÃ SỬA LỖI KÍCH HOẠT SAI FILE
-    // =====================================================
-    @MainActor
-    private func executeSmartAction(on: Bool) {
-        guard !isWorking else { return }
-        isWorking = true
-        AudioServicesPlaySystemSound(1306)
-        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-        
-        Task {
-            do {
-                if on {
-                    onLog("🚀 [BẬT] Yêu cầu: [\(remoteItem.name)] - ID: \(remoteItem.id)")
-                    
-                    // 1. Tắt bản vá cũ nếu có
-                    if let savedUUIDStr = UserDefaults.standard.string(forKey: "ZENITH_ACTIVE_PROJECT_UUID"),
-                       let activeUUID = UUID(uuidString: savedUUIDStr),
-                       let receipt = DevicePatchService.latestReceipt(projectID: activeUUID) {
-                        try? DevicePatchService.restore(receipt: receipt, allowChangedTargets: true)
-                        onLog("🔄 Đã tắt bản vá cũ.")
-                    }
-                    
-                    // 2. Dọn dẹp triệt để: xóa toàn bộ nội dung Documents và Caches
-                    let fm = FileManager.default
-                    let docsURL = fm.urls(for: .documentDirectory, in: .userDomainMask)[0]
-                    let cachesURL = fm.urls(for: .cachesDirectory, in: .userDomainMask)[0]
-                    
-                    for url in [docsURL, cachesURL] {
-                        if let contents = try? fm.contentsOfDirectory(at: url, includingPropertiesForKeys: nil) {
-                            for fileURL in contents {
-                                try? fm.removeItem(at: fileURL)
-                            }
-                        }
-                    }
-                    store.reload()
-                    onLog("🧹 Đã xóa toàn bộ Documents và Caches.")
-                    
-                    // Chờ store rỗng
-                    var retryCount = 0
-                    while retryCount < 20 {
-                        if store.items.isEmpty { break }
-                        try await Task.sleep(nanoseconds: 100_000_000)
-                        retryCount += 1
-                    }
-                    if !store.items.isEmpty {
-                        onLog("⚠️ Store vẫn còn \(store.items.count) item, tiếp tục xóa...")
-                        for url in [docsURL, cachesURL] {
-                            if let contents = try? fm.contentsOfDirectory(at: url, includingPropertiesForKeys: nil) {
-                                for fileURL in contents {
-                                    try? fm.removeItem(at: fileURL)
+                        if !filteredItems.isEmpty {
+                            Section(language.text("patch.title")) {
+                                ForEach(filteredItems) { item in
+                                    itemRow(item)
+                                }
+                                .onDelete { offsets in
+                                    offsets.map { filteredItems[$0] }.forEach(store.delete)
                                 }
                             }
                         }
-                        store.reload()
-                        try await Task.sleep(nanoseconds: 500_000_000)
-                    }
-                    
-                    // 3. Tải file mới
-                    let tempFileURL = try await RemoteAPIManager.shared.downloadToTempDir(for: remoteItem)
-                    onLog("📥 Đã tải tệp về máy: \(tempFileURL.lastPathComponent)")
-                    
-                    // In thông tin file tải về
-                    if let data = try? Data(contentsOf: tempFileURL) {
-                        let preview = data.prefix(20).map { String(format: "%02x", $0) }.joined()
-                        print("📄 [\(remoteItem.id)] File size: \(data.count) bytes, first 20 bytes: \(preview)")
-                    }
-                    
-                    // 4. Import trực tiếp từ tempFileURL
-                    var importSuccess = false
-                    for attempt in 1...3 {
-                        store.importPackage(at: tempFileURL)
-                        store.reload()
-                        try await Task.sleep(nanoseconds: 300_000_000)
-                        if !store.items.isEmpty {
-                            importSuccess = true
-                            onLog("✅ Import thành công (lần \(attempt)), store có \(store.items.count) item.")
-                            break
-                        } else {
-                            onLog("⚠️ Import lần \(attempt) thất bại, store rỗng.")
-                        }
-                    }
-                    
-                    if !importSuccess {
-                        throw NSError(domain: "StoreError", code: 0, userInfo: [NSLocalizedDescriptionKey: "Import thất bại sau nhiều lần thử."])
-                    }
-                    
-                    // 5. Lấy project
-                    guard let targetItem = store.items.first, store.items.count == 1 else {
-                        throw NSError(domain: "StoreError", code: 0, userInfo: [NSLocalizedDescriptionKey: "Store không đúng: có \(store.items.count) item."])
-                    }
-                    
-                    var project: PatchProject
-                    if targetItem.summary.schemaVersion >= 2 && targetItem.canInspectContents {
-                        project = try PatchProjectLibrary.synchronizeWorkspace(item: targetItem)
-                    } else {
-                        guard let baseProject = targetItem.project else {
-                            throw NSError(domain: "ProjectError", code: 0, userInfo: [NSLocalizedDescriptionKey: "Project hỏng."])
-                        }
-                        project = baseProject
-                    }
-                    
-                    // Kiểm tra ID trong project (nếu có thuộc tính id)
-                    // Nếu project.id không khớp với remoteItem.id, có thể server trả sai file
-                    // Bạn có thể thêm logic kiểm tra nếu PatchProject có trường tương ứng
-                    // Ở đây ta chỉ log ra
-                    onLog("🛠 Project name: \(project.name), ID: \(project.id.uuidString.prefix(8))")
-                    
-                    // 6. Apply project
-                    _ = try DevicePatchService.apply(project: project)
-                    
-                    // 7. Lưu UUID
-                    UserDefaults.standard.set(project.id.uuidString, forKey: "ZENITH_ACTIVE_PROJECT_UUID")
-                    UserDefaults.standard.set(remoteItem.id, forKey: "ZENITH_ACTIVE_AIM")
-                    
-                    onLog("🎉 [THÀNH CÔNG] Đã kích hoạt bản vá: \(remoteItem.name)")
-                    
-                } else {
-                    onLog("🛑 [TẮT] Đang khôi phục...")
-                    
-                    if let savedUUIDStr = UserDefaults.standard.string(forKey: "ZENITH_ACTIVE_PROJECT_UUID"),
-                       let activeUUID = UUID(uuidString: savedUUIDStr),
-                       let receipt = DevicePatchService.latestReceipt(projectID: activeUUID) {
-                        try? DevicePatchService.restore(receipt: receipt, allowChangedTargets: true)
-                    }
-                    
-                    let fm = FileManager.default
-                    let docsURL = fm.urls(for: .documentDirectory, in: .userDomainMask)[0]
-                    let cachesURL = fm.urls(for: .cachesDirectory, in: .userDomainMask)[0]
-                    for url in [docsURL, cachesURL] {
-                        if let contents = try? fm.contentsOfDirectory(at: url, includingPropertiesForKeys: nil) {
-                            for fileURL in contents {
-                                try? fm.removeItem(at: fileURL)
+                        if !filteredWallpaperPackages.isEmpty {
+                            Section(language.text("tab.wallpapers")) {
+                                ForEach(filteredWallpaperPackages) { package in
+                                    NavigationLink {
+                                        InstalledWallpaperPackageDetailView(package: package, onApplied: reloadWallpaperPackages)
+                                    } label: {
+                                        wallpaperRow(package)
+                                    }
+                                    .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                                        Button(role: .destructive) {
+                                            wallpaperPendingDeletion = package
+                                        } label: {
+                                            Label(language.text("common.delete"), systemImage: "trash")
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
-                    store.reload()
-                    UserDefaults.standard.removeObject(forKey: "ZENITH_ACTIVE_AIM")
-                    UserDefaults.standard.removeObject(forKey: "ZENITH_ACTIVE_PROJECT_UUID")
-                    
-                    onLog("🔄 [ĐÃ TẮT] Trạng thái máy đã sạch.")
+                    if cleanerEnabled {
+                        Section(language.text("repository.utilities")) { cleanerRow }
+                    }
                 }
-                
-                store.reload()
-                isWorking = false
-                AudioServicesPlaySystemSound(1407)
-            } catch {
-                UserDefaults.standard.removeObject(forKey: "ZENITH_ACTIVE_AIM")
-                UserDefaults.standard.removeObject(forKey: "ZENITH_ACTIVE_PROJECT_UUID")
-                isWorking = false
-                AudioServicesPlaySystemSound(1053)
-                onLog("❌ [LỖI] \(error.localizedDescription)")
+                .listStyle(.insetGrouped)
+            }
+            .navigationTitle(language.text("tab.installed"))
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Menu {
+                        Button { showCreate = true } label: { Label(language.text("patch.new"), systemImage: "doc.badge.plus") }
+                        Button { showImporter = true } label: { Label(language.text("patch.import"), systemImage: "square.and.arrow.down") }
+                        Button { showRemoteImportPrompt = true } label: { Label("Download from URL", systemImage: "icloud.and.arrow.down") }
+                        Button { showWallpaperImporter = true } label: { Label(language.text("wallpaper.import"), systemImage: "photo.badge.plus") }
+                    } label: {
+                        if store.isBusy || isImportingWallpapers || remoteImporter.isWorking {
+                            ProgressView()
+                        } else {
+                            Image(systemName: "plus")
+                        }
+                    }
+                    .disabled(store.isBusy || isImportingWallpapers || remoteImporter.isWorking)
+                }
+                AppUtilityToolbar(language: language, onOpenSettings: onOpenSettings, onOpenLogs: onOpenLogs)
+            }
+            .alert("Import Patch from URL", isPresented: $showRemoteImportPrompt) {
+                TextField("https://solitudepremium.click/ipa/proxy/...", text: $remoteURLString).keyboardType(.URL)
+                Button("Download") {
+                    remoteImporter.importFromURL(remoteURLString, store: store)
+                    remoteURLString = ""
+                }
+                Button("Cancel", role: .cancel) { remoteURLString = "" }
+            }
+            .alert("Download Error", isPresented: Binding(
+                get: { remoteImporter.errorMsg != nil },
+                set: { if !$0 { remoteImporter.errorMsg = nil } }
+            )) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text(remoteImporter.errorMsg ?? "")
+            }
+            .sheet(isPresented: $showImporter) {
+                FileDocumentPicker(
+                    allowedContentTypes: PatchPackagePickerPolicy.allowedContentTypes,
+                    copiesSelectedDocument: PatchPackagePickerPolicy.copiesSelectedDocument,
+                    allowsMultipleSelection: false,
+                    onSelection: { result in
+                        showImporter = false
+                        if case .success(let urls) = result, let url = urls.first { store.importPackage(at: url) }
+                    },
+                    onCancel: { showImporter = false }
+                ).ignoresSafeArea()
+            }
+            .sheet(isPresented: $showCreate) {
+                PatchProjectEditorView(existingProject: nil, passwordIsProtected: false) { project, password in
+                    store.create(project: project, password: password)
+                }
+            }
+            .sheet(isPresented: $showCleaner) { CleanerView() }
+            .sheet(item: $draftCoordinator.request) { request in
+                PatchProjectEditorView(existingProject: nil, passwordIsProtected: false, initialDraft: request.draft) { project, password in
+                    store.create(project: project, password: password)
+                    draftCoordinator.clear()
+                }
+            }
+            .sheet(isPresented: $showWallpaperImporter) {
+                FileDocumentPicker(
+                    allowedContentTypes: WallpaperPackagePickerPolicy.allowedContentTypes,
+                    copiesSelectedDocument: true,
+                    allowsMultipleSelection: true,
+                    onSelection: { result in
+                        showWallpaperImporter = false
+                        if case .success(let urls) = result, !urls.isEmpty { importWallpaperPackages(urls) }
+                    },
+                    onCancel: { showWallpaperImporter = false }
+                ).ignoresSafeArea()
+            }
+            .alert(item: $wallpaperImportFeedback) { feedback in
+                Alert(
+                    title: Text(language.text(feedback.titleKey)),
+                    message: Text(feedback.message),
+                    dismissButton: .default(Text(language.text("common.ok")))
+                )
+            }
+            .alert(item: $wallpaperPendingDeletion) { package in
+                Alert(
+                    title: Text(language.text("wallpaper.delete_title")),
+                    message: Text(language.text("wallpaper.delete_message", package.displayName)),
+                    primaryButton: .destructive(Text(language.text("common.delete"))) { deleteWallpaperPackage(package) },
+                    secondaryButton: .cancel(Text(language.text("common.cancel")))
+                )
+            }
+            .onAppear {
+                reloadWallpaperPackages()
+                consumeExternalImport()
+#if targetEnvironment(simulator)
+                if ProcessInfo.processInfo.arguments.contains("--simulate-wallpaper-detail"), !wallpaperPackages.isEmpty, simulatedWallpaperDetailGate.claim() {
+                    DispatchQueue.main.async { showSimulatedWallpaperDetail = true }
+                }
+#endif
+            }
+            .navigationDestination(isPresented: $showSimulatedWallpaperDetail) {
+                if let package = wallpaperPackages.first {
+                    InstalledWallpaperPackageDetailView(package: package, onApplied: reloadWallpaperPackages)
+                }
+            }
+            .onChange(of: draftCoordinator.importRequest?.id) { _ in consumeExternalImport() }
+        }
+    }
+
+    private func consumeExternalImport() {
+        guard let request = draftCoordinator.importRequest else { return }
+        draftCoordinator.clearImport()
+        store.importPackage(from: request.source)
+    }
+
+    private func wallpaperRow(_ package: WallpaperStagedPackage) -> some View {
+        HStack(spacing: 12) {
+            AppRowIcon(systemName: wallpaperSymbol)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(package.displayName).font(.body.weight(.semibold)).foregroundStyle(.primary).lineLimit(1)
+                InstalledContentKindBadge(kind: .wallpaper, language: language)
+                Text(language.text("wallpaper.package_summary", Int64(package.payload.descriptors.count), ByteCountFormatter.string(fromByteCount: package.payload.totalBytes, countStyle: .file)))
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+        }.padding(.vertical, 4)
+    }
+
+    private var cleanerRow: some View {
+        Button { showCleaner = true } label: {
+            HStack(spacing: 12) {
+                AppRowIcon(systemName: "sparkles")
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(language.text("tab.cleaner")).font(.body.weight(.semibold)).foregroundStyle(.primary)
+                    Text(language.text("repository.cleaner_subtitle")).font(.caption).foregroundStyle(.secondary)
+                }
+                Spacer()
+                Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundStyle(.tertiary).accessibilityHidden(true)
+            }.contentShape(Rectangle())
+        }.buttonStyle(.plain)
+    }
+
+    private var wallpaperSymbol: String {
+        if #available(iOS 18.0, *) { return "photo.on.rectangle.angled.fill" }
+        return "photo.fill.on.rectangle.fill"
+    }
+
+    private func reloadWallpaperPackages() { wallpaperPackages = WallpaperPackageStore.packages() }
+
+    private func deleteWallpaperPackage(_ package: WallpaperStagedPackage) {
+        do {
+            try WallpaperPackageStore.delete(package)
+            reloadWallpaperPackages()
+        } catch {
+            wallpaperImportFeedback = WallpaperImportFeedback(titleKey: "wallpaper.operation_failed", message: wallpaperErrorMessage(error))
+        }
+    }
+
+    private func importWallpaperPackages(_ urls: [URL]) {
+        guard !isImportingWallpapers else { return }
+        isImportingWallpapers = true
+        DispatchQueue.global(qos: .userInitiated).async {
+            var imported = 0
+            var failures: [String] = []
+            for url in urls {
+                do {
+                    _ = try WallpaperPackageStore.importPackage(from: url)
+                    imported += 1
+                } catch {
+                    failures.append("\(url.lastPathComponent): \(wallpaperErrorMessage(error))")
+                }
+            }
+            DispatchQueue.main.async {
+                isImportingWallpapers = false
+                reloadWallpaperPackages()
+                wallpaperImportFeedback = WallpaperImportFeedback(
+                    titleKey: failures.isEmpty ? "wallpaper.import_done_title" : "wallpaper.import_result_title",
+                    message: failures.isEmpty ? language.text("wallpaper.import_done_message", Int64(imported)) : failures.joined(separator: "\n")
+                )
             }
         }
     }
-}
 
-// MARK: - 4. UTILITIES
-struct TimeFormatter {
-    static func current() -> String {
-        let f = DateFormatter()
-        f.dateFormat = "HH:mm:ss.SSS"
-        return f.string(from: Date())
+    private func wallpaperErrorMessage(_ error: Error) -> String {
+        if let wallpaperError = error as? WallpaperLabError { return language.text(wallpaperError.localizationKey) }
+        return language.text("wallpaper.error.unknown")
+    }
+
+    @ViewBuilder
+    private func itemRow(_ item: PatchLibraryItem) -> some View {
+        if item.isLocked {
+            Button { store.requestUnlock(for: item) } label: { PatchProjectRow(item: item, language: language) }.buttonStyle(.plain)
+        } else {
+            NavigationLink { PatchProjectDetailView(store: store, projectID: item.id) } label: { PatchProjectRow(item: item, language: language) }
+        }
+    }
+
+    private var emptyState: some View {
+        VStack(spacing: 12) {
+            Image(systemName: "shippingbox").font(.system(size: AppTheme.emptyIconSize, weight: .light)).foregroundStyle(AppTheme.accent)
+            Text(language.text("installed.empty_title")).font(.headline)
+            Text(language.text("installed.empty_message")).font(.subheadline).foregroundStyle(.secondary).multilineTextAlignment(.center)
+            Button(language.text("patch.new")) { showCreate = true }.buttonStyle(.bordered).controlSize(.large)
+        }.frame(maxWidth: .infinity).padding(.vertical, 64)
+    }
+
+    private var loadingState: some View {
+        VStack(spacing: 12) {
+            ProgressView()
+            Text(language.text("installed.loading")).font(.subheadline).foregroundStyle(.secondary)
+        }.frame(maxWidth: .infinity).padding(.vertical, 64)
+    }
+
+    private var searchEmptyState: some View {
+        VStack(spacing: 10) {
+            Image(systemName: "magnifyingglass").font(.system(size: AppTheme.emptyIconSize, weight: .light)).foregroundStyle(.secondary)
+            Text(language.text("patch.search_empty")).font(.headline)
+            Text(language.text("patch.search_empty_message")).font(.subheadline).foregroundStyle(.secondary).multilineTextAlignment(.center)
+        }.frame(maxWidth: .infinity).padding(.vertical, 64)
     }
 }
 
-struct NeonParticleBackgroundView: View {
+// MARK: - Subcomponents
+private struct WallpaperImportFeedback: Identifiable {
+    let id = UUID()
+    let titleKey: String
+    let message: String
+}
+
+private struct PatchProjectRow: View {
+    let item: PatchLibraryItem
+    let language: AppLanguage
+
     var body: some View {
-        TimelineView(.animation) { context in
-            Canvas { ctx, size in
-                let time = context.date.timeIntervalSinceReferenceDate
-                for i in 0..<60 {
-                    let seed = Double(i) * 55.0
-                    let x = (sin(time * 0.2 + seed) * 0.5 + 0.5) * size.width
-                    let y = size.height - fmod(time * (50.0 + fmod(seed, 25.0)) + seed, size.height)
-                    ctx.fill(Path(ellipseIn: CGRect(x: x, y: y, width: 2, height: 2)), with: .color(.white.opacity(0.35)))
+        HStack(spacing: 12) {
+            AppRowIcon(systemName: item.isLocked ? "lock.doc.fill" : "shippingbox.fill")
+            VStack(alignment: .leading, spacing: 3) {
+                Text(item.project?.name ?? language.text("patch.locked_project")).font(.body.weight(.semibold)).foregroundStyle(.primary).lineLimit(1)
+                InstalledContentKindBadge(kind: .patch, language: language)
+                if let author = item.project?.author, !author.isEmpty {
+                    Text(language.text("patch.by_author", author)).font(.caption).foregroundStyle(.secondary)
                 }
+                Text(rowDetail).font(.caption).foregroundStyle(.secondary)
             }
-        }
-        .allowsHitTesting(false)
+            Spacer()
+            if item.summary.isPasswordProtected {
+                Image(systemName: "key.fill").font(.caption).foregroundStyle(.secondary).accessibilityLabel(language.text("patch.password_protected"))
+            }
+            if item.project?.isPrivate == true {
+                Image(systemName: "eye.slash.fill").font(.caption).foregroundStyle(AppTheme.accent).accessibilityLabel(language.text("patch.private"))
+            }
+        }.padding(.vertical, 4)
+    }
+
+    private var rowDetail: String {
+        if item.isLocked { return language.text("patch.tap_to_unlock") }
+        if item.project?.isPrivate == true, !item.isAuthorCopy { return language.text("patch.private_received") }
+        return language.text(item.summary.schemaVersion >= 2 ? "patch.workspace_items_count" : "patch.rules_count", Int64((item.project?.rules.count ?? 0) + (item.project?.directories.count ?? 0)))
     }
 }
 
-// MARK: - 5. PATCH STORE PRESENTATION MODIFIER
+private enum InstalledContentKind {
+    case patch
+    case wallpaper
+    var localizationKey: String { self == .patch ? "installed.kind.patch" : "installed.kind.wallpaper" }
+    var systemImage: String { self == .patch ? "shippingbox.fill" : "photo.fill" }
+}
+
+private struct InstalledContentKindBadge: View {
+    let kind: InstalledContentKind
+    let language: AppLanguage
+    var body: some View {
+        HStack(spacing: 4) {
+            Image(systemName: kind.systemImage).accessibilityHidden(true)
+            Text(language.text(kind.localizationKey))
+        }
+        .font(.caption2.weight(.semibold)).foregroundStyle(AppTheme.accent).padding(.horizontal, 8).frame(height: 24)
+        .background(AppTheme.accent.opacity(0.12), in: Capsule()).fixedSize().accessibilityElement(children: .combine)
+    }
+}
+
+struct PatchUnlockView: View {
+    @Environment(\.appLanguage) private var language
+    @Environment(\.dismiss) private var dismiss
+    @ObservedObject var store: PatchProjectStore
+    let request: PatchPasswordRequest
+    @State private var password = ""
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    SecureField(language.text("patch.password"), text: $password).textContentType(.password).submitLabel(.done).onSubmit(unlock)
+                        .onChange(of: password) { _ in store.clearUnlockError() }
+                    if let errorKey = store.unlockErrorKey { Text(language.text(errorKey)).font(.footnote).foregroundStyle(.red) }
+                } footer: {
+                    if let origin = request.origin { Text(language.text("patch.password_repo_contact", origin.repositoryName)) }
+                    else { Text(language.text("patch.password_once_message")) }
+                }
+            }
+            .navigationTitle(language.text("patch.unlock")).navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button(language.text("common.cancel")) { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) { Button(language.text("patch.unlock"), action: unlock).disabled(password.isEmpty || store.isBusy) }
+            }
+        }
+    }
+    private func unlock() {
+        guard !password.isEmpty else { return }
+        store.unlock(password: password)
+    }
+}
+
 private struct PatchStorePresentationModifier: ViewModifier {
     @ObservedObject var store: PatchProjectStore
     func body(content: Content) -> some View {
-        content
+        content.sheet(item: $store.passwordRequest, onDismiss: store.cancelUnlock) { request in PatchUnlockView(store: store, request: request) }
     }
 }
 
 extension View {
-    func patchStorePresentation(_ store: PatchProjectStore) -> some View {
-        modifier(PatchStorePresentationModifier(store: store))
+    func patchStorePresentation(_ store: PatchProjectStore) -> some View { modifier(PatchStorePresentationModifier(store: store)) }
+}
+
+// MARK: - Detail View (With Toggle)
+private struct PatchProjectDetailView: View {
+    @Environment(\.appLanguage) private var language
+    @ObservedObject var store: PatchProjectStore
+    let projectID: UUID
+    @State private var showEditor = false
+    @State private var editingRule: PatchRule?
+    @State private var showChangedRestoreConfirmation = false
+    @State private var restoreChangedPaths: [String] = []
+    @State private var isWorking = false
+    @State private var actionAlert: PatchStoreAlert?
+    @State private var shareRequest: PatchShareRequest?
+
+    private var item: PatchLibraryItem? { store.items.first(where: { $0.id == projectID }) }
+    private var receipt: PatchTransactionReceipt? { DevicePatchService.latestReceipt(projectID: projectID) }
+    private var isWorkspaceProject: Bool { (item?.summary.schemaVersion ?? 1) >= 2 }
+
+    var body: some View {
+        List {
+            if let item, let project = item.project {
+                Section(language.text("patch.information")) {
+                    if !project.author.isEmpty { patchInfoRow(label: language.text("patch.author"), value: project.author) }
+                    patchInfoRow(label: language.text("patch.privacy")) {
+                        Label(language.text(project.isPrivate ? "patch.private" : "patch.public"), systemImage: project.isPrivate ? "eye.slash.fill" : "eye")
+                            .foregroundStyle(project.isPrivate ? AppTheme.accent : Color.secondary)
+                    }
+                    if let origin = item.origin { patchInfoRow(label: language.text("repository.source"), value: origin.repositoryName) }
+                }
+
+                if project.isPrivate && !item.canInspectContents {
+                    Section {
+                        VStack(spacing: 10) {
+                            Image(systemName: "lock.shield.fill").font(.system(size: 30, weight: .medium)).foregroundStyle(AppTheme.accent)
+                            Text(language.text("patch.private_hidden_title")).font(.headline)
+                            Text(language.text("patch.private_hidden_message")).font(.subheadline).foregroundStyle(.secondary).multilineTextAlignment(.center)
+                        }.frame(maxWidth: .infinity).padding(.vertical, 20)
+                    }
+                } else if isWorkspaceProject {
+                    Section {
+                        ForEach(project.allBundleIdentifiers, id: \.self) { bundleID in
+                            Label { Text(bundleID).font(.subheadline.monospaced()) } icon: { Image(systemName: "app.dashed").foregroundStyle(AppTheme.accent) }
+                        }
+                        LabeledContent(language.text("patch.files")) { Text("\(project.rules.count)") }
+                        LabeledContent(language.text("patch.folders")) { Text("\(project.directories.count)") }
+                        if let workspaceURL = item.workspaceURL {
+                            NavigationLink { FileBrowserView(containerPath: workspaceURL.path, title: project.name, bundleID: nil) } label: { Label(language.text("patch.open_workspace"), systemImage: "folder") }
+                        }
+                    } header: { Text(language.text("patch.workspace")) } footer: { Text(language.text("patch.workspace_detail_footer")) }
+                } else {
+                    Section {
+                        ForEach(project.rules) { rule in
+                            Button { editingRule = rule } label: {
+                                HStack(spacing: 10) {
+                                    ruleSummary(rule)
+                                    Spacer(minLength: 8)
+                                    Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundStyle(.tertiary)
+                                }.contentShape(Rectangle())
+                            }.buttonStyle(.plain).accessibilityHint(language.text("patch.edit_rule_hint"))
+                        }
+                    } header: { Text(language.text("patch.rules")) } footer: { Text(language.text("patch.legacy_footer")) }
+                }
+
+                Section(language.text("patch.password")) {
+                    HStack(spacing: 12) {
+                        Image(systemName: item.summary.isPasswordProtected ? "lock.fill" : "lock.open").foregroundStyle(AppTheme.accent).frame(width: 24)
+                        Text(language.text(item.summary.isPasswordProtected ? "patch.password_locked" : "patch.no_password")).font(.subheadline)
+                    }
+                }
+
+                Section {
+                    Toggle(isOn: Binding(
+                        get: { receipt != nil },
+                        set: { isApplying in
+                            if isApplying { apply() } else { prepareRestore() }
+                        }
+                    )) {
+                        Label(
+                            language.text(receipt != nil ? "patch.applied_message" : "patch.apply"),
+                            systemImage: receipt != nil ? "checkmark.shield.fill" : "shield"
+                        )
+                    }
+                    .disabled(isWorking)
+                    .tint(AppTheme.accent)
+
+                    Button(action: prepareExport) { actionLabel("patch.export", systemImage: "square.and.arrow.up") }.disabled(isWorking)
+                } footer: {
+                    Text(language.text("patch.apply_footer"))
+                }
+            }
+        }
+        .listStyle(.insetGrouped).navigationTitle(item?.project?.name ?? language.text("patch.title")).navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .navigationBarTrailing) {
+                if isWorking { ProgressView() } else if !isWorkspaceProject, item?.canInspectContents == true {
+                    Button(language.text("patch.edit")) { showEditor = true }.disabled(item?.project == nil)
+                }
+            }
+        }
+        .sheet(isPresented: $showEditor) {
+            if let item, let project = item.project {
+                PatchProjectEditorView(existingProject: project, passwordIsProtected: item.summary.isPasswordProtected) { updatedProject, _ in store.update(project: updatedProject) }
+            }
+        }
+        .sheet(item: $editingRule) { rule in PatchRuleEditorView(rule: rule) { updatedRule in updateRule(updatedRule) } }
+        .confirmationDialog(language.text("patch.restore_changed_title"), isPresented: $showChangedRestoreConfirmation, titleVisibility: .visible) {
+            Button(language.text("patch.restore_changed_action"), role: .destructive) { restore(allowChangedTargets: true) }
+            Button(language.text("common.cancel"), role: .cancel) {}
+        } message: { Text(changedRestoreMessage) }
+        .alert(item: $actionAlert) { alert in Alert(title: Text(language.text(alert.titleKey)), message: Text(alert.message(language: language)), dismissButton: .default(Text(language.text("common.ok")))) }
+        .sheet(item: $shareRequest) { request in PatchActivityView(items: [request.url]).ignoresSafeArea() }
     }
+
+    private func actionLabel(_ key: String, systemImage: String) -> some View { Label(language.text(key), systemImage: systemImage).frame(maxWidth: .infinity, alignment: .leading) }
+    private func patchInfoRow(label: String, value: String) -> some View { patchInfoRow(label: label) { Text(value).foregroundStyle(.primary) } }
+    private func patchInfoRow<Content: View>(label: String, @ViewBuilder value: () -> Content) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 12) {
+            Text(label).foregroundStyle(.secondary)
+            Spacer(minLength: 16)
+            value().multilineTextAlignment(.trailing).fixedSize(horizontal: false, vertical: true)
+        }.font(.subheadline).padding(.vertical, 5)
+    }
+    private func ruleSummary(_ rule: PatchRule) -> some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Text(rule.bundleID).font(.subheadline.weight(.semibold)).foregroundStyle(.primary)
+            Text(rule.relativePath).font(.caption.monospaced()).foregroundStyle(.secondary).lineLimit(2)
+            Label(rule.replacementFilename, systemImage: "arrow.triangle.2.circlepath").font(.caption).foregroundStyle(AppTheme.accent)
+        }.padding(.vertical, 3)
+    }
+    private func updateRule(_ updatedRule: PatchRule) {
+        guard var project = item?.project, let index = project.rules.firstIndex(where: { $0.id == updatedRule.id }) else { return }
+        project.rules[index] = updatedRule
+        project.updatedAt = Date()
+        do {
+            try PatchPackageCodec.validate(project)
+            store.update(project: project)
+        } catch let error as PatchPackageError {
+            actionAlert = PatchStoreAlert(titleKey: "common.failed", messageKey: error.localizationKey, messageArgument: error.localizationArgument)
+        } catch {
+            actionAlert = PatchStoreAlert(titleKey: "common.failed", messageKey: "patch.error.invalid_project")
+        }
+    }
+    private func apply() {
+        guard let item, let baseProject = item.project else { return }
+        isWorking = true
+        Task.detached(priority: .userInitiated) {
+            do {
+                let project = item.summary.schemaVersion >= 2 && item.canInspectContents ? try PatchProjectLibrary.synchronizeWorkspace(item: item) : baseProject
+                _ = try DevicePatchService.apply(project: project)
+                await MainActor.run { store.reload(); isWorking = false; actionAlert = PatchStoreAlert(titleKey: "common.done", messageKey: "patch.applied_message") }
+            } catch let error as PatchPackageError {
+                await MainActor.run { isWorking = false; actionAlert = PatchStoreAlert(titleKey: "common.failed", messageKey: privateErrorKey(for: error), messageArgument: privateErrorArgument(for: error)) }
+            } catch {
+                await MainActor.run { isWorking = false; actionAlert = PatchStoreAlert(titleKey: "common.failed", messageKey: "patch.error.apply") }
+            }
+        }
+    }
+    private func prepareExport() {
+        guard let item else { return }
+        isWorking = true
+        Task.detached(priority: .userInitiated) {
+            do {
+                if item.summary.schemaVersion >= 2, item.canInspectContents { _ = try PatchProjectLibrary.synchronizeWorkspace(item: item) }
+                await MainActor.run { store.reload(); isWorking = false; shareRequest = PatchShareRequest(url: item.packageURL) }
+            } catch let error as PatchPackageError {
+                await MainActor.run { isWorking = false; actionAlert = PatchStoreAlert(titleKey: "common.failed", messageKey: privateErrorKey(for: error), messageArgument: privateErrorArgument(for: error)) }
+            } catch {
+                await MainActor.run { isWorking = false; actionAlert = PatchStoreAlert(titleKey: "common.failed", messageKey: "patch.error.invalid_project") }
+            }
+        }
+    }
+    private var changedRestoreMessage: String {
+        guard item?.project?.isPrivate != true || item?.isAuthorCopy == true else { return language.text("patch.restore_changed_private_message", Int64(restoreChangedPaths.count)) }
+        var visiblePaths = restoreChangedPaths.prefix(5).joined(separator: "\n")
+        if restoreChangedPaths.count > 5 { visiblePaths += "\n…" }
+        return language.text("patch.restore_changed_message", Int64(restoreChangedPaths.count), visiblePaths)
+    }
+    private func prepareRestore() {
+        guard let receipt else { return }
+        isWorking = true
+        Task.detached(priority: .userInitiated) {
+            do {
+                let inspection = try DevicePatchService.inspectRestore(receipt: receipt)
+                if inspection.changedTargets.isEmpty {
+                    try DevicePatchService.restore(receipt: receipt)
+                    await MainActor.run { isWorking = false; actionAlert = PatchStoreAlert(titleKey: "common.done", messageKey: "patch.restored_message") }
+                } else {
+                    await MainActor.run { isWorking = false; restoreChangedPaths = inspection.changedTargets.map(\.displayPath); showChangedRestoreConfirmation = true }
+                }
+            } catch let error as PatchPackageError {
+                await MainActor.run { isWorking = false; actionAlert = PatchStoreAlert(titleKey: "common.failed", messageKey: privateErrorKey(for: error), messageArgument: privateErrorArgument(for: error)) }
+            } catch {
+                await MainActor.run { isWorking = false; actionAlert = PatchStoreAlert(titleKey: "common.failed", messageKey: "patch.error.restore") }
+            }
+        }
+    }
+    private func restore(allowChangedTargets: Bool) {
+        guard let receipt else { return }
+        isWorking = true
+        Task.detached(priority: .userInitiated) {
+            do {
+                try DevicePatchService.restore(receipt: receipt, allowChangedTargets: allowChangedTargets)
+                await MainActor.run { isWorking = false; actionAlert = PatchStoreAlert(titleKey: "common.done", messageKey: "patch.restored_message") }
+            } catch let error as PatchPackageError {
+                await MainActor.run { isWorking = false; actionAlert = PatchStoreAlert(titleKey: "common.failed", messageKey: privateErrorKey(for: error), messageArgument: privateErrorArgument(for: error)) }
+            } catch {
+                await MainActor.run { isWorking = false; actionAlert = PatchStoreAlert(titleKey: "common.failed", messageKey: "patch.error.restore") }
+            }
+        }
+    }
+    private func privateErrorKey(for error: PatchPackageError) -> String { guard item?.project?.isPrivate == true, item?.isAuthorCopy == false else { return error.localizationKey }; return "patch.error.private_operation" }
+    private func privateErrorArgument(for error: PatchPackageError) -> String? { guard item?.project?.isPrivate == true, item?.isAuthorCopy == false else { return error.localizationArgument }; return nil }
+}
+
+private struct PatchShareRequest: Identifiable {
+    let id = UUID()
+    let url: URL
+}
+
+private struct PatchActivityView: UIViewControllerRepresentable {
+    let items: [Any]
+    func makeUIViewController(context: Context) -> UIActivityViewController { UIActivityViewController(activityItems: items, applicationActivities: nil) }
+    func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
 }
