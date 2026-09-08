@@ -43,24 +43,57 @@ final class WebSyncManager: ObservableObject {
     }
 }
 
+// Giao diện hỗ trợ chọn và tải nhiều file cùng lúc từ Web
 struct WebSyncListView: View {
     @StateObject private var syncManager = WebSyncManager()
     @EnvironmentObject private var store: PatchProjectStore
     @Environment(\.dismiss) private var dismiss
+    
+    @State private var selectedURLs: Set<String> = []
+    @State private var isDownloading = false
 
     var body: some View {
         NavigationStack {
-            List(syncManager.serverItems) { item in
-                HStack {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(item.name).font(.headline)
-                        Text("Dung lượng: \(item.size / 1024) KB").font(.caption).foregroundColor(.secondary)
+            VStack {
+                List(syncManager.serverItems, id: \.url, selection: $selectedURLs) { item in
+                    HStack {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(item.name).font(.headline)
+                            Text("Dung lượng: \(item.size / 1024) KB").font(.caption).foregroundColor(.secondary)
+                        }
+                        Spacer()
+                        // Cho phép tích chọn trực tiếp trên danh sách
+                        Toggle("", isOn: Binding(
+                            get: { selectedURLs.contains(item.url) },
+                            set: { isChecked in
+                                if isChecked { selectedURLs.insert(item.url) }
+                                else { selectedURLs.remove(item.url) }
+                            }
+                        ))
+                        .labelsHidden()
                     }
-                    Spacer()
-                    Button("Tải & Import") {
-                        downloadAndImport(item.url)
+                }
+                .environment(\.editMode, .constant(.active)) // Bật chế độ chọn nhiều item trong List
+                
+                // Nút tải hàng loạt các file đã chọn
+                if !selectedURLs.isEmpty {
+                    Button(action: downloadSelectedFiles) {
+                        HStack {
+                            if isDownloading {
+                                ProgressView().tint(.white)
+                            } else {
+                                Text("Tải & Import (\(selectedURLs.count) file)")
+                                    .bold()
+                            }
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding()
+                        .background(Color.accentColor)
+                        .foregroundColor(.white)
+                        .cornerRadius(10)
                     }
-                    .buttonStyle(.borderedProminent)
+                    .padding()
+                    .disabled(isDownloading)
                 }
             }
             .navigationTitle("Kho Patch Từ Web")
@@ -75,19 +108,31 @@ struct WebSyncListView: View {
         }
     }
 
-    private func downloadAndImport(_ urlString: String) {
-        guard let url = URL(string: urlString) else { return }
-        URLSession.shared.downloadTask(with: url) { localURL, _, _ in
-            guard let localURL = localURL else { return }
-            let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent(url.lastPathComponent)
-            try? FileManager.default.removeItem(at: tempURL)
-            try? FileManager.default.moveItem(at: localURL, to: tempURL)
+    private func downloadSelectedFiles() {
+        isDownloading = true
+        let group = DispatchGroup()
+        
+        for urlString in selectedURLs {
+            guard let url = URL(string: urlString) else { continue }
+            group.enter()
             
-            DispatchQueue.main.async {
-                store.importPackage(at: tempURL)
-                dismiss()
-            }
-        }.resume()
+            URLSession.shared.downloadTask(with: url) { localURL, _, _ in
+                defer { group.leave() }
+                guard let localURL = localURL else { return }
+                let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent(url.lastPathComponent)
+                try? FileManager.default.removeItem(at: tempURL)
+                try? FileManager.default.moveItem(at: localURL, to: tempURL)
+                
+                DispatchQueue.main.async {
+                    store.importPackage(at: tempURL)
+                }
+            }.resume()
+        }
+        
+        group.notify(queue: .main) {
+            isDownloading = false
+            dismiss()
+        }
     }
 }
 
@@ -254,7 +299,6 @@ private struct PatchProjectRow: View {
     }
 }
 
-// Bổ sung modifier patchStorePresentation để sửa lỗi ở ContentView.swift
 struct PatchStorePresentationModifier: ViewModifier {
     @ObservedObject var store: PatchProjectStore
 
