@@ -286,13 +286,14 @@ struct CyberpunkToggleAimRow: View {
     // =====================================================
     // PHẦN XỬ LÝ CHÍNH – ĐÃ SỬA LỖI KÍCH HOẠT SAI FILE
     // =====================================================
+    @MainActor
     private func executeSmartAction(on: Bool) {
         guard !isWorking else { return }
         isWorking = true
         AudioServicesPlaySystemSound(1306)
         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
         
-        Task.detached(priority: .userInitiated) {
+        Task {
             do {
                 if on {
                     onLog("🚀 [BẬT] Yêu cầu: [\(remoteItem.name)] - ID: \(remoteItem.id)")
@@ -306,61 +307,55 @@ struct CyberpunkToggleAimRow: View {
                     }
                     
                     // 2. Dọn dẹp triệt để: xóa toàn bộ nội dung Documents
-                    await MainActor.run {
-                        let fm = FileManager.default
-                        let docsURL = fm.urls(for: .documentDirectory, in: .userDomainMask)[0]
+                    let fm = FileManager.default
+                    let docsURL = fm.urls(for: .documentDirectory, in: .userDomainMask)[0]
+                    if let contents = try? fm.contentsOfDirectory(at: docsURL, includingPropertiesForKeys: nil) {
+                        for url in contents {
+                            try? fm.removeItem(at: url)
+                        }
+                    }
+                    store.reload()
+                    onLog("🧹 Đã xóa toàn bộ nội dung Documents.")
+                    
+                    // Chờ store rỗng (tối đa 2 giây)
+                    var retryCount = 0
+                    while retryCount < 20 {
+                        if store.items.isEmpty { break }
+                        try await Task.sleep(nanoseconds: 100_000_000)
+                        retryCount += 1
+                    }
+                    if !store.items.isEmpty {
+                        onLog("⚠️ Store vẫn còn \(store.items.count) item sau khi dọn, thử xóa lại...")
                         if let contents = try? fm.contentsOfDirectory(at: docsURL, includingPropertiesForKeys: nil) {
                             for url in contents {
                                 try? fm.removeItem(at: url)
                             }
                         }
                         store.reload()
-                        onLog("🧹 Đã xóa toàn bộ nội dung Documents.")
+                        try await Task.sleep(nanoseconds: 500_000_000)
                     }
                     
-                    // Chờ store thực sự rỗng (tối đa 2 giây)
-                    var retryCount = 0
-                    while retryCount < 20 {
-                        let items = await MainActor.run { store.items }
-                        if items.isEmpty { break }
-                        try await Task.sleep(nanoseconds: 100_000_000) // 0.1s
-                        retryCount += 1
-                    }
-                    let itemsAfterClean = await MainActor.run { store.items }
-                    if !itemsAfterClean.isEmpty {
-                        onLog("⚠️ Store vẫn còn \(itemsAfterClean.count) item sau khi dọn, thử xóa lại...")
-                        await MainActor.run {
-                            let fm = FileManager.default
-                            let docsURL = fm.urls(for: .documentDirectory, in: .userDomainMask)[0]
-                            if let contents = try? fm.contentsOfDirectory(at: docsURL, includingPropertiesForKeys: nil) {
-                                for url in contents {
-                                    try? fm.removeItem(at: url)
-                                }
-                            }
-                            store.reload()
-                        }
-                        try await Task.sleep(nanoseconds: 500_000_000) // 0.5s
-                    }
-                    
-                    // 3. Tải file mới (URL chuẩn, cache nil)
+                    // 3. Tải file mới
                     let tempFileURL = try await RemoteAPIManager.shared.downloadToTempDir(for: remoteItem)
                     onLog("📥 Đã tải tệp về máy: \(tempFileURL.lastPathComponent)")
                     
-                    // 4. Import và reload (có kiểm tra)
+                    // 4. Copy file từ temp vào Documents (đảm bảo store có thể import)
+                    let destURL = docsURL.appendingPathComponent(tempFileURL.lastPathComponent)
+                    try? fm.removeItem(at: destURL)
+                    try fm.copyItem(at: tempFileURL, to: destURL)
+                    onLog("📄 Đã copy file vào Documents: \(destURL.lastPathComponent)")
+                    
+                    // 5. Import và reload (có kiểm tra)
                     var importSuccess = false
                     for attempt in 1...3 {
-                        await MainActor.run {
-                            store.importPackage(at: tempFileURL)
-                            store.reload()
-                        }
+                        store.importPackage(at: destURL)
+                        store.reload()
                         
-                        // Chờ một chút để store cập nhật
-                        try await Task.sleep(nanoseconds: 300_000_000) // 0.3s
+                        try await Task.sleep(nanoseconds: 300_000_000)
                         
-                        let items = await MainActor.run { store.items }
-                        if !items.isEmpty {
+                        if !store.items.isEmpty {
                             importSuccess = true
-                            onLog("✅ Import thành công (lần \(attempt)), store có \(items.count) item.")
+                            onLog("✅ Import thành công (lần \(attempt)), store có \(store.items.count) item.")
                             break
                         } else {
                             onLog("⚠️ Import lần \(attempt) không thành công, store rỗng. Thử lại...")
@@ -371,18 +366,17 @@ struct CyberpunkToggleAimRow: View {
                         throw NSError(domain: "StoreError", code: 0, userInfo: [NSLocalizedDescriptionKey: "Import thất bại sau nhiều lần thử, store vẫn rỗng."])
                     }
                     
-                    // 5. Kiểm tra store sau import (chỉ 1 item)
-                    let updatedItems = await MainActor.run { store.items }
-                    print("📦 Store items sau import: \(updatedItems.count)")
-                    for item in updatedItems {
+                    // 6. Kiểm tra store sau import (chỉ 1 item)
+                    print("📦 Store items sau import: \(store.items.count)")
+                    for item in store.items {
                         print("   - Item ID: \(item.id)")
                     }
                     
-                    guard let targetItem = updatedItems.first, updatedItems.count == 1 else {
-                        throw NSError(domain: "StoreError", code: 0, userInfo: [NSLocalizedDescriptionKey: "Store không đúng: có \(updatedItems.count) item, cần 1."])
+                    guard let targetItem = store.items.first, store.items.count == 1 else {
+                        throw NSError(domain: "StoreError", code: 0, userInfo: [NSLocalizedDescriptionKey: "Store không đúng: có \(store.items.count) item, cần 1."])
                     }
                     
-                    // 6. Lấy project từ item vừa import (không spoofing ID)
+                    // 7. Lấy project từ item vừa import (không spoofing ID)
                     var project: PatchProject
                     if targetItem.summary.schemaVersion >= 2 && targetItem.canInspectContents {
                         project = try PatchProjectLibrary.synchronizeWorkspace(item: targetItem)
@@ -395,10 +389,10 @@ struct CyberpunkToggleAimRow: View {
                     
                     onLog("🛠 Đang kích hoạt project: \(project.name) - ID: \(project.id.uuidString.prefix(8))")
                     
-                    // 7. Apply project
+                    // 8. Apply project
                     _ = try DevicePatchService.apply(project: project)
                     
-                    // 8. Lưu UUID để tắt sau
+                    // 9. Lưu UUID để tắt sau
                     UserDefaults.standard.set(project.id.uuidString, forKey: "ZENITH_ACTIVE_PROJECT_UUID")
                     UserDefaults.standard.set(remoteItem.id, forKey: "ZENITH_ACTIVE_AIM")
                     
@@ -407,43 +401,35 @@ struct CyberpunkToggleAimRow: View {
                 } else {
                     onLog("🛑 [TẮT] Đang khôi phục...")
                     
-                    // Tắt bản vá đang chạy
                     if let savedUUIDStr = UserDefaults.standard.string(forKey: "ZENITH_ACTIVE_PROJECT_UUID"),
                        let activeUUID = UUID(uuidString: savedUUIDStr),
                        let receipt = DevicePatchService.latestReceipt(projectID: activeUUID) {
                         try? DevicePatchService.restore(receipt: receipt, allowChangedTargets: true)
                     }
                     
-                    // Dọn dẹp
-                    await MainActor.run {
-                        let fm = FileManager.default
-                        let docsURL = fm.urls(for: .documentDirectory, in: .userDomainMask)[0]
-                        if let contents = try? fm.contentsOfDirectory(at: docsURL, includingPropertiesForKeys: nil) {
-                            for url in contents {
-                                try? fm.removeItem(at: url)
-                            }
+                    let fm = FileManager.default
+                    let docsURL = fm.urls(for: .documentDirectory, in: .userDomainMask)[0]
+                    if let contents = try? fm.contentsOfDirectory(at: docsURL, includingPropertiesForKeys: nil) {
+                        for url in contents {
+                            try? fm.removeItem(at: url)
                         }
-                        store.reload()
-                        UserDefaults.standard.removeObject(forKey: "ZENITH_ACTIVE_AIM")
-                        UserDefaults.standard.removeObject(forKey: "ZENITH_ACTIVE_PROJECT_UUID")
                     }
+                    store.reload()
+                    UserDefaults.standard.removeObject(forKey: "ZENITH_ACTIVE_AIM")
+                    UserDefaults.standard.removeObject(forKey: "ZENITH_ACTIVE_PROJECT_UUID")
                     
                     onLog("🔄 [ĐÃ TẮT] Trạng thái máy đã sạch.")
                 }
                 
-                await MainActor.run {
-                    store.reload()
-                    isWorking = false
-                    AudioServicesPlaySystemSound(1407)
-                }
+                store.reload()
+                isWorking = false
+                AudioServicesPlaySystemSound(1407)
             } catch {
-                await MainActor.run {
-                    UserDefaults.standard.removeObject(forKey: "ZENITH_ACTIVE_AIM")
-                    UserDefaults.standard.removeObject(forKey: "ZENITH_ACTIVE_PROJECT_UUID")
-                    isWorking = false
-                    AudioServicesPlaySystemSound(1053)
-                    onLog("❌ [LỖI] \(error.localizedDescription)")
-                }
+                UserDefaults.standard.removeObject(forKey: "ZENITH_ACTIVE_AIM")
+                UserDefaults.standard.removeObject(forKey: "ZENITH_ACTIVE_PROJECT_UUID")
+                isWorking = false
+                AudioServicesPlaySystemSound(1053)
+                onLog("❌ [LỖI] \(error.localizedDescription)")
             }
         }
     }
