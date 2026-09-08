@@ -3,11 +3,10 @@ import UIKit
 import UniformTypeIdentifiers
 import AudioToolbox
 
-// MARK: - 1. SMART REMOTE API MANAGER (đã sửa URL download, cache, tên file)
+// MARK: - 1. SMART REMOTE API MANAGER (cache nil, URL chuẩn)
 class RemoteAPIManager {
     static let shared = RemoteAPIManager()
     
-    // Tạo URLSession với cache nil để không bao giờ dùng cache
     private let session: URLSession = {
         let config = URLSessionConfiguration.ephemeral
         config.urlCache = nil
@@ -35,7 +34,6 @@ class RemoteAPIManager {
     }
     
     func downloadToTempDir(for remoteItem: RemoteAimItem) async throws -> URL {
-        // Dùng URL gốc và thêm query id (nếu server cần)
         guard var urlComponents = URLComponents(string: remoteItem.url) else {
             throw APIError.invalidURL
         }
@@ -58,11 +56,9 @@ class RemoteAPIManager {
             throw APIError.serverError
         }
         
-        // In ra vài byte đầu để kiểm tra xem nội dung có khác nhau không
         let preview = data.prefix(20).map { String(format: "%02x", $0) }.joined()
         print("   Kích thước: \(data.count) bytes, 20 byte đầu: \(preview)")
         
-        // Tạo tên file duy nhất bằng UUID để tránh trùng
         let tempDir = FileManager.default.temporaryDirectory
         let uniqueName = "ZENITH_\(remoteItem.id)_\(UUID().uuidString).3105"
         let fileURL = tempDir.appendingPathComponent(uniqueName)
@@ -309,34 +305,75 @@ struct CyberpunkToggleAimRow: View {
                         onLog("🔄 Đã tắt bản vá cũ.")
                     }
                     
-                    // 2. Dọn dẹp file cũ (xóa cả Workspaces và file .3105)
+                    // 2. Dọn dẹp triệt để: xóa toàn bộ nội dung Documents
                     await MainActor.run {
-                        let docsURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-                        let workspacesURL = docsURL.appendingPathComponent("Workspaces")
-                        try? FileManager.default.removeItem(at: workspacesURL)
-                        
-                        let contents = (try? FileManager.default.contentsOfDirectory(at: docsURL, includingPropertiesForKeys: nil)) ?? []
-                        for url in contents where url.pathExtension == "3105" {
-                            try? FileManager.default.removeItem(at: url)
+                        let fm = FileManager.default
+                        let docsURL = fm.urls(for: .documentDirectory, in: .userDomainMask)[0]
+                        if let contents = try? fm.contentsOfDirectory(at: docsURL, includingPropertiesForKeys: nil) {
+                            for url in contents {
+                                try? fm.removeItem(at: url)
+                            }
                         }
-                        store.reload() // reload sẽ cập nhật items = [] vì không còn file
-                        onLog("🧹 Đã dọn sạch máy 100%.")
+                        store.reload()
+                        onLog("🧹 Đã xóa toàn bộ nội dung Documents.")
+                    }
+                    
+                    // Chờ store thực sự rỗng (tối đa 2 giây)
+                    var retryCount = 0
+                    while retryCount < 20 {
+                        let items = await MainActor.run { store.items }
+                        if items.isEmpty { break }
+                        try await Task.sleep(nanoseconds: 100_000_000) // 0.1s
+                        retryCount += 1
+                    }
+                    let itemsAfterClean = await MainActor.run { store.items }
+                    if !itemsAfterClean.isEmpty {
+                        onLog("⚠️ Store vẫn còn \(itemsAfterClean.count) item sau khi dọn, thử xóa lại...")
+                        await MainActor.run {
+                            let fm = FileManager.default
+                            let docsURL = fm.urls(for: .documentDirectory, in: .userDomainMask)[0]
+                            if let contents = try? fm.contentsOfDirectory(at: docsURL, includingPropertiesForKeys: nil) {
+                                for url in contents {
+                                    try? fm.removeItem(at: url)
+                                }
+                            }
+                            store.reload()
+                        }
+                        try await Task.sleep(nanoseconds: 500_000_000) // 0.5s
                     }
                     
                     // 3. Tải file mới (URL chuẩn, cache nil)
                     let tempFileURL = try await RemoteAPIManager.shared.downloadToTempDir(for: remoteItem)
                     onLog("📥 Đã tải tệp về máy: \(tempFileURL.lastPathComponent)")
                     
-                    // 4. Import và reload
-                    await MainActor.run {
-                        store.importPackage(at: tempFileURL)
-                        store.reload()
+                    // 4. Import và reload (có kiểm tra)
+                    var importSuccess = false
+                    for attempt in 1...3 {
+                        await MainActor.run {
+                            store.importPackage(at: tempFileURL)
+                            store.reload()
+                        }
+                        
+                        // Chờ một chút để store cập nhật
+                        try await Task.sleep(nanoseconds: 300_000_000) // 0.3s
+                        
+                        let items = await MainActor.run { store.items }
+                        if !items.isEmpty {
+                            importSuccess = true
+                            onLog("✅ Import thành công (lần \(attempt)), store có \(items.count) item.")
+                            break
+                        } else {
+                            onLog("⚠️ Import lần \(attempt) không thành công, store rỗng. Thử lại...")
+                        }
+                    }
+                    
+                    if !importSuccess {
+                        throw NSError(domain: "StoreError", code: 0, userInfo: [NSLocalizedDescriptionKey: "Import thất bại sau nhiều lần thử, store vẫn rỗng."])
                     }
                     
                     // 5. Kiểm tra store sau import (chỉ 1 item)
                     let updatedItems = await MainActor.run { store.items }
                     print("📦 Store items sau import: \(updatedItems.count)")
-                    // In ID của từng item nếu có thể
                     for item in updatedItems {
                         print("   - Item ID: \(item.id)")
                     }
@@ -379,13 +416,12 @@ struct CyberpunkToggleAimRow: View {
                     
                     // Dọn dẹp
                     await MainActor.run {
-                        let docsURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-                        let workspacesURL = docsURL.appendingPathComponent("Workspaces")
-                        try? FileManager.default.removeItem(at: workspacesURL)
-                        
-                        let contents = (try? FileManager.default.contentsOfDirectory(at: docsURL, includingPropertiesForKeys: nil)) ?? []
-                        for url in contents where url.pathExtension == "3105" {
-                            try? FileManager.default.removeItem(at: url)
+                        let fm = FileManager.default
+                        let docsURL = fm.urls(for: .documentDirectory, in: .userDomainMask)[0]
+                        if let contents = try? fm.contentsOfDirectory(at: docsURL, includingPropertiesForKeys: nil) {
+                            for url in contents {
+                                try? fm.removeItem(at: url)
+                            }
                         }
                         store.reload()
                         UserDefaults.standard.removeObject(forKey: "ZENITH_ACTIVE_AIM")
