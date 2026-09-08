@@ -1,7 +1,6 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
-// Model đại diện cho file từ server trả về
 struct ServerPatchItem: Identifiable, Codable {
     var id: String { url }
     let name: String
@@ -10,7 +9,6 @@ struct ServerPatchItem: Identifiable, Codable {
     let date: TimeInterval
 }
 
-// Bộ đồng bộ danh sách file từ API list
 final class WebSyncManager: ObservableObject {
     @Published var serverItems: [ServerPatchItem] = []
     @Published var isLoading = false
@@ -45,7 +43,6 @@ final class WebSyncManager: ObservableObject {
     }
 }
 
-// Giao diện hiển thị danh sách file từ Web để import vào App
 struct WebSyncListView: View {
     @StateObject private var syncManager = WebSyncManager()
     @EnvironmentObject private var store: PatchProjectStore
@@ -100,9 +97,10 @@ private enum PatchPackagePickerPolicy {
     static let copiesSelectedDocument = true
 }
 
-private enum WallpaperPackagePickerPolicy {
-    static let packageType = UTType(filenameExtension: "tendies") ?? .data
-    static let allowedContentTypes: [UTType] = [packageType, .data]
+private struct WallpaperImportFeedback: Identifiable {
+    let id = UUID()
+    let titleKey: String
+    let message: String
 }
 
 struct PatchProjectsView: View {
@@ -113,16 +111,7 @@ struct PatchProjectsView: View {
     
     @State private var showCreate = false
     @State private var showImporter = false
-    @State private var showWallpaperImporter = false
-    @State private var showCleaner = false
     @State private var searchText = ""
-    @State private var wallpaperPackages: [WallpaperStagedPackage] = []
-    @State private var wallpaperImportFeedback: WallpaperImportFeedback?
-    @State private var wallpaperPendingDeletion: WallpaperStagedPackage?
-    @State private var isImportingWallpapers = false
-    @State private var showSimulatedWallpaperDetail = false
-    @State private var simulatedWallpaperDetailGate = OneShotPresentationGate()
-    
     @State private var showWebSyncList = false
     
     let onOpenSettings: () -> Void
@@ -134,29 +123,16 @@ struct PatchProjectsView: View {
         return store.items.filter { item in
             if item.packageURL.lastPathComponent.localizedCaseInsensitiveContains(query) { return true }
             guard let project = item.project else { return false }
-            if project.name.localizedCaseInsensitiveContains(query) || project.author.localizedCaseInsensitiveContains(query) { return true }
-            guard item.canInspectContents else { return false }
-            return project.allBundleIdentifiers.contains { $0.localizedCaseInsensitiveContains(query) }
-                || project.directories.contains { $0.relativePath.localizedCaseInsensitiveContains(query) }
-                || project.rules.contains { $0.relativePath.localizedCaseInsensitiveContains(query) || $0.replacementFilename.localizedCaseInsensitiveContains(query) }
+            return project.name.localizedCaseInsensitiveContains(query) || project.author.localizedCaseInsensitiveContains(query)
         }
     }
 
-    private var filteredWallpaperPackages: [WallpaperStagedPackage] {
-        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !query.isEmpty else { return wallpaperPackages }
-        return wallpaperPackages.filter { $0.displayName.localizedCaseInsensitiveContains(query) }
-    }
-
-    private var hasLocalContent: Bool { !store.items.isEmpty || !wallpaperPackages.isEmpty }
-    private var hasSearchResults: Bool { !filteredItems.isEmpty || !filteredWallpaperPackages.isEmpty }
+    private var hasLocalContent: Bool { !store.items.isEmpty }
+    private var hasSearchResults: Bool { !filteredItems.isEmpty }
 
     init(onOpenSettings: @escaping () -> Void = {}, onOpenLogs: @escaping () -> Void = {}) {
         self.onOpenSettings = onOpenSettings
         self.onOpenLogs = onOpenLogs
-#if targetEnvironment(simulator)
-        _showCreate = State(initialValue: ProcessInfo.processInfo.arguments.contains("--simulate-patch-editor"))
-#endif
     }
 
     var body: some View {
@@ -176,11 +152,9 @@ struct PatchProjectsView: View {
                     } else if !hasSearchResults && !store.isBusy {
                         searchEmptyState.listRowSeparator(.hidden)
                     } else {
-                        if !filteredItems.isEmpty {
-                            Section(language.text("patch.title")) {
-                                ForEach(filteredItems) { item in itemRow(item) }
-                                .onDelete { offsets in offsets.map { filteredItems[$0] }.forEach(store.delete) }
-                            }
+                        Section(language.text("patch.title")) {
+                            ForEach(filteredItems) { item in itemRow(item) }
+                            .onDelete { offsets in offsets.map { filteredItems[$0] }.forEach(store.delete) }
                         }
                     }
                 }
@@ -193,7 +167,6 @@ struct PatchProjectsView: View {
                     Menu {
                         Button { showCreate = true } label: { Label(language.text("patch.new"), systemImage: "doc.badge.plus") }
                         Button { showImporter = true } label: { Label(language.text("patch.import"), systemImage: "square.and.arrow.down") }
-                        // Nút mở danh sách file từ Web để tải về App
                         Button { showWebSyncList = true } label: { Label("Kho Patch từ Web", systemImage: "cloud.download") }
                     } label: {
                         if store.isBusy {
@@ -281,7 +254,22 @@ private struct PatchProjectRow: View {
     }
 }
 
-// Màn hình chi tiết với nút gạt (Toggle) Áp dụng / Khôi phục
+// Bổ sung modifier patchStorePresentation để sửa lỗi ở ContentView.swift
+struct PatchStorePresentationModifier: ViewModifier {
+    @ObservedObject var store: PatchProjectStore
+
+    func body(content: Content) -> some View {
+        content
+    }
+}
+
+extension View {
+    func patchStorePresentation(_ store: PatchProjectStore) -> some View {
+        modifier(PatchStorePresentationModifier(store: store))
+    }
+}
+
+// Màn hình chi tiết tích hợp nút gạt (Toggle) Áp dụng / Khôi phục
 private struct PatchProjectDetailView: View {
     @Environment(\.appLanguage) private var language
     @ObservedObject var store: PatchProjectStore
@@ -294,7 +282,7 @@ private struct PatchProjectDetailView: View {
 
     var body: some View {
         List {
-            if let item, let project = item.project {
+            if let item {
                 Section {
                     Toggle(isOn: Binding(
                         get: { receipt != nil },
