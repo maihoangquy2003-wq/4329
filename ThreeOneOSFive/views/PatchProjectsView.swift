@@ -2,32 +2,6 @@ import SwiftUI
 import UIKit
 import UniformTypeIdentifiers
 
-// MARK: - ZENITH BYPASS HELPER (Cho phép add nhiều file trùng lặp không bị Store nuốt)
-enum ZenithBypassHelper {
-    static func mutateDataStrictly(data: Data, uniqueKey: String, customName: String) -> Data {
-        var mutableData = data
-        if var json = try? JSONSerialization.jsonObject(with: mutableData, options: .mutableContainers) as? [String: Any] {
-            json["id"] = UUID().uuidString
-            json["name"] = "\(customName) [\(uniqueKey)]"
-            json["uuid"] = UUID().uuidString
-            json["zenith_salt"] = UUID().uuidString
-            if let newData = try? JSONSerialization.data(withJSONObject: json, options: []) {
-                return newData
-            }
-        }
-        if var plist = try? PropertyListSerialization.propertyList(from: mutableData, options: .mutableContainersAndLeaves, format: nil) as? [String: Any] {
-            plist["id"] = UUID().uuidString
-            plist["name"] = "\(customName) [\(uniqueKey)]"
-            plist["uuid"] = UUID().uuidString
-            if let newData = try? PropertyListSerialization.data(fromPropertyList: plist, format: .xml, options: 0) {
-                return newData
-            }
-        }
-        mutableData.append(UUID().uuidString.data(using: .utf8) ?? Data())
-        return mutableData
-    }
-}
-
 private enum PatchPackagePickerPolicy {
     static let packageType = UTType(filenameExtension: "3105") ?? .data
     static let allowedContentTypes: [UTType] = [packageType, .data]
@@ -222,25 +196,11 @@ struct PatchProjectsView: View {
                 FileDocumentPicker(
                     allowedContentTypes: PatchPackagePickerPolicy.allowedContentTypes,
                     copiesSelectedDocument: PatchPackagePickerPolicy.copiesSelectedDocument,
-                    allowsMultipleSelection: true, // Cho phép chọn nhiều file cùng lúc
+                    allowsMultipleSelection: false,
                     onSelection: { result in
                         showImporter = false
-                        if case .success(let urls) = result, !urls.isEmpty {
-                            for url in urls {
-                                do {
-                                    // Đọc dữ liệu thô và bẻ khóa chống trùng lặp để Store nhận diện là file mới độc lập
-                                    let data = try Data(contentsOf: url)
-                                    let originalName = url.deletingPathExtension().lastPathComponent
-                                    let mutatedData = ZenithBypassHelper.mutateDataStrictly(data: data, uniqueKey: UUID().uuidString.prefix(4).description, customName: originalName)
-                                    
-                                    let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent("Zenith_Multi_\(UUID().uuidString.prefix(6)).3105")
-                                    try mutatedData.write(to: tempURL)
-                                    
-                                    store.importPackage(at: tempURL)
-                                } catch {
-                                    store.importPackage(at: url)
-                                }
-                            }
+                        if case .success(let urls) = result, let url = urls.first {
+                            store.importPackage(at: url)
                         }
                     },
                     onCancel: {
