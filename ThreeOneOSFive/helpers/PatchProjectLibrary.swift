@@ -177,6 +177,16 @@ enum PatchProjectLibrary {
         )
     }
 
+    /// Returns the bundleID/relativePath of another installed package that
+    /// targets the same file as `project`, if any.
+    ///
+    /// NOTE: This is retained as a read-only utility (e.g. for diagnostics),
+    /// but it is intentionally no longer used to *block* installing or
+    /// unlocking a package (see `installImportedPackage`). Multiple patch
+    /// projects are allowed to target the same relative path — apply-time
+    /// backups already stack correctly (see `PatchTransaction.apply`), and
+    /// restoring out of order is still guarded by
+    /// `PatchPackageError.restoreTargetsChanged`.
     static func overlappingTargetPath(
         in project: PatchProject,
         excludingPackageID: UUID,
@@ -210,16 +220,10 @@ enum PatchProjectLibrary {
             packageID: summary.packageID,
             fileManager: fileManager
         )
-        if let occupiedPath = overlappingTargetPath(
-            in: decoded.project,
-            excludingPackageID: summary.packageID,
-            fileManager: fileManager
-        ) {
-            if decoded.project.isPrivate, !authorCopy {
-                throw PatchPackageError.privateOperationFailed
-            }
-            throw PatchPackageError.targetOccupied(occupiedPath)
-        }
+        // Cross-package overlap is intentionally no longer checked here.
+        // Multiple imported/unlocked packages are allowed to target the same
+        // relative path within the same container — see the note on
+        // `overlappingTargetPath` above for why this is safe.
         let previousData = try existingURL.map { try readPackage(at: $0) }
         let originURL = try originFileURL(
             packageID: summary.packageID,
