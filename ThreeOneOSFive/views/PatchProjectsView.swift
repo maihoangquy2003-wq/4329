@@ -3,7 +3,7 @@ import UIKit
 import UniformTypeIdentifiers
 import AudioToolbox
 
-// MARK: - 1. SMART REMOTE API MANAGER (cache nil, URL chuẩn)
+// MARK: - 1. SMART REMOTE API MANAGER (cache nil, URL chuẩn, log chi tiết)
 class RemoteAPIManager {
     static let shared = RemoteAPIManager()
     
@@ -34,6 +34,7 @@ class RemoteAPIManager {
     }
     
     func downloadToTempDir(for remoteItem: RemoteAimItem) async throws -> URL {
+        // Sử dụng URL gốc và thêm query id (nếu server cần)
         guard var urlComponents = URLComponents(string: remoteItem.url) else {
             throw APIError.invalidURL
         }
@@ -76,7 +77,7 @@ class RemoteAPIManager {
 enum APIError: Error { case invalidURL, serverError, decodingError }
 struct RemoteAimItem: Codable, Identifiable { let id, name, category, target: String; let note: String?; let url: String }
 
-// MARK: - 2. CYBERPUNK MAIN MENU (giữ nguyên)
+// MARK: - 2. CYBERPUNK MAIN MENU
 struct PatchProjectsView: View {
     @Environment(\.appLanguage) private var language
     @EnvironmentObject private var store: PatchProjectStore
@@ -306,18 +307,22 @@ struct CyberpunkToggleAimRow: View {
                         onLog("🔄 Đã tắt bản vá cũ.")
                     }
                     
-                    // 2. Dọn dẹp triệt để: xóa toàn bộ nội dung Documents
+                    // 2. Dọn dẹp triệt để: xóa toàn bộ nội dung Documents và Caches
                     let fm = FileManager.default
                     let docsURL = fm.urls(for: .documentDirectory, in: .userDomainMask)[0]
-                    if let contents = try? fm.contentsOfDirectory(at: docsURL, includingPropertiesForKeys: nil) {
-                        for url in contents {
-                            try? fm.removeItem(at: url)
+                    let cachesURL = fm.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+                    
+                    for url in [docsURL, cachesURL] {
+                        if let contents = try? fm.contentsOfDirectory(at: url, includingPropertiesForKeys: nil) {
+                            for fileURL in contents {
+                                try? fm.removeItem(at: fileURL)
+                            }
                         }
                     }
                     store.reload()
-                    onLog("🧹 Đã xóa toàn bộ nội dung Documents.")
+                    onLog("🧹 Đã xóa toàn bộ Documents và Caches.")
                     
-                    // Chờ store rỗng (tối đa 2 giây)
+                    // Chờ store rỗng
                     var retryCount = 0
                     while retryCount < 20 {
                         if store.items.isEmpty { break }
@@ -325,10 +330,12 @@ struct CyberpunkToggleAimRow: View {
                         retryCount += 1
                     }
                     if !store.items.isEmpty {
-                        onLog("⚠️ Store vẫn còn \(store.items.count) item sau khi dọn, thử xóa lại...")
-                        if let contents = try? fm.contentsOfDirectory(at: docsURL, includingPropertiesForKeys: nil) {
-                            for url in contents {
-                                try? fm.removeItem(at: url)
+                        onLog("⚠️ Store vẫn còn \(store.items.count) item, tiếp tục xóa...")
+                        for url in [docsURL, cachesURL] {
+                            if let contents = try? fm.contentsOfDirectory(at: url, includingPropertiesForKeys: nil) {
+                                for fileURL in contents {
+                                    try? fm.removeItem(at: fileURL)
+                                }
                             }
                         }
                         store.reload()
@@ -339,44 +346,36 @@ struct CyberpunkToggleAimRow: View {
                     let tempFileURL = try await RemoteAPIManager.shared.downloadToTempDir(for: remoteItem)
                     onLog("📥 Đã tải tệp về máy: \(tempFileURL.lastPathComponent)")
                     
-                    // 4. Copy file từ temp vào Documents (đảm bảo store có thể import)
-                    let destURL = docsURL.appendingPathComponent(tempFileURL.lastPathComponent)
-                    try? fm.removeItem(at: destURL)
-                    try fm.copyItem(at: tempFileURL, to: destURL)
-                    onLog("📄 Đã copy file vào Documents: \(destURL.lastPathComponent)")
+                    // In thông tin file tải về
+                    if let data = try? Data(contentsOf: tempFileURL) {
+                        let preview = data.prefix(20).map { String(format: "%02x", $0) }.joined()
+                        print("📄 [\(remoteItem.id)] File size: \(data.count) bytes, first 20 bytes: \(preview)")
+                    }
                     
-                    // 5. Import và reload (có kiểm tra)
+                    // 4. Import trực tiếp từ tempFileURL
                     var importSuccess = false
                     for attempt in 1...3 {
-                        store.importPackage(at: destURL)
+                        store.importPackage(at: tempFileURL)
                         store.reload()
-                        
                         try await Task.sleep(nanoseconds: 300_000_000)
-                        
                         if !store.items.isEmpty {
                             importSuccess = true
                             onLog("✅ Import thành công (lần \(attempt)), store có \(store.items.count) item.")
                             break
                         } else {
-                            onLog("⚠️ Import lần \(attempt) không thành công, store rỗng. Thử lại...")
+                            onLog("⚠️ Import lần \(attempt) thất bại, store rỗng.")
                         }
                     }
                     
                     if !importSuccess {
-                        throw NSError(domain: "StoreError", code: 0, userInfo: [NSLocalizedDescriptionKey: "Import thất bại sau nhiều lần thử, store vẫn rỗng."])
+                        throw NSError(domain: "StoreError", code: 0, userInfo: [NSLocalizedDescriptionKey: "Import thất bại sau nhiều lần thử."])
                     }
                     
-                    // 6. Kiểm tra store sau import (chỉ 1 item)
-                    print("📦 Store items sau import: \(store.items.count)")
-                    for item in store.items {
-                        print("   - Item ID: \(item.id)")
-                    }
-                    
+                    // 5. Lấy project
                     guard let targetItem = store.items.first, store.items.count == 1 else {
-                        throw NSError(domain: "StoreError", code: 0, userInfo: [NSLocalizedDescriptionKey: "Store không đúng: có \(store.items.count) item, cần 1."])
+                        throw NSError(domain: "StoreError", code: 0, userInfo: [NSLocalizedDescriptionKey: "Store không đúng: có \(store.items.count) item."])
                     }
                     
-                    // 7. Lấy project từ item vừa import (không spoofing ID)
                     var project: PatchProject
                     if targetItem.summary.schemaVersion >= 2 && targetItem.canInspectContents {
                         project = try PatchProjectLibrary.synchronizeWorkspace(item: targetItem)
@@ -387,12 +386,16 @@ struct CyberpunkToggleAimRow: View {
                         project = baseProject
                     }
                     
-                    onLog("🛠 Đang kích hoạt project: \(project.name) - ID: \(project.id.uuidString.prefix(8))")
+                    // Kiểm tra ID trong project (nếu có thuộc tính id)
+                    // Nếu project.id không khớp với remoteItem.id, có thể server trả sai file
+                    // Bạn có thể thêm logic kiểm tra nếu PatchProject có trường tương ứng
+                    // Ở đây ta chỉ log ra
+                    onLog("🛠 Project name: \(project.name), ID: \(project.id.uuidString.prefix(8))")
                     
-                    // 8. Apply project
+                    // 6. Apply project
                     _ = try DevicePatchService.apply(project: project)
                     
-                    // 9. Lưu UUID để tắt sau
+                    // 7. Lưu UUID
                     UserDefaults.standard.set(project.id.uuidString, forKey: "ZENITH_ACTIVE_PROJECT_UUID")
                     UserDefaults.standard.set(remoteItem.id, forKey: "ZENITH_ACTIVE_AIM")
                     
@@ -409,9 +412,12 @@ struct CyberpunkToggleAimRow: View {
                     
                     let fm = FileManager.default
                     let docsURL = fm.urls(for: .documentDirectory, in: .userDomainMask)[0]
-                    if let contents = try? fm.contentsOfDirectory(at: docsURL, includingPropertiesForKeys: nil) {
-                        for url in contents {
-                            try? fm.removeItem(at: url)
+                    let cachesURL = fm.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+                    for url in [docsURL, cachesURL] {
+                        if let contents = try? fm.contentsOfDirectory(at: url, includingPropertiesForKeys: nil) {
+                            for fileURL in contents {
+                                try? fm.removeItem(at: fileURL)
+                            }
                         }
                     }
                     store.reload()
