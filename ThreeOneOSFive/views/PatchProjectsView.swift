@@ -24,7 +24,8 @@ class RemoteAPIManager {
         return try JSONDecoder().decode([RemoteAimItem].self, from: data)
     }
     
-    func downloadFileForTarget(remoteItem: RemoteAimItem, onLog: @escaping (String) -> Void) async throws -> URL {
+    // Tải file về, sau đó can thiệp sửa đổi trực tiếp metadata bên trong ruột file để đổi ID và Tên nội bộ chống trùng
+    func downloadAndMutateFile(remoteItem: RemoteAimItem, onLog: @escaping (String) -> Void) async throws -> URL {
         let urlString = "\(remoteItem.url)?action=download&id=\(remoteItem.id)&nocache=\(Date().timeIntervalSince1970)"
         onLog("🌐 [API URL]: \(urlString)")
         
@@ -39,15 +40,27 @@ class RemoteAPIManager {
             throw APIError.serverError
         }
         
+        // ĐẶC TRỊ TẬN GỐC: Can thiệp sửa đổi nội dung JSON bên trong ruột file .3105
+        var finalData = data
+        if var json = try? JSONSerialization.jsonObject(with: data, options: .mutableContainers) as? [String: Any] {
+            // Ép đổi ID và Tên bên trong ruột thành ID thực tế của nút bạn đang bấm
+            json["id"] = UUID().uuidString
+            json["name"] = "\(remoteItem.name) [\(remoteItem.id)]"
+            if let modifiedData = try? JSONSerialization.data(withJSONObject: json, options: []) {
+                finalData = modifiedData
+                onLog("✨ [MUTATE]: Đã bẻ khóa và đổi ID/Tên ruột file thành công.")
+            }
+        }
+        
         let tempDir = FileManager.default.temporaryDirectory
-        let uniqueFileName = "Zenith_\(remoteItem.id)_\(UUID().uuidString.prefix(6)).3105"
+        let uniqueFileName = "Zenith_Forced_\(remoteItem.id)_\(UUID().uuidString.prefix(4)).3105"
         let fileURL = tempDir.appendingPathComponent(uniqueFileName)
         
         if FileManager.default.fileExists(atPath: fileURL.path) {
             try? FileManager.default.removeItem(at: fileURL)
         }
-        try data.write(to: fileURL)
-        onLog("📂 [TẢI THÀNH CÔNG]: Lưu tại tạm -> \(uniqueFileName) (Dung lượng: \(data.count) bytes)")
+        try finalData.write(to: fileURL)
+        onLog("📂 [LƯU TẠM]: \(uniqueFileName) (Size: \(finalData.count) bytes)")
         return fileURL
     }
 }
@@ -69,7 +82,7 @@ struct PatchProjectsView: View {
     @State private var isFetching = false
     @State private var avatarRotation: Double = 0.0
     
-    @State private var debugLogs: [String] = ["🚀 Console Debug sẵn sàng..."]
+    @State private var debugLogs: [String] = ["🚀 Console Đã sẵn sàng..."]
     @State private var showDebugConsole = false
 
     var body: some View {
@@ -118,7 +131,6 @@ struct PatchProjectsView: View {
                                 Spacer()
                                 Button("Xóa") { debugLogs.removeAll() }.font(.caption2).foregroundColor(.gray)
                             }
-                            // Hiển thị tối đa 20 dòng log rõ ràng
                             ForEach(debugLogs.prefix(20), id: \.self) { log in
                                 Text(log).font(.system(size: 8, design: .monospaced)).foregroundColor(log.contains("❌") ? .red : (log.contains("✅") ? .green : (log.contains("🚀") ? .yellow : .white)))
                             }
@@ -205,7 +217,7 @@ struct PatchProjectsView: View {
         do {
             remoteItems = try await RemoteAPIManager.shared.fetchRemoteItems()
             if !dynamicTabs.contains(selectedTab), let first = dynamicTabs.first { selectedTab = first }
-            appendLog("✅ [SYNC] Lấy thành công danh sách server (\(remoteItems.count) mục).")
+            appendLog("✅ [SYNC]: Tải danh sách thành công (\(remoteItems.count) mục).")
         } catch {
             appendLog("❌ [SYNC ERROR]: \(error.localizedDescription)")
         }
@@ -217,7 +229,7 @@ struct PatchProjectsView: View {
     }
 }
 
-// MARK: - 3. SMART TOGGLE ROW (LOG SIÊU CHI TIẾT TỪNG BƯỚC)
+// MARK: - 3. SMART TOGGLE ROW (TIÊU DIỆT TẬN GỐC CACHE STORE)
 struct CyberpunkToggleAimRow: View {
     let remoteItem: RemoteAimItem
     @ObservedObject var store: PatchProjectStore
@@ -245,9 +257,9 @@ struct CyberpunkToggleAimRow: View {
         }.padding(14).background(Color.black).cornerRadius(18).overlay(RoundedRectangle(cornerRadius: 18).stroke(Color.white.opacity(isApplied ? 0.6 : 0.2), lineWidth: isApplied ? 1.5 : 1))
     }
     
-    private func purgeEverything() async {
+    // HÀM NUKE CHUYÊN SÂU: XÓA SẠCH MỌI DỮ LIỆU STORE VÀ INDEX NGẦM TRONG THƯ MỤC DOCUMENTS
+    private func nukeStoreCache() async {
         let currentItems = await MainActor.run { store.items }
-        onLog("🧹 [DỌN RÁC]: Đang quét gỡ bỏ \(currentItems.count) item cũ trong Store...")
         for item in currentItems {
             if let receipt = DevicePatchService.latestReceipt(projectID: item.id) {
                 try? DevicePatchService.restore(receipt: receipt, allowChangedTargets: true)
@@ -256,16 +268,17 @@ struct CyberpunkToggleAimRow: View {
         
         await MainActor.run {
             let docsURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+            
+            // Xóa sạch mọi file và thư mục con trong Documents để không còn file rác nào của Store sót lại
             let contents = (try? FileManager.default.contentsOfDirectory(at: docsURL, includingPropertiesForKeys: nil)) ?? []
-            for url in contents where url.pathExtension == "3105" {
+            for url in contents {
+                // Xóa cả file .3105 lẫn các thư mục index/workspaces ngầm của Store
                 try? FileManager.default.removeItem(at: url)
-                onLog("🗑️ [XÓA FILE CŨ]: \(url.lastPathComponent)")
+                onLog("🗑️ [NUKE]: Đã xóa sạch -> \(url.lastPathComponent)")
             }
-            let workspacesURL = docsURL.appendingPathComponent("Workspaces")
-            try? FileManager.default.removeItem(at: workspacesURL)
             
             store.reload()
-            onLog("✨ [STORE ĐÃ TRỐNG TRƠN]")
+            onLog("✨ [STORE ĐÃ ĐƯỢC LÀM TRỐNG TUYỆT ĐỐI]")
         }
     }
     
@@ -276,55 +289,49 @@ struct CyberpunkToggleAimRow: View {
         Task.detached(priority: .userInitiated) {
             do {
                 if on {
-                    onLog("🚀 [BẮT ĐẦU BẬT]: \(remoteItem.name) [ID: \(remoteItem.id)]")
+                    onLog("🚀 [BẬT MỚI]: \(remoteItem.name) [ID: \(remoteItem.id)]")
                     
-                    // Bước 1: Dọn sạch sẽ
-                    await purgeEverything()
+                    // Bước 1: Nuke toàn bộ dữ liệu cũ của Store
+                    await nukeStoreCache()
                     
-                    // Bước 2: Tải file mới
-                    let fileURL = try await RemoteAPIManager.shared.downloadFileForTarget(remoteItem: remoteItem, onLog: onLog)
+                    // Bước 2: Tải file mới và sửa trực tiếp ruột file
+                    let fileURL = try await RemoteAPIManager.shared.downloadAndMutateFile(remoteItem: remoteItem, onLog: onLog)
                     
-                    // Bước 3: Nạp vào Store
+                    // Bước 3: Import vào Store hoàn toàn trống
                     await MainActor.run {
                         store.importPackage(at: fileURL)
                         store.reload()
-                        onLog("📥 [IMPORT OK]: Đã đưa file vào PatchProjectStore")
+                        onLog("📥 [IMPORT OK]: Đã đưa file mới vào Store trống.")
                     }
                     
-                    // Bước 4: Kiểm tra chi tiết item trong Store
                     let updatedItems = await MainActor.run { store.items }
-                    onLog("📊 [TRẠNG THÁI STORE]: Tổng số file hiện có = \(updatedItems.count)")
-                    
                     guard let targetItem = updatedItems.first else {
-                        throw NSError(domain: "StoreError", code: 0, userInfo: [NSLocalizedDescriptionKey: "Store trống không có file!"])
+                        throw NSError(domain: "StoreError", code: 0, userInfo: [NSLocalizedDescriptionKey: "Store trống, không nhận được file!"])
                     }
-                    
-                    let physicalName = targetItem.packageURL.lastPathComponent
-                    onLog("📂 [TÊN TỆP VẬT LÝ]: \(physicalName)")
                     
                     var project: PatchProject
                     if targetItem.summary.schemaVersion >= 2 && targetItem.canInspectContents {
                         project = try PatchProjectLibrary.synchronizeWorkspace(item: targetItem)
                     } else {
                         guard let baseProject = targetItem.project else {
-                            throw NSError(domain: "ProjectError", code: 0, userInfo: [NSLocalizedDescriptionKey: "Không đọc được project bên trong."])
+                            throw NSError(domain: "ProjectError", code: 0, userInfo: [NSLocalizedDescriptionKey: "Không đọc được project."])
                         }
                         project = baseProject
                     }
                     
-                    onLog("🔍 [RUỘT BÊN TRONG]: Tên Project = '\(project.name)' | ID nội bộ = \(project.id)")
+                    onLog("🔍 [RUỘT SAU KHI BẺ KHÓA]: Tên = '\(project.name)' | ID = \(project.id)")
                     
-                    // Bước 5: Áp dụng bản vá
+                    // Bước 4: Áp dụng bản vá
                     _ = try DevicePatchService.apply(project: project)
                     
                     await MainActor.run { activeAimID = remoteItem.id }
                     onLog("🎉 [KÍCH HOẠT THÀNH CÔNG]: \(remoteItem.name)")
                     
                 } else {
-                    onLog("🛑 [TẮT]: Đang gỡ bỏ \(remoteItem.name)...")
-                    await purgeEverything()
+                    onLog("🛑 [TẮT]: Đang tiến hành dọn dẹp hệ thống...")
+                    await nukeStoreCache()
                     await MainActor.run { activeAimID = "" }
-                    onLog("🔄 [ĐÃ TẮT HOÀN TOÀN]")
+                    onLog("🔄 [ĐÃ TẮT VÀ DỌN SẠCH SẼ]")
                 }
                 
                 await MainActor.run { store.reload(); isWorking = false; AudioServicesPlaySystemSound(1407) }
@@ -333,7 +340,7 @@ struct CyberpunkToggleAimRow: View {
                     activeAimID = ""
                     isWorking = false
                     AudioServicesPlaySystemSound(1053)
-                    onLog("❌ [LỖI TRẦM TRỌNG]: \(error.localizedDescription)")
+                    onLog("❌ [LỖI KHÔNG THỂ BỎ QUA]: \(error.localizedDescription)")
                 }
             }
         }
