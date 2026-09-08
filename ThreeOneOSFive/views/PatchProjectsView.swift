@@ -322,9 +322,7 @@ struct CyberpunkToggleAimRow: View {
                     // 5. Kiểm tra store sau import (chỉ 1 item)
                     let updatedItems = await MainActor.run { store.items }
                     print("📦 Store items sau import: \(updatedItems.count)")
-                    for item in updatedItems {
-                        print("   - \(item.name) - ID: \(item.id)")
-                    }
+                    // Bỏ vòng lặp in tên vì PatchLibraryItem không có property 'name'
                     
                     guard let targetItem = updatedItems.first, updatedItems.count == 1 else {
                         throw NSError(domain: "StoreError", code: 0, userInfo: [NSLocalizedDescriptionKey: "Store không đúng: có \(updatedItems.count) item, cần 1."])
