@@ -27,6 +27,7 @@ final class PatchProjectStore: ObservableObject {
     @Published var passwordRequest: PatchPasswordRequest?
     @Published var alert: PatchStoreAlert?
     @Published var unlockErrorKey: String?
+    @Published var unlockErrorArgument: String?
 
     private struct PendingUnlock {
         let data: Data
@@ -247,6 +248,7 @@ final class PatchProjectStore: ObservableObject {
         guard let pending = pendingUnlock, !isBusy else { return }
         isBusy = true
         unlockErrorKey = nil
+        unlockErrorArgument = nil
         Task.detached(priority: .userInitiated) { [weak self] in
             do {
                 let decoded = try PatchPackageCodec.decode(pending.data, password: password)
@@ -280,6 +282,7 @@ final class PatchProjectStore: ObservableObject {
 
     func clearUnlockError() {
         unlockErrorKey = nil
+        unlockErrorArgument = nil
     }
 
     func delete(_ item: PatchLibraryItem) {
@@ -410,6 +413,7 @@ final class PatchProjectStore: ObservableObject {
         pendingUnlock = nil
         passwordRequest = nil
         unlockErrorKey = nil
+        unlockErrorArgument = nil
     }
 
     private func finishOperation(successMessageKey: String) {
@@ -429,8 +433,10 @@ final class PatchProjectStore: ObservableObject {
         // Presenting an alert while dismissing the sheet swallows the message.
         if case .invalidPasswordOrCorruptedPackage = error {
             unlockErrorKey = "patch.error.wrong_password"
+            unlockErrorArgument = nil
         } else {
             unlockErrorKey = error.localizationKey
+            unlockErrorArgument = error.localizationArgument
         }
     }
 
