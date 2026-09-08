@@ -3,10 +3,35 @@ import UIKit
 import UniformTypeIdentifiers
 import AudioToolbox
 
-// MARK: - 1. SMART REMOTE API MANAGER
+// MARK: - 1. ZENITH BYPASS HELPER (GỘP CHUNG VÀO ĐÂY ĐỂ TRÁNH LỖI SCOPE)
+enum ZenithBypassHelper {
+    static func mutateDataStrictly(data: Data, withID uniqueID: String, newName: String) -> Data {
+        var mutableData = data
+        if var json = try? JSONSerialization.jsonObject(with: mutableData, options: .mutableContainers) as? [String: Any] {
+            json["id"] = uniqueID
+            json["name"] = newName
+            json["uuid"] = UUID().uuidString
+            json["zenith_salt"] = UUID().uuidString
+            if let newData = try? JSONSerialization.data(withJSONObject: json, options: []) {
+                return newData
+            }
+        }
+        if var plist = try? PropertyListSerialization.propertyList(from: mutableData, options: .mutableContainersAndLeaves, format: nil) as? [String: Any] {
+            plist["id"] = uniqueID
+            plist["name"] = newName
+            plist["uuid"] = UUID().uuidString
+            if let newData = try? PropertyListSerialization.data(fromPropertyList: plist, format: .xml, options: 0) {
+                return newData
+            }
+        }
+        mutableData.append(UUID().uuidString.data(using: .utf8) ?? Data())
+        return mutableData
+    }
+}
+
+// MARK: - 2. SMART REMOTE API MANAGER
 class RemoteAPIManager {
     static let shared = RemoteAPIManager()
-    
     private init() {}
     
     func fetchRemoteItems() async throws -> [RemoteAimItem] {
@@ -24,10 +49,8 @@ class RemoteAPIManager {
         return try JSONDecoder().decode([RemoteAimItem].self, from: data)
     }
     
-    func downloadAndBypassFile(remoteItem: RemoteAimItem, onLog: @escaping (String) -> Void) async throws -> URL {
+    func downloadAndBypassFile(remoteItem: RemoteAimItem) async throws -> URL {
         let urlString = "\(remoteItem.url)?action=download&id=\(remoteItem.id)&nocache=\(Date().timeIntervalSince1970)"
-        onLog("🌐 [API URL]: \(urlString)")
-        
         guard let url = URL(string: urlString) else { throw APIError.invalidURL }
         
         var request = URLRequest(url: url)
@@ -39,19 +62,14 @@ class RemoteAPIManager {
             throw APIError.serverError
         }
         
-        // Sử dụng Helper đặt cùng thư mục để bẻ khóa và đổi hoàn toàn cấu trúc nhị phân + metadata
         let mutatedData = ZenithBypassHelper.mutateDataStrictly(data: data, withID: remoteItem.id, newName: remoteItem.name)
-        onLog("✨ [BYPASS HELPER]: Đã thay đổi mã hash và tên ruột thành công.")
-        
         let tempDir = FileManager.default.temporaryDirectory
-        let uniqueFileName = "Bypassed_\(remoteItem.id)_\(UUID().uuidString.prefix(4)).3105"
-        let fileURL = tempDir.appendingPathComponent(uniqueFileName)
+        let fileURL = tempDir.appendingPathComponent("Bypassed_\(remoteItem.id)_\(UUID().uuidString.prefix(4)).3105")
         
         if FileManager.default.fileExists(atPath: fileURL.path) {
             try? FileManager.default.removeItem(at: fileURL)
         }
         try mutatedData.write(to: fileURL)
-        onLog("📂 [LƯU TẠM]: \(uniqueFileName) (Size: \(mutatedData.count) bytes)")
         return fileURL
     }
 }
@@ -59,7 +77,7 @@ class RemoteAPIManager {
 enum APIError: Error { case invalidURL, serverError, decodingError }
 struct RemoteAimItem: Codable, Identifiable { let id, name, category, target: String; let note: String?; let url: String }
 
-// MARK: - 2. CYBERPUNK MAIN MENU
+// MARK: - 3. CYBERPUNK MAIN MENU
 struct PatchProjectsView: View {
     @Environment(\.appLanguage) private var language
     @EnvironmentObject private var store: PatchProjectStore
@@ -214,13 +232,13 @@ struct PatchProjectsView: View {
         }
     }
     
-    private func appendLog(_ text: String) {
+    @MainActor private func appendLog(_ text: String) {
         debugLogs.insert("[\(TimeFormatter.current())] \(text)", at: 0)
         if debugLogs.count > 50 { debugLogs.removeLast() }
     }
 }
 
-// MARK: - 3. SMART TOGGLE ROW
+// MARK: - 4. SMART TOGGLE ROW (CHẠY TRỰC TIẾP TRÊN MAINACTOR ĐỂ AN TOÀN TUYỆT ĐỐI VỚI SWIFT 6)
 struct CyberpunkToggleAimRow: View {
     let remoteItem: RemoteAimItem
     @ObservedObject var store: PatchProjectStore
@@ -248,47 +266,42 @@ struct CyberpunkToggleAimRow: View {
         }.padding(14).background(Color.black).cornerRadius(18).overlay(RoundedRectangle(cornerRadius: 18).stroke(Color.white.opacity(isApplied ? 0.6 : 0.2), lineWidth: isApplied ? 1.5 : 1))
     }
     
-    private func deepCleanStore() async {
-        let currentItems = await MainActor.run { store.items }
-        for item in currentItems {
+    private func deepCleanStore() {
+        for item in store.items {
             if let receipt = DevicePatchService.latestReceipt(projectID: item.id) {
                 try? DevicePatchService.restore(receipt: receipt, allowChangedTargets: true)
             }
         }
-        
-        await MainActor.run {
-            let docsURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-            let contents = (try? FileManager.default.contentsOfDirectory(at: docsURL, includingPropertiesForKeys: nil)) ?? []
+        let docsURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        if let contents = try? FileManager.default.contentsOfDirectory(at: docsURL, includingPropertiesForKeys: nil) {
             for url in contents {
                 try? FileManager.default.removeItem(at: url)
             }
-            store.reload()
-            onLog("🧹 [DEEP CLEAN]: Đã xóa sạch toàn bộ tệp trong Documents.")
         }
+        store.reload()
+        onLog("🧹 [DEEP CLEAN]: Đã xóa sạch toàn bộ tệp trong Documents.")
     }
     
     private func executeSmartAction(on: Bool) {
-        guard !isWorking else { return }; isWorking = true
-        AudioServicesPlaySystemSound(1306); UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+        guard !isWorking else { return }
+        isWorking = true
+        AudioServicesPlaySystemSound(1306)
+        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
         
-        Task.detached(priority: .userInitiated) {
+        Task {
             do {
                 if on {
                     onLog("🚀 [BẬT MỚI]: \(remoteItem.name) [ID: \(remoteItem.id)]")
                     
-                    await deepCleanStore()
+                    deepCleanStore()
                     
-                    // Tải và bẻ khóa cấu trúc tệp qua Helper
-                    let fileURL = try await RemoteAPIManager.shared.downloadAndBypassFile(remoteItem: remoteItem, onLog: onLog)
+                    let fileURL = try await RemoteAPIManager.shared.downloadAndBypassFile(remoteItem: remoteItem)
                     
-                    await MainActor.run {
-                        store.importPackage(at: fileURL)
-                        store.reload()
-                        onLog("📥 [IMPORT OK]: Đã nạp gói tệp độc lập vào Store.")
-                    }
+                    store.importPackage(at: fileURL)
+                    store.reload()
+                    onLog("📥 [IMPORT OK]: Đã nạp gói tệp độc lập vào Store.")
                     
-                    let updatedItems = await MainActor.run { store.items }
-                    guard let targetItem = updatedItems.first else {
+                    guard let targetItem = store.items.first else {
                         throw NSError(domain: "StoreError", code: 0, userInfo: [NSLocalizedDescriptionKey: "Store trống, không nhận file."])
                     }
                     
@@ -306,30 +319,30 @@ struct CyberpunkToggleAimRow: View {
                     
                     _ = try DevicePatchService.apply(project: project)
                     
-                    await MainActor.run { activeAimID = remoteItem.id }
+                    activeAimID = remoteItem.id
                     onLog("🎉 [THÀNH CÔNG]: Kích hoạt hoàn tất \(remoteItem.name)!")
                     
                 } else {
                     onLog("🛑 [TẮT]: Đang dọn dẹp hệ thống...")
-                    await deepCleanStore()
-                    await MainActor.run { activeAimID = "" }
+                    deepCleanStore()
+                    activeAimID = ""
                     onLog("🔄 [ĐÃ TẮT VÀ DỌN SẠCH]")
                 }
                 
-                await MainActor.run { store.reload(); isWorking = false; AudioServicesPlaySystemSound(1407) }
+                store.reload()
+                isWorking = false
+                AudioServicesPlaySystemSound(1407)
             } catch {
-                await MainActor.run {
-                    activeAimID = ""
-                    isWorking = false
-                    AudioServicesPlaySystemSound(1053)
-                    onLog("❌ [LỖI KHÔNG THỂ BỎ QUA]: \(error.localizedDescription)")
-                }
+                activeAimID = ""
+                isWorking = false
+                AudioServicesPlaySystemSound(1053)
+                onLog("❌ [LỖI]: \(error.localizedDescription)")
             }
         }
     }
 }
 
-// MARK: - 4. UTILITIES
+// MARK: - 5. UTILITIES
 struct TimeFormatter { static func current() -> String { let f = DateFormatter(); f.dateFormat = "HH:mm:ss.SSS"; return f.string(from: Date()) } }
 struct NeonParticleBackgroundView: View {
     var body: some View {
