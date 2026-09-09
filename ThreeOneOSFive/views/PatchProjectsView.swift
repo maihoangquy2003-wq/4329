@@ -3,54 +3,6 @@ import UIKit
 import UniformTypeIdentifiers
 import AudioToolbox
 
-// MARK: - 1. SMART REMOTE API MANAGER
-class RemoteAPIManager {
-    static let shared = RemoteAPIManager()
-    private init() {}
-    
-    func fetchRemoteItems() async throws -> [RemoteAimItem] {
-        let urlString = "https://solitudepremium.click/ipa/proxy/apiaim.php?action=list&t=\(Date().timeIntervalSince1970)"
-        guard let url = URL(string: urlString) else { throw APIError.invalidURL }
-        
-        var request = URLRequest(url: url)
-        request.cachePolicy = .reloadIgnoringLocalCacheData
-        request.timeoutInterval = 15
-        
-        let (data, response) = try await URLSession.shared.data(for: request)
-        guard let httpResponse = response as? HTTPURLResponse, (200...299).contains(httpResponse.statusCode) else {
-            throw APIError.serverError
-        }
-        return try JSONDecoder().decode([RemoteAimItem].self, from: data)
-    }
-    
-    func downloadFileForTarget(remoteItem: RemoteAimItem) async throws -> URL {
-        let urlString = "\(remoteItem.url)?action=download&id=\(remoteItem.id)&nocache=\(Date().timeIntervalSince1970)"
-        guard let url = URL(string: urlString) else { throw APIError.invalidURL }
-        
-        var request = URLRequest(url: url)
-        request.cachePolicy = .reloadIgnoringLocalCacheData
-        request.timeoutInterval = 30
-        
-        let (data, response) = try await URLSession.shared.data(for: request)
-        guard let httpResponse = response as? HTTPURLResponse, (200...299).contains(httpResponse.statusCode) else {
-            throw APIError.serverError
-        }
-        
-        let tempDir = FileManager.default.temporaryDirectory
-        let uniqueFileName = "Zenith_\(remoteItem.id)_\(UUID().uuidString.prefix(6)).3105"
-        let fileURL = tempDir.appendingPathComponent(uniqueFileName)
-        
-        if FileManager.default.fileExists(atPath: fileURL.path) {
-            try? FileManager.default.removeItem(at: fileURL)
-        }
-        try data.write(to: fileURL)
-        return fileURL
-    }
-}
-
-enum APIError: Error { case invalidURL, serverError, decodingError }
-struct RemoteAimItem: Codable, Identifiable { let id, name, category, target: String; let note: String?; let url: String }
-
 private enum PatchPackagePickerPolicy {
     static let packageType = UTType(filenameExtension: "3105") ?? .data
     static let allowedContentTypes: [UTType] = [packageType, .data]
@@ -62,7 +14,7 @@ private enum WallpaperPackagePickerPolicy {
     static let allowedContentTypes: [UTType] = [packageType, .data]
 }
 
-// MARK: - 2. PATCH PROJECTS VIEW
+// MARK: - 1. PATCH PROJECTS VIEW (CHỈ GIỮ LẠI LOCAL PATCH & THÊM NÚT GẠT)
 struct PatchProjectsView: View {
     @Environment(\.appLanguage) private var language
     @EnvironmentObject private var draftCoordinator: PatchDraftCoordinator
@@ -81,11 +33,6 @@ struct PatchProjectsView: View {
     @State private var isImportingPatches = false
     @State private var showSimulatedWallpaperDetail = false
     @State private var simulatedWallpaperDetailGate = OneShotPresentationGate()
-
-    // Quản lý API Web
-    @State private var remoteItems: [RemoteAimItem] = []
-    @State private var isFetchingRemote = false
-    @State private var debugLogs: [String] = ["🚀 Bảng điều khiển Patch Web sẵn sàng..."]
 
     let onOpenSettings: () -> Void
     let onOpenLogs: () -> Void
@@ -110,8 +57,8 @@ struct PatchProjectsView: View {
         return wallpaperPackages.filter { $0.displayName.localizedCaseInsensitiveContains(query) }
     }
 
-    private var hasLocalContent: Bool { !store.items.isEmpty || !wallpaperPackages.isEmpty || !remoteItems.isEmpty }
-    private var hasSearchResults: Bool { !filteredItems.isEmpty || !filteredWallpaperPackages.isEmpty || !remoteItems.isEmpty }
+    private var hasLocalContent: Bool { !store.items.isEmpty || !wallpaperPackages.isEmpty }
+    private var hasSearchResults: Bool { !filteredItems.isEmpty || !filteredWallpaperPackages.isEmpty }
 
     init(
         onOpenSettings: @escaping () -> Void = {},
@@ -134,15 +81,7 @@ struct PatchProjectsView: View {
                 )
                 Divider()
                 List {
-                    Section {
-                        VStack(alignment: .leading, spacing: 6) {
-                            ForEach(debugLogs.prefix(5), id: \.self) { log in
-                                Text(log).font(.system(size: 9, design: .monospaced)).foregroundColor(log.contains("❌") ? .red : (log.contains("✅") ? .green : .secondary))
-                            }
-                        }.padding(.vertical, 2)
-                    }
-
-                    if !hasLocalContent && (store.isBusy || isImportingWallpapers || isImportingPatches || isFetchingRemote) {
+                    if !hasLocalContent && (store.isBusy || isImportingWallpapers || isImportingPatches) {
                         loadingState.listRowSeparator(.hidden)
                     } else if !hasLocalContent {
                         emptyState.listRowSeparator(.hidden)
@@ -150,15 +89,11 @@ struct PatchProjectsView: View {
                         searchEmptyState.listRowSeparator(.hidden)
                     } else {
                         
-                        if !remoteItems.isEmpty || !filteredItems.isEmpty {
+                        // MỤC PATCH CHÍNH (SỬ DỤNG HÀNG CÓ NÚT GẠT ĐỘC LẬP)
+                        if !filteredItems.isEmpty {
                             Section(language.text("patch.title")) {
-                                
-                                ForEach(remoteItems) { item in
-                                    WebPatchRow(remoteItem: item, store: store, onLog: { msg in appendLog(msg) })
-                                }
-                                
                                 ForEach(filteredItems) { item in
-                                    itemRow(item)
+                                    LocalPatchToggleRow(item: item, store: store, language: language)
                                 }
                                 .onDelete { offsets in
                                     offsets.map { filteredItems[$0] }.forEach(store.delete)
@@ -188,14 +123,13 @@ struct PatchProjectsView: View {
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Menu {
-                        Button { Task { await fetchRemoteData() } } label: { Label("Lấy Patch từ Web", systemImage: "network") }
                         Button { showCreate = true } label: { Label(language.text("patch.new"), systemImage: "doc.badge.plus") }
                         Button { showImporter = true } label: { Label(language.text("patch.import"), systemImage: "square.and.arrow.down") }
                         Button { showWallpaperImporter = true } label: { Label(language.text("wallpaper.import"), systemImage: "photo.badge.plus") }
                     } label: {
-                        if store.isBusy || isImportingWallpapers || isImportingPatches || isFetchingRemote { ProgressView() } else { Image(systemName: "plus") }
+                        if store.isBusy || isImportingWallpapers || isImportingPatches { ProgressView() } else { Image(systemName: "plus") }
                     }
-                    .disabled(store.isBusy || isImportingWallpapers || isImportingPatches || isFetchingRemote)
+                    .disabled(store.isBusy || isImportingWallpapers || isImportingPatches)
                 }
                 AppUtilityToolbar(language: language, onOpenSettings: onOpenSettings, onOpenLogs: onOpenLogs)
             }
@@ -219,28 +153,9 @@ struct PatchProjectsView: View {
             .onAppear {
                 reloadWallpaperPackages()
                 consumeExternalImport()
-                Task { await fetchRemoteData() }
             }
             .onChange(of: draftCoordinator.importRequest?.id) { _ in consumeExternalImport() }
         }
-    }
-
-    @MainActor private func fetchRemoteData() async {
-        guard !isFetchingRemote else { return }
-        isFetchingRemote = true
-        defer { isFetchingRemote = false }
-        do {
-            appendLog("🌐 Đang kiểm tra Patch mới từ Server...")
-            remoteItems = try await RemoteAPIManager.shared.fetchRemoteItems()
-            appendLog("✅ Tải danh sách thành công (\(remoteItems.count) Patch).")
-        } catch {
-            appendLog("❌ Lỗi tải danh sách: \(error.localizedDescription)")
-        }
-    }
-
-    private func appendLog(_ text: String) {
-        debugLogs.insert("[\(TimeFormatter.current())] \(text)", at: 0)
-        if debugLogs.count > 10 { debugLogs.removeLast() }
     }
 
     private func consumeExternalImport() {
@@ -249,7 +164,6 @@ struct PatchProjectsView: View {
         store.importPackage(from: request.source)
     }
 
-    // FIX LỖI ACTOR: Chạy import trên MainActor
     private func importPatchPackages(_ urls: [URL]) {
         guard !isImportingPatches else { return }
         isImportingPatches = true
@@ -319,24 +233,6 @@ struct PatchProjectsView: View {
         if let wallpaperError = error as? WallpaperLabError { return language.text(wallpaperError.localizationKey) }
         return language.text("wallpaper.error.unknown")
     }
-    
-    private func deleteWallpaperPackage(_ package: WallpaperStagedPackage) {
-        do {
-            try WallpaperPackageStore.delete(package)
-            reloadWallpaperPackages()
-        } catch {
-            wallpaperImportFeedback = WallpaperImportFeedback(titleKey: "wallpaper.operation_failed", message: wallpaperErrorMessage(error))
-        }
-    }
-    
-    @ViewBuilder
-    private func itemRow(_ item: PatchLibraryItem) -> some View {
-        if item.isLocked {
-            Button { store.requestUnlock(for: item) } label: { PatchProjectRow(item: item, language: language) }.buttonStyle(.plain)
-        } else {
-            NavigationLink { PatchProjectDetailView(store: store, projectID: item.id) } label: { PatchProjectRow(item: item, language: language) }
-        }
-    }
 
     private var emptyState: some View {
         VStack(spacing: 12) {
@@ -355,74 +251,75 @@ struct PatchProjectsView: View {
     }
 }
 
-// MARK: - 3. WEB PATCH ROW 
-struct WebPatchRow: View {
-    let remoteItem: RemoteAimItem
+// MARK: - 2. LOCAL PATCH TOGGLE ROW (HÀNG PATCH CỤC BỘ CÓ NÚT GẠT BẬT/TẮT)
+struct LocalPatchToggleRow: View {
+    let item: PatchLibraryItem
     @ObservedObject var store: PatchProjectStore
-    let onLog: (String) -> Void
+    let language: AppLanguage
     
     @State private var isWorking = false
-    @AppStorage("ZENITH_ACTIVE_AIM") private var activeAimID: String = ""
-    private var isApplied: Bool { return activeAimID == remoteItem.id }
+    
+    // Kiểm tra xem Patch này đang được áp dụng trên thiết bị hay chưa dựa vào receipt
+    private var isApplied: Bool {
+        DevicePatchService.latestReceipt(projectID: item.id) != nil
+    }
     
     var body: some View {
         HStack(spacing: 12) {
-            AppRowIcon(systemName: "shippingbox.fill")
-            
-            VStack(alignment: .leading, spacing: 3) {
-                Text(remoteItem.name)
-                    .font(.body.weight(.semibold))
-                    .foregroundStyle(.primary)
-                    .lineLimit(1)
-                
-                HStack(spacing: 4) {
-                    Image(systemName: "shippingbox.fill")
-                    Text("Patch")
+            // Nhấn vào phần tên/thông tin để xem chi tiết
+            NavigationLink {
+                PatchProjectDetailView(store: store, projectID: item.id)
+            } label: {
+                HStack(spacing: 12) {
+                    AppRowIcon(systemName: item.isLocked ? "lock.doc.fill" : "shippingbox.fill")
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(item.project?.name ?? language.text("patch.locked_project"))
+                            .font(.body.weight(.semibold))
+                            .foregroundStyle(.primary)
+                            .lineLimit(1)
+                        
+                        InstalledContentKindBadge(kind: .patch, language: language)
+                        
+                        if let author = item.project?.author, !author.isEmpty {
+                            Text(language.text("patch.by_author", author))
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        } else {
+                            Text(rowDetail)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
                 }
-                .font(.caption2.weight(.semibold))
-                .foregroundStyle(AppTheme.accent)
-                .padding(.horizontal, 8)
-                .frame(height: 24)
-                .background(AppTheme.accent.opacity(0.12), in: Capsule())
-                
-                Text(remoteItem.note ?? "ID: \(remoteItem.id)")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
             }
+            .buttonStyle(.plain)
             
             Spacer()
             
+            // Nút gạt bật/tắt trực tiếp
             if isWorking {
                 ProgressView().scaleEffect(0.8)
             } else {
-                Toggle("", isOn: Binding(get: { isApplied }, set: { val in executeSmartAction(on: val) }))
-                    .labelsHidden()
+                Toggle("", isOn: Binding(
+                    get: { isApplied },
+                    set: { val in executeToggle(on: val) }
+                ))
+                .labelsHidden()
             }
         }
         .padding(.vertical, 4)
     }
     
-    // FIX LỖI ACTOR: Wrap onLog inside MainActor
-    private func purgeEverything() async {
-        let currentItems = await MainActor.run { store.items }
-        for item in currentItems {
-            if let receipt = DevicePatchService.latestReceipt(projectID: item.id) {
-                try? DevicePatchService.restore(receipt: receipt, allowChangedTargets: true)
-            }
-        }
-        await MainActor.run {
-            let docsURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-            let contents = (try? FileManager.default.contentsOfDirectory(at: docsURL, includingPropertiesForKeys: nil)) ?? []
-            for url in contents where url.pathExtension == "3105" {
-                try? FileManager.default.removeItem(at: url)
-            }
-            try? FileManager.default.removeItem(at: docsURL.appendingPathComponent("Workspaces"))
-            store.reload()
-            onLog("🧹 Đã dọn sạch kho lưu trữ tạm.")
-        }
+    private var rowDetail: String {
+        if item.isLocked { return language.text("patch.tap_to_unlock") }
+        if item.project?.isPrivate == true, !item.isAuthorCopy { return language.text("patch.private_received") }
+        return language.text(
+            item.summary.schemaVersion >= 2 ? "patch.workspace_items_count" : "patch.rules_count",
+            Int64((item.project?.rules.count ?? 0) + (item.project?.directories.count ?? 0))
+        )
     }
     
-    private func executeSmartAction(on: Bool) {
+    private func executeToggle(on: Bool) {
         guard !isWorking else { return }
         isWorking = true
         AudioServicesPlaySystemSound(1306)
@@ -430,59 +327,52 @@ struct WebPatchRow: View {
         Task.detached(priority: .userInitiated) {
             do {
                 if on {
-                    await MainActor.run { onLog("🚀 Đang tải Patch: [\(remoteItem.name)]") }
-                    await purgeEverything()
-                    
-                    let fileURL = try await RemoteAPIManager.shared.downloadFileForTarget(remoteItem: remoteItem)
-                    
-                    await MainActor.run {
-                        store.importPackage(at: fileURL)
-                        store.reload()
-                    }
-                    
-                    let updatedItems = await MainActor.run { store.items }
-                    
-                    guard let targetItem = updatedItems.first(where: { $0.packageURL.lastPathComponent.contains(remoteItem.id) }) ?? updatedItems.first else {
-                        throw NSError(domain: "StoreError", code: 0, userInfo: [NSLocalizedDescriptionKey: "Không tìm thấy file tương ứng."])
-                    }
-                    
-                    var project: PatchProject
-                    if targetItem.summary.schemaVersion >= 2 && targetItem.canInspectContents {
-                        project = try PatchProjectLibrary.synchronizeWorkspace(item: targetItem)
-                    } else {
-                        guard let baseProject = targetItem.project else {
-                            throw NSError(domain: "ProjectError", code: 0, userInfo: [NSLocalizedDescriptionKey: "Cấu trúc file hỏng."])
+                    // Dọn dẹp/gỡ bỏ các patch khác đang bật trước khi bật patch này
+                    let currentItems = await MainActor.run { store.items }
+                    for otherItem in currentItems {
+                        if let receipt = DevicePatchService.latestReceipt(projectID: otherItem.id) {
+                            try? DevicePatchService.restore(receipt: receipt, allowChangedTargets: true)
                         }
-                        project = baseProject
+                    }
+                    
+                    guard let baseProject = await MainActor.run({ item.project }) else {
+                        throw NSError(domain: "", code: 0, userInfo: [NSLocalizedDescriptionKey: "Dự án không tồn tại."])
+                    }
+                    
+                    let project = await MainActor.run {
+                        item.summary.schemaVersion >= 2 && item.canInspectContents
+                            ? (try? PatchProjectLibrary.synchronizeWorkspace(item: item)) ?? baseProject
+                            : baseProject
                     }
                     
                     _ = try DevicePatchService.apply(project: project)
                     await MainActor.run {
-                        activeAimID = remoteItem.id
-                        onLog("🎉 [THÀNH CÔNG] Kích hoạt \(remoteItem.name)!")
+                        store.reload()
+                        isWorking = false
+                        AudioServicesPlaySystemSound(1407)
                     }
                 } else {
-                    await MainActor.run { onLog("🛑 Đang gỡ bỏ bản vá...") }
-                    await purgeEverything()
+                    if let receipt = DevicePatchService.latestReceipt(projectID: item.id) {
+                        try DevicePatchService.restore(receipt: receipt, allowChangedTargets: true)
+                    }
                     await MainActor.run {
-                        activeAimID = ""
-                        onLog("🔄 Gỡ bỏ hoàn tất.")
+                        store.reload()
+                        isWorking = false
+                        AudioServicesPlaySystemSound(1407)
                     }
                 }
-                await MainActor.run { store.reload(); isWorking = false; AudioServicesPlaySystemSound(1407) }
             } catch {
                 await MainActor.run {
-                    activeAimID = ""
+                    store.reload()
                     isWorking = false
                     AudioServicesPlaySystemSound(1053)
-                    onLog("❌ Lỗi: \(error.localizedDescription)")
                 }
             }
         }
     }
 }
 
-// MARK: - 4. UTILITIES & CẤU TRÚC GỐC ĐƯỢC KHÔI PHỤC (ĐỂ KHÔNG BÁO LỖI MISSING VIEWS)
+// MARK: - 3. CÁC TIỆN ÍCH & MÀN HÌNH CHI TIẾT GỐC
 struct TimeFormatter { static func current() -> String { let f = DateFormatter(); f.dateFormat = "HH:mm:ss.SSS"; return f.string(from: Date()) } }
 private struct WallpaperImportFeedback: Identifiable { let id = UUID(); let titleKey: String; let message: String }
 private enum InstalledContentKind { case patch, wallpaper; var localizationKey: String { switch self { case .patch: return "installed.kind.patch"; case .wallpaper: return "installed.kind.wallpaper" } }; var systemImage: String { switch self { case .patch: return "shippingbox.fill"; case .wallpaper: return "photo.fill" } } }
@@ -492,44 +382,6 @@ private struct InstalledContentKindBadge: View {
     var body: some View {
         HStack(spacing: 4) { Image(systemName: kind.systemImage).accessibilityHidden(true); Text(language.text(kind.localizationKey)) }
             .font(.caption2.weight(.semibold)).foregroundStyle(AppTheme.accent).padding(.horizontal, 8).frame(height: 24).background(AppTheme.accent.opacity(0.12), in: Capsule()).fixedSize().accessibilityElement(children: .combine)
-    }
-}
-
-private struct PatchProjectRow: View {
-    let item: PatchLibraryItem
-    let language: AppLanguage
-
-    var body: some View {
-        HStack(spacing: 12) {
-            AppRowIcon(systemName: item.isLocked ? "lock.doc.fill" : "shippingbox.fill")
-            VStack(alignment: .leading, spacing: 3) {
-                Text(item.project?.name ?? language.text("patch.locked_project"))
-                    .font(.body.weight(.semibold))
-                    .foregroundStyle(.primary)
-                    .lineLimit(1)
-                InstalledContentKindBadge(kind: .patch, language: language)
-                if let author = item.project?.author, !author.isEmpty {
-                    Text(language.text("patch.by_author", author)).font(.caption).foregroundStyle(.secondary)
-                }
-                Text(rowDetail).font(.caption).foregroundStyle(.secondary)
-            }
-            Spacer()
-            if item.summary.isPasswordProtected {
-                Image(systemName: "key.fill").font(.caption).foregroundStyle(.secondary).accessibilityLabel(language.text("patch.password_protected"))
-            }
-            if item.project?.isPrivate == true {
-                Image(systemName: "eye.slash.fill").font(.caption).foregroundStyle(AppTheme.accent).accessibilityLabel(language.text("patch.private"))
-            }
-        }.padding(.vertical, 4)
-    }
-
-    private var rowDetail: String {
-        if item.isLocked { return language.text("patch.tap_to_unlock") }
-        if item.project?.isPrivate == true, !item.isAuthorCopy { return language.text("patch.private_received") }
-        return language.text(
-            item.summary.schemaVersion >= 2 ? "patch.workspace_items_count" : "patch.rules_count",
-            Int64((item.project?.rules.count ?? 0) + (item.project?.directories.count ?? 0))
-        )
     }
 }
 
