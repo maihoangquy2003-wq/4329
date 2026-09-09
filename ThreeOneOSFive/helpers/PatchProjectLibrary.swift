@@ -216,6 +216,7 @@ enum PatchProjectLibrary {
         origin: PatchPackageOrigin? = nil,
         fileManager: FileManager = .default
     ) throws {
+        print("🔥 USING NEW CODE - NO OCCUPANCY CHECK")
         let authorCopy = isAuthorCopy(
             packageID: summary.packageID,
             fileManager: fileManager
