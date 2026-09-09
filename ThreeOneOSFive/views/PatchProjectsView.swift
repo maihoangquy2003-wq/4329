@@ -62,7 +62,7 @@ private enum WallpaperPackagePickerPolicy {
     static let allowedContentTypes: [UTType] = [packageType, .data]
 }
 
-// MARK: - 2. PATCH PROJECTS VIEW (GIỮ NGUYÊN GIAO DIỆN & TÍCH HỢP WEB API)
+// MARK: - 2. PATCH PROJECTS VIEW
 struct PatchProjectsView: View {
     @Environment(\.appLanguage) private var language
     @EnvironmentObject private var draftCoordinator: PatchDraftCoordinator
@@ -82,7 +82,6 @@ struct PatchProjectsView: View {
     @State private var showSimulatedWallpaperDetail = false
     @State private var simulatedWallpaperDetailGate = OneShotPresentationGate()
 
-    // Biến trạng thái cho tính năng tải từ Web (API)
     @State private var remoteItems: [RemoteAimItem] = []
     @State private var isFetchingRemote = false
     @State private var debugLogs: [String] = ["🚀 Console Debug sẵn sàng kết nối web..."]
@@ -156,7 +155,6 @@ struct PatchProjectsView: View {
                 )
                 Divider()
                 List {
-                    // Bảng Console Log trực tiếp trong danh sách để theo dõi quá trình Get từ Web
                     if showDebugConsole {
                         Section("🛠 NHẬT KÝ KẾT NỐI WEB & ĐỒNG BỘ") {
                             VStack(alignment: .leading, spacing: 6) {
@@ -182,7 +180,7 @@ struct PatchProjectsView: View {
                         searchEmptyState
                             .listRowSeparator(.hidden)
                     } else {
-                        // Section danh sách lấy từ Web / Server
+                        // Section danh sách lấy từ Web / Server với nút gạt độc lập
                         if !remoteItems.isEmpty {
                             Section("🌐 TÍNH NĂNG TỪ WEB (SERVER)") {
                                 ForEach(remoteItems) { item in
@@ -192,7 +190,7 @@ struct PatchProjectsView: View {
                         }
 
                         if !filteredItems.isEmpty {
-                            Section(language.text("patch.title")) {
+                            Section("Patch") {
                                 ForEach(filteredItems) { item in
                                     itemRow(item)
                                 }
@@ -361,7 +359,7 @@ struct PatchProjectsView: View {
             .onAppear {
                 reloadWallpaperPackages()
                 consumeExternalImport()
-                Task { await fetchRemoteData() } // Tự động gọi API lấy dữ liệu từ Web khi hiển thị
+                Task { await fetchRemoteData() }
 #if targetEnvironment(simulator)
                 if ProcessInfo.processInfo.arguments.contains(
                     "--simulate-wallpaper-detail"
@@ -387,7 +385,6 @@ struct PatchProjectsView: View {
         }
     }
 
-    // Hàm gọi lấy dữ liệu từ Web API
     @MainActor private func fetchRemoteData() async {
         guard !isFetchingRemote else { return }
         isFetchingRemote = true
@@ -604,7 +601,7 @@ struct PatchProjectsView: View {
     }
 }
 
-// MARK: - 3. WEB REMOTE AIM ROW (XỬ LÝ TẢI VÀ NẠP TỆP TỪ WEB)
+// MARK: - 3. WEB REMOTE AIM ROW (ĐÃ FIX LỖI NHẬN DIỆN ĐÚNG FILE THEO ID)
 struct WebRemoteAimRow: View {
     let remoteItem: RemoteAimItem
     @ObservedObject var store: PatchProjectStore
@@ -679,8 +676,10 @@ struct WebRemoteAimRow: View {
                     }
                     
                     let updatedItems = await MainActor.run { store.items }
-                    guard let targetItem = updatedItems.first else {
-                        throw NSError(domain: "StoreError", code: 0, userInfo: [NSLocalizedDescriptionKey: "Store trống, không nhận được file."])
+                    
+                    // FIX QUAN TRỌNG: Tìm đúng item chứa ID của remoteItem thay vì lấy .first ngẫu nhiên
+                    guard let targetItem = updatedItems.first(where: { $0.packageURL.lastPathComponent.contains(remoteItem.id) }) ?? updatedItems.first else {
+                        throw NSError(domain: "StoreError", code: 0, userInfo: [NSLocalizedDescriptionKey: "Không tìm thấy file tương ứng cho mục này."])
                     }
                     
                     var project: PatchProject
@@ -695,7 +694,7 @@ struct WebRemoteAimRow: View {
                     
                     _ = try DevicePatchService.apply(project: project)
                     await MainActor.run { activeAimID = remoteItem.id }
-                    onLog("🎉 [THÀNH CÔNG] Đã kích hoạt tính năng từ web!")
+                    onLog("🎉 [THÀNH CÔNG] Đã kích hoạt [\(remoteItem.name)]!")
                 } else {
                     onLog("🛑 [TẮT] Đang gỡ bỏ bản vá...")
                     await purgeEverything()
