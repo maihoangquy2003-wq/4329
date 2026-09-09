@@ -14,7 +14,7 @@ private enum WallpaperPackagePickerPolicy {
     static let allowedContentTypes: [UTType] = [packageType, .data]
 }
 
-// MARK: - 1. PATCH PROJECTS VIEW (CHỈ GIỮ LẠI LOCAL PATCH & THÊM NÚT GẠT)
+// MARK: - 1. PATCH PROJECTS VIEW
 struct PatchProjectsView: View {
     @Environment(\.appLanguage) private var language
     @EnvironmentObject private var draftCoordinator: PatchDraftCoordinator
@@ -88,8 +88,6 @@ struct PatchProjectsView: View {
                     } else if !hasSearchResults && !store.isBusy {
                         searchEmptyState.listRowSeparator(.hidden)
                     } else {
-                        
-                        // MỤC PATCH CHÍNH (SỬ DỤNG HÀNG CÓ NÚT GẠT ĐỘC LẬP)
                         if !filteredItems.isEmpty {
                             Section(language.text("patch.title")) {
                                 ForEach(filteredItems) { item in
@@ -251,7 +249,7 @@ struct PatchProjectsView: View {
     }
 }
 
-// MARK: - 2. LOCAL PATCH TOGGLE ROW (HÀNG PATCH CỤC BỘ CÓ NÚT GẠT BẬT/TẮT)
+// MARK: - 2. LOCAL PATCH TOGGLE ROW
 struct LocalPatchToggleRow: View {
     let item: PatchLibraryItem
     @ObservedObject var store: PatchProjectStore
@@ -259,14 +257,12 @@ struct LocalPatchToggleRow: View {
     
     @State private var isWorking = false
     
-    // Kiểm tra xem Patch này đang được áp dụng trên thiết bị hay chưa dựa vào receipt
     private var isApplied: Bool {
         DevicePatchService.latestReceipt(projectID: item.id) != nil
     }
     
     var body: some View {
         HStack(spacing: 12) {
-            // Nhấn vào phần tên/thông tin để xem chi tiết
             NavigationLink {
                 PatchProjectDetailView(store: store, projectID: item.id)
             } label: {
@@ -296,7 +292,6 @@ struct LocalPatchToggleRow: View {
             
             Spacer()
             
-            // Nút gạt bật/tắt trực tiếp
             if isWorking {
                 ProgressView().scaleEffect(0.8)
             } else {
@@ -327,7 +322,6 @@ struct LocalPatchToggleRow: View {
         Task.detached(priority: .userInitiated) {
             do {
                 if on {
-                    // Dọn dẹp/gỡ bỏ các patch khác đang bật trước khi bật patch này
                     let currentItems = await MainActor.run { store.items }
                     for otherItem in currentItems {
                         if let receipt = DevicePatchService.latestReceipt(projectID: otherItem.id) {
@@ -335,15 +329,18 @@ struct LocalPatchToggleRow: View {
                         }
                     }
                     
-                    guard let baseProject = await MainActor.run({ item.project }) else {
+                    // Đã sửa cú pháp lấy giá trị an toàn từ MainActor tránh lỗi biên dịch
+                    let baseProject = await MainActor.run { item.project }
+                    guard let baseProject else {
                         throw NSError(domain: "", code: 0, userInfo: [NSLocalizedDescriptionKey: "Dự án không tồn tại."])
                     }
                     
-                    let project = await MainActor.run {
-                        item.summary.schemaVersion >= 2 && item.canInspectContents
-                            ? (try? PatchProjectLibrary.synchronizeWorkspace(item: item)) ?? baseProject
-                            : baseProject
-                    }
+                    let schemaVersion = await MainActor.run { item.summary.schemaVersion }
+                    let canInspect = await MainActor.run { item.canInspectContents }
+                    
+                    let project = (schemaVersion >= 2 && canInspect)
+                        ? ((try? PatchProjectLibrary.synchronizeWorkspace(item: item)) ?? baseProject)
+                        : baseProject
                     
                     _ = try DevicePatchService.apply(project: project)
                     await MainActor.run {
