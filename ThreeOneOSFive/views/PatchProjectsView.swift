@@ -25,7 +25,7 @@ struct ParticleEffectView: View {
 // HÀM PHÁT ÂM THANH & RUNG CHUẨN IPHONE KHI BẬT TOGGLE
 func playiPhoneTickSound() {
     UIImpactFeedbackGenerator(style: .light).impactOccurred()
-    AudioServicesPlaySystemSound(1104) // Âm thanh click chuẩn hệ thống iOS
+    AudioServicesPlaySystemSound(1104)
 }
 
 struct PatchProjectsView: View {
@@ -35,8 +35,12 @@ struct PatchProjectsView: View {
     
     @State private var remoteItems: [RemotePatchItem] = []
     @State private var isAutoSyncing = false
-    @State private var selectedGame: GameType? = nil // Mở menu chi tiết khi chọn game
+    @State private var selectedGame: GameType? = nil
     @State private var actionAlert: PatchStoreAlert?
+    
+    // Biến điều khiển Navigation ẩn tương thích mọi phiên bản iOS
+    @State private var navigateToMax = false
+    @State private var navigateToNormal = false
     
     let onOpenSettings: () -> Void
     let onOpenLogs: () -> Void
@@ -50,9 +54,19 @@ struct PatchProjectsView: View {
         NavigationStack {
             ZStack {
                 Color.black.ignoresSafeArea()
-                ParticleEffectView() // Hiệu ứng hạt bay lên
+                ParticleEffectView()
                 
                 VStack(spacing: 0) {
+                    // CÁC NAVIGATION LINK ẨN ĐỂ CHUYỂN TRANG AN TOÀN
+                    Group {
+                        NavigationLink(destination: GameDetailMenuView(gameType: .ffmax, remoteItems: remoteItems, store: store), isActive: $navigateToMax) {
+                            EmptyView()
+                        }
+                        NavigationLink(destination: GameDetailMenuView(gameType: .ffnormal, remoteItems: remoteItems, store: store), isActive: $navigateToNormal) {
+                            EmptyView()
+                        }
+                    }.hidden()
+                    
                     // HEADER AVATAR TỪ LI.JPG
                     VStack(spacing: 10) {
                         AsyncImage(url: URL(string: "https://solitudepremium.click/ipa/proxy/li.jpg")) { phase in
@@ -74,20 +88,22 @@ struct PatchProjectsView: View {
                     }
                     .padding(.vertical, 16)
                     
-                    // THẺ GAME CHÍNH (SẠCH SẼ, KHÔNG HIỆN FILE RỜI BÊN NGOÀI)
+                    // THẺ GAME CHÍNH
                     ScrollView {
                         VStack(spacing: 16) {
                             mainGameCard(
                                 title: "Free Fire Max",
-                                bundleID: "com.dts.freefiremax",
-                                type: .ffmax
-                            )
+                                bundleID: "com.dts.freefiremax"
+                            ) {
+                                navigateToMax = true
+                            }
                             
                             mainGameCard(
                                 title: "Free Fire Thường",
-                                bundleID: "com.dts.freefirethuong",
-                                type: .ffnormal
-                            )
+                                bundleID: "com.dts.freefirethuong"
+                            ) {
+                                navigateToNormal = true
+                            }
                         }
                         .padding(.horizontal, 16)
                         .padding(.bottom, 30)
@@ -98,9 +114,6 @@ struct PatchProjectsView: View {
             .onAppear {
                 syncRemoteMetadata()
             }
-            .navigationDestination(item: $selectedGame) { game in
-                GameDetailMenuView(gameType: game, remoteItems: remoteItems, store: store)
-            }
             .alert(item: $actionAlert) { alert in
                 Alert(title: Text(alert.titleKey), message: Text(alert.message(language: language)), dismissButton: .default(Text("OK")))
             }
@@ -108,10 +121,8 @@ struct PatchProjectsView: View {
     }
 
     @ViewBuilder
-    private func mainGameCard(title: String, bundleID: String, type: GameType) -> some View {
-        Button {
-            selectedGame = type
-        } label: {
+    private func mainGameCard(title: String, bundleID: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
             HStack(spacing: 14) {
                 AsyncImage(url: URL(string: "https://solitudepremium.click/ipa/proxy/free.jpg")) { phase in
                     switch phase {
@@ -153,7 +164,6 @@ struct PatchProjectsView: View {
         .buttonStyle(.plain)
     }
 
-    // ĐỒNG BỘ DANH SÁCH METADATA TỪ WEB
     private func syncRemoteMetadata() {
         guard !isAutoSyncing else { return }
         isAutoSyncing = true
@@ -169,7 +179,6 @@ struct PatchProjectsView: View {
                     isAutoSyncing = false
                 }
                 
-                // Tự động tải ngầm các file chưa có về kho lưu trữ của App
                 let localFilenames = store.items.map { $0.packageURL.lastPathComponent }
                 for item in decoded {
                     if !localFilenames.contains(item.filename) {
@@ -188,7 +197,6 @@ struct PatchProjectsView: View {
     }
 }
 
-// CÁC MODEL VÀ MENU CHI TIẾT
 enum GameType: String, Hashable, Identifiable {
     case ffmax, ffnormal
     var id: String { self.rawValue }
@@ -226,7 +234,6 @@ struct GameDetailMenuView: View {
             ParticleEffectView()
             
             VStack(spacing: 0) {
-                // TOP HEADER NÚT ĐÓNG & TÊN GAME
                 HStack {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(gameType.title)
@@ -247,12 +254,10 @@ struct GameDetailMenuView: View {
                 }
                 .padding(16)
                 
-                // LẤY DANH SÁCH THƯ MỤC (TABS) TỪ DỮ LIỆU WEB HOẶC MẶC ĐỊNH
                 let gameItems = remoteItems.filter { $0.gameType == gameType.rawValue }
                 let folders = Array(Set(gameItems.map { $0.folder })).sorted()
                 let currentFolders = folders.isEmpty ? ["Aim", "Guns", "Chams", "Outfits"] : folders
                 
-                // THANH TAB NGANG (AIM, GUNS, CHAMS, OUTFITS...)
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 10) {
                         ForEach(currentFolders, id: \.self) { folder in
@@ -274,7 +279,6 @@ struct GameDetailMenuView: View {
                     .padding(.vertical, 8)
                 }
                 
-                // DANH SÁCH PATCH TRONG THƯ MỤC ĐƯỢC CHỌN
                 ScrollView {
                     VStack(spacing: 12) {
                         let activeItemsInFolder = gameItems.filter { $0.folder == selectedTab }
@@ -309,7 +313,7 @@ struct GameDetailMenuView: View {
                                     Toggle("", isOn: Binding(
                                         get: { isApplied },
                                         set: { newValue in
-                                            playiPhoneTickSound() // Phát tiếng tích như iPhone
+                                            playiPhoneTickSound() // Tiếng tích chuẩn iPhone
                                             if let item = matchedStoreItem {
                                                 togglePatch(item: item, activate: newValue, filename: rItem.filename)
                                             }
@@ -328,9 +332,8 @@ struct GameDetailMenuView: View {
                     .padding(16)
                 }
                 
-                // NÚT VÀO GAME NGAY Ở DƯỚI CÙNG
                 Button {
-                    // Xử lý mở game hoặc hoàn tất
+                    // Hành động khi bấm vào nút vào game
                 } label: {
                     Text("🎮 VÀO GAME NGAY (\(gameType.title))")
                         .font(.headline.weight(.bold))
@@ -377,7 +380,7 @@ struct GameDetailMenuView: View {
     }
 }
 
-// BỔ SUNG EXTENSION HỆ THỐNG CỦA DỰ ÁN
+// EXTENSION HỆ THỐNG GỐC CỦA DỰ ÁN
 struct PatchUnlockView: View {
     @Environment(\.appLanguage) private var language
     @Environment(\.dismiss) private var dismiss
