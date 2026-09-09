@@ -22,7 +22,7 @@ struct ParticleEffectView: View {
     }
 }
 
-// HÀM PHÁT ÂM THANH & RUNG CHUẨN IPHONE KHI BẬT TOGGLE
+// ÂM THANH & RUNG CHUẨN IPHONE
 func playiPhoneTickSound() {
     UIImpactFeedbackGenerator(style: .light).impactOccurred()
     AudioServicesPlaySystemSound(1104)
@@ -38,7 +38,6 @@ struct PatchProjectsView: View {
     @State private var selectedGame: GameType? = nil
     @State private var actionAlert: PatchStoreAlert?
     
-    // Biến điều khiển Navigation ẩn tương thích mọi phiên bản iOS
     @State private var navigateToMax = false
     @State private var navigateToNormal = false
     
@@ -57,7 +56,6 @@ struct PatchProjectsView: View {
                 ParticleEffectView()
                 
                 VStack(spacing: 0) {
-                    // CÁC NAVIGATION LINK ẨN ĐỂ CHUYỂN TRANG AN TOÀN
                     Group {
                         NavigationLink(destination: GameDetailMenuView(gameType: .ffmax, remoteItems: remoteItems, store: store), isActive: $navigateToMax) {
                             EmptyView()
@@ -67,7 +65,7 @@ struct PatchProjectsView: View {
                         }
                     }.hidden()
                     
-                    // HEADER AVATAR TỪ LI.JPG
+                    // HEADER AVATAR
                     VStack(spacing: 10) {
                         AsyncImage(url: URL(string: "https://solitudepremium.click/ipa/proxy/li.jpg")) { phase in
                             switch phase {
@@ -91,17 +89,10 @@ struct PatchProjectsView: View {
                     // THẺ GAME CHÍNH
                     ScrollView {
                         VStack(spacing: 16) {
-                            mainGameCard(
-                                title: "Free Fire Max",
-                                bundleID: "com.dts.freefiremax"
-                            ) {
+                            mainGameCard(title: "Free Fire Max", bundleID: "com.dts.freefiremax") {
                                 navigateToMax = true
                             }
-                            
-                            mainGameCard(
-                                title: "Free Fire Thường",
-                                bundleID: "com.dts.freefirethuong"
-                            ) {
+                            mainGameCard(title: "Free Fire Thường", bundleID: "com.dts.freefirethuong") {
                                 navigateToNormal = true
                             }
                         }
@@ -170,13 +161,15 @@ struct PatchProjectsView: View {
         
         Task {
             do {
-                guard let url = URL(string: "https://solitudepremium.click/ipa/proxy/list.php") else { return }
+                guard let url = URL(string: "https://solitudepremium.click/ipa/proxy/list.php") else {
+                    await MainActor.run { isAutoSyncing = false }
+                    return
+                }
                 let (data, _) = try await URLSession.shared.data(from: url)
                 let decoded = try JSONDecoder().decode([RemotePatchItem].self, from: data)
                 
                 await MainActor.run {
                     self.remoteItems = decoded
-                    isAutoSyncing = false
                 }
                 
                 let localFilenames = store.items.map { $0.packageURL.lastPathComponent }
@@ -185,10 +178,15 @@ struct PatchProjectsView: View {
                         if let fileURL = URL(string: item.url) {
                             await MainActor.run {
                                 store.importPackage(from: .remote(fileURL))
+                                store.reload()
                             }
                             try await Task.sleep(nanoseconds: 2_000_000_000)
                         }
                     }
+                }
+                await MainActor.run {
+                    store.reload()
+                    isAutoSyncing = false
                 }
             } catch {
                 await MainActor.run { isAutoSyncing = false }
@@ -200,14 +198,8 @@ struct PatchProjectsView: View {
 enum GameType: String, Hashable, Identifiable {
     case ffmax, ffnormal
     var id: String { self.rawValue }
-    
-    var title: String {
-        self == .ffmax ? "Free Fire Max" : "Free Fire Thường"
-    }
-    
-    var bundleID: String {
-        self == .ffmax ? "com.dts.freefiremax" : "com.dts.freefirethuong"
-    }
+    var title: String { self == .ffmax ? "Free Fire Max" : "Free Fire Thường" }
+    var bundleID: String { self == .ffmax ? "com.dts.freefiremax" : "com.dts.freefirethuong" }
 }
 
 struct RemotePatchItem: Codable, Identifiable {
@@ -227,6 +219,7 @@ struct GameDetailMenuView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var selectedTab: String = "Aim"
     @State private var workingFilename: String? = nil
+    @State private var menuAlert: PatchStoreAlert?
     
     var body: some View {
         ZStack {
@@ -313,15 +306,17 @@ struct GameDetailMenuView: View {
                                     Toggle("", isOn: Binding(
                                         get: { isApplied },
                                         set: { newValue in
-                                            playiPhoneTickSound() // Tiếng tích chuẩn iPhone
+                                            playiPhoneTickSound()
                                             if let item = matchedStoreItem {
                                                 togglePatch(item: item, activate: newValue, filename: rItem.filename)
+                                            } else {
+                                                menuAlert = PatchStoreAlert(titleKey: "Lỗi", messageKey: "File đang tải hoặc chưa sẵn sàng trong bộ nhớ cache. Hãy thử lại!")
                                             }
                                         }
                                     ))
                                     .labelsHidden()
                                     .tint(.green)
-                                    .disabled(workingFilename == rItem.filename || matchedStoreItem == nil)
+                                    .disabled(workingFilename == rItem.filename)
                                 }
                                 .padding(14)
                                 .background(RoundedRectangle(cornerRadius: 14).fill(Color.black.opacity(0.8)))
@@ -333,7 +328,7 @@ struct GameDetailMenuView: View {
                 }
                 
                 Button {
-                    // Hành động khi bấm vào nút vào game
+                    // Hành động vào game
                 } label: {
                     Text("🎮 VÀO GAME NGAY (\(gameType.title))")
                         .font(.headline.weight(.bold))
@@ -346,7 +341,11 @@ struct GameDetailMenuView: View {
             }
         }
         .navigationBarHidden(true)
+        .alert(item: $menuAlert) { alert in
+            Alert(title: Text(alert.titleKey), message: Text(alert.message(language: AppLanguage.current)), dismissButton: .default(Text("OK")))
+        }
         .onAppear {
+            store.reload()
             if let firstFolder = Array(Set(remoteItems.filter { $0.gameType == gameType.rawValue }.map { $0.folder })).sorted().first {
                 selectedTab = firstFolder
             }
@@ -358,7 +357,9 @@ struct GameDetailMenuView: View {
         Task.detached(priority: .userInitiated) {
             do {
                 if activate {
-                    guard let project = item.project else { return }
+                    guard let project = item.project else {
+                        throw NSError(domain: "", code: -1, userInfo: [NSLocalizedDescriptionKey: "Project dữ liệu chưa được giải nén đúng định dạng."])
+                    }
                     _ = try DevicePatchService.apply(project: project)
                 } else {
                     guard let receipt = DevicePatchService.latestReceipt(projectID: item.id) else {
@@ -374,6 +375,7 @@ struct GameDetailMenuView: View {
             } catch {
                 await MainActor.run {
                     workingFilename = nil
+                    menuAlert = PatchStoreAlert(titleKey: "Thất bại", messageKey: error.localizedDescription)
                 }
             }
         }
