@@ -26,10 +26,10 @@ struct PatchProjectsView: View {
     var body: some View {
         NavigationStack {
             ZStack {
-                Color.black.ignoresSafeArea() // Nền tối cyberpunk
+                Color.black.ignoresSafeArea()
                 
                 VStack(spacing: 0) {
-                    // HEADER VỚI AVATAR TRÊN CÙNG
+                    // HEADER VỚI AVATAR LẤY TỪ LI.JPG
                     VStack(spacing: 12) {
                         AsyncImage(url: URL(string: "https://solitudepremium.click/ipa/proxy/li.jpg")) { phase in
                             switch phase {
@@ -63,13 +63,11 @@ struct PatchProjectsView: View {
                     // DANH SÁCH GAME CARD (FREE FIRE MAX & THƯỜNG)
                     ScrollView {
                         VStack(spacing: 16) {
-                            // TÌM CÁC ITEM CHO FREE FIRE MAX
                             gameCardView(
                                 title: "Free Fire Max",
                                 prefix: "ffmax_"
                             )
                             
-                            // TÌM CÁC ITEM CHO FREE FIRE THƯỜNG
                             gameCardView(
                                 title: "Free Fire Thường",
                                 prefix: "ffnormal_"
@@ -96,7 +94,6 @@ struct PatchProjectsView: View {
 
     @ViewBuilder
     private func gameCardView(title: String, prefix: String) -> some View {
-        // Lọc item trong store theo tiền tố phân loại
         let matchedItems = store.items.filter { item in
             let name = item.packageURL.lastPathComponent
             return name.hasPrefix(prefix) || (!name.hasPrefix("ffmax_") && !name.hasPrefix("ffnormal_") && prefix == "ffnormal_")
@@ -104,7 +101,7 @@ struct PatchProjectsView: View {
         
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 14) {
-                // Ảnh icon game tải từ free.jpg
+                // ICON TẢI TỪ FREE.JPG
                 AsyncImage(url: URL(string: "https://solitudepremium.click/ipa/proxy/free.jpg")) { phase in
                     switch phase {
                     case .success(let image):
@@ -165,7 +162,7 @@ struct PatchProjectsView: View {
                         
                         Spacer()
                         
-                        // NÚT GẠT TRỰC TIẾP BÊN NGOÀI (KHÔNG CẦN BẤM VÔ TRONG)
+                        // NÚT GẠT BÊN NGOÀI
                         Toggle("", isOn: Binding(
                             get: { isApplied },
                             set: { newValue in
@@ -185,7 +182,6 @@ struct PatchProjectsView: View {
         .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.gray.opacity(0.2), lineWidth: 1))
     }
 
-    // HÀM GẠT TỰ ĐỘNG ÁP DỤNG / KHÔI PHỤC
     private func togglePatch(item: PatchLibraryItem, activate: Bool) {
         let fileID = item.id.uuidString
         workingFileID = fileID
@@ -221,7 +217,6 @@ struct PatchProjectsView: View {
         }
     }
 
-    // ĐỒNG BỘ TỰ ĐỘNG TỪ WEB (CÁCH NHAU 5 GIÂY)
     private func syncRemotePatches() {
         guard !isAutoSyncing else { return }
         isAutoSyncing = true
@@ -234,7 +229,6 @@ struct PatchProjectsView: View {
                 }
                 let (data, _) = try await URLSession.shared.data(from: listUrl)
                 
-                // Giải mã JSON danh sách trả về từ list.php mới
                 struct RemoteFile: Decodable {
                     let filename: String
                     let gameType: String
@@ -251,7 +245,6 @@ struct PatchProjectsView: View {
                         await MainActor.run {
                             store.importPackage(from: .remote(fileURL))
                         }
-                        // Chờ 5 giây trước khi tải file tiếp theo
                         try await Task.sleep(nanoseconds: 5_000_000_000)
                     }
                 }
@@ -263,5 +256,69 @@ struct PatchProjectsView: View {
                 isAutoSyncing = false
             }
         }
+    }
+}
+
+// BỔ SUNG LẠI CÁC EXTENSION ĐỂ KHỚP VỚI HỆ THỐNG GỐC CỦA DỰ ÁN
+struct PatchUnlockView: View {
+    @Environment(\.appLanguage) private var language
+    @Environment(\.dismiss) private var dismiss
+    @ObservedObject var store: PatchProjectStore
+    let request: PatchPasswordRequest
+    @State private var password = ""
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    SecureField(language.text("patch.password"), text: $password)
+                        .textContentType(.password)
+                        .submitLabel(.done)
+                        .onSubmit(unlock)
+                        .onChange(of: password) { _ in
+                            store.clearUnlockError()
+                        }
+                    if let errorKey = store.unlockErrorKey {
+                        Text(store.unlockErrorArgument.map { language.text(errorKey, $0) }
+                            ?? language.text(errorKey))
+                            .font(.footnote)
+                            .foregroundStyle(.red)
+                    }
+                }
+            }
+            .navigationTitle(language.text("patch.unlock"))
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button(language.text("common.cancel")) { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button(language.text("patch.unlock"), action: unlock)
+                        .disabled(password.isEmpty || store.isBusy)
+                }
+            }
+        }
+    }
+
+    private func unlock() {
+        guard !password.isEmpty else { return }
+        store.unlock(password: password)
+    }
+}
+
+private struct PatchStorePresentationModifier: ViewModifier {
+    @ObservedObject var store: PatchProjectStore
+
+    func body(content: Content) -> some View {
+        content
+            .sheet(item: $store.passwordRequest, onDismiss: store.cancelUnlock) { request in
+                PatchUnlockView(store: store, request: request)
+            }
+    }
+}
+
+extension View {
+    func patchStorePresentation(_ store: PatchProjectStore) -> some View {
+        modifier(PatchStorePresentationModifier(store: store))
     }
 }
