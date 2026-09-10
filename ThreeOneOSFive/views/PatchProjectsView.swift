@@ -3,19 +3,18 @@ import UIKit
 import AudioToolbox
 import UniformTypeIdentifiers
 
-// MARK: - HIỆU ỨNG HẠT LITI BAY LÊN (RÕ RÀNG, RỰC RỠ)
+// HIỆU ỨNG HẠT LI TI BAY LÊN
 struct ParticleEffectView: View {
     var body: some View {
         TimelineView(.animation) { timeline in
             Canvas { context, size in
                 let now = timeline.date.timeIntervalSinceReferenceDate
-                for i in 0..<70 {
-                    let seed = Double(i) * 19.0
-                    let x = (sin(now * 0.5 + seed) * 0.5 + 0.5) * size.width
-                    let y = fmod(seed * 35.0 - now * 65.0 + size.height, size.height)
-                    let particleSize = CGFloat(fmod(seed, 2.5) + 2.0)
-                    let rect = CGRect(x: x, y: y, width: particleSize, height: particleSize)
-                    context.fill(Path(ellipseIn: rect), with: .color(.white.opacity(0.7)))
+                for i in 0..<35 {
+                    let seed = Double(i) * 37.0
+                    let x = (sin(now * 0.3 + seed) * 0.5 + 0.5) * size.width
+                    let y = fmod(seed * 20.0 - now * 40.0 + size.height, size.height)
+                    let rect = CGRect(x: x, y: y, width: 2.5, height: 2.5)
+                    context.fill(Path(ellipseIn: rect), with: .color(.white.opacity(0.4)))
                 }
             }
         }
@@ -23,13 +22,12 @@ struct ParticleEffectView: View {
     }
 }
 
-// MARK: - ÂM THANH & RUNG KHI KÍCH HOẠT / BẤM NÚT
+// ÂM THANH & RUNG CHUẨN IPHONE
 func playiPhoneTickSound() {
-    UIImpactFeedbackGenerator(style: .heavy).impactOccurred()
+    UIImpactFeedbackGenerator(style: .light).impactOccurred()
     AudioServicesPlaySystemSound(1104)
 }
 
-// MARK: - PATCH PROJECTS VIEW
 struct PatchProjectsView: View {
     @Environment(\.appLanguage) private var language
     @EnvironmentObject private var draftCoordinator: PatchDraftCoordinator
@@ -41,7 +39,6 @@ struct PatchProjectsView: View {
     
     @State private var navigateToMax = false
     @State private var navigateToNormal = false
-    @State private var avatarRotation: Double = 0.0
     
     let onOpenSettings: () -> Void
     let onOpenLogs: () -> Void
@@ -58,49 +55,39 @@ struct PatchProjectsView: View {
                 ParticleEffectView()
                 
                 VStack(spacing: 0) {
-                    ScrollView(showsIndicators: false) {
-                        VStack(spacing: 28) {
-                            // HEADER AVATAR VIỀN TRẮNG NỀN ĐEN
-                            VStack(spacing: 16) {
-                                ZStack {
-                                    Circle()
-                                        .stroke(Color.white, lineWidth: 2.5)
-                                        .frame(width: 106, height: 106)
-                                        .rotationEffect(.degrees(avatarRotation))
-                                
-                                    AsyncImage(url: URL(string: "https://solitudepremium.click/ipa/proxy/li.jpg")) { phase in
-                                        switch phase {
-                                        case .success(let image):
-                                            image.resizable().scaledToFill()
-                                                .frame(width: 96, height: 96)
-                                                .clipShape(Circle())
-                                        default:
-                                            Circle().fill(Color.gray.opacity(0.3)).frame(width: 96, height: 96)
-                                        }
-                                    }
-                                }
-                                
-                                Text("ZENITH SOLITUDE")
-                                    .font(.system(size: 22, weight: .black, design: .monospaced))
-                                    .foregroundStyle(.white)
-                                    .shadow(color: .white, radius: 6)
+                    // HEADER AVATAR
+                    VStack(spacing: 10) {
+                        AsyncImage(url: URL(string: "https://solitudepremium.click/ipa/proxy/li.jpg")) { phase in
+                            switch phase {
+                            case .success(let image):
+                                image.resizable().scaledToFill()
+                                    .frame(width: 75, height: 75)
+                                    .clipShape(Circle())
+                                    .overlay(Circle().stroke(Color.white, lineWidth: 1.5))
+                                    .shadow(color: .white.opacity(0.3), radius: 6)
+                            default:
+                                Circle().fill(Color.gray.opacity(0.3)).frame(width: 75, height: 75)
                             }
-                            .padding(.top, 30)
-                            
-                            // THẺ GAME CHÍNH (VIỀN TRẮNG, NỀN ĐEN)
-                            VStack(spacing: 18) {
-                                mainGameCard(title: "FREE FIRE MAX", icon: "https://solitudepremium.click/ipa/proxy/free.jpg") {
-                                    playiPhoneTickSound()
-                                    navigateToMax = true
-                                }
-                                mainGameCard(title: "FREE FIRE THƯỜNG", icon: "https://solitudepremium.click/ipa/proxy/free.jpg") {
-                                    playiPhoneTickSound()
-                                    navigateToNormal = true
-                                }
-                            }
-                            .padding(.horizontal, 20)
                         }
-                        .padding(.bottom, 40)
+                        
+                        Text("Zenith Solitude")
+                            .font(.system(size: 22, weight: .bold))
+                            .foregroundStyle(.white)
+                    }
+                    .padding(.vertical, 16)
+                    
+                    // THẺ GAME CHÍNH
+                    ScrollView {
+                        VStack(spacing: 16) {
+                            mainGameCard(title: "Free Fire Max", bundleID: "com.dts.freefiremax") {
+                                navigateToMax = true
+                            }
+                            mainGameCard(title: "Free Fire Thường", bundleID: "com.dts.freefirethuong") {
+                                navigateToNormal = true
+                            }
+                        }
+                        .padding(.horizontal, 16)
+                        .padding(.bottom, 30)
                     }
                 }
             }
@@ -112,9 +99,6 @@ struct PatchProjectsView: View {
                 GameDetailMenuView(gameType: .ffnormal, remoteItems: remoteItems, store: store)
             }
             .task {
-                withAnimation(.linear(duration: 6).repeatForever(autoreverses: false)) {
-                    avatarRotation = 360
-                }
                 await startContinuousAutoSync()
             }
             .alert(item: $actionAlert) { alert in
@@ -124,47 +108,50 @@ struct PatchProjectsView: View {
     }
 
     @ViewBuilder
-    private func mainGameCard(title: String, icon: String, action: @escaping () -> Void) -> some View {
+    private func mainGameCard(title: String, bundleID: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            HStack(spacing: 18) {
-                AsyncImage(url: URL(string: icon)) { phase in
+            HStack(spacing: 14) {
+                AsyncImage(url: URL(string: "https://solitudepremium.click/ipa/proxy/free.jpg")) { phase in
                     switch phase {
                     case .success(let image):
                         image.resizable().scaledToFill()
-                            .frame(width: 60, height: 60)
-                            .clipShape(RoundedRectangle(cornerRadius: 16))
-                            .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.white, lineWidth: 1.5))
+                            .frame(width: 50, height: 50)
+                            .clipShape(RoundedRectangle(cornerRadius: 10))
                     default:
-                        RoundedRectangle(cornerRadius: 16).fill(Color.gray.opacity(0.3)).frame(width: 60, height: 60)
+                        RoundedRectangle(cornerRadius: 10).fill(Color.gray.opacity(0.3)).frame(width: 50, height: 50)
                     }
                 }
                 
-                Text(title)
-                    .font(.system(size: 16, weight: .black, design: .monospaced))
-                    .foregroundStyle(.white)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(title)
+                        .font(.headline)
+                        .foregroundStyle(.white)
+                    Text(bundleID)
+                        .font(.caption2)
+                        .foregroundStyle(.gray)
+                }
                 
                 Spacer()
                 
-                HStack(spacing: 4) {
-                    Text("MỞ")
-                        .font(.system(size: 11, weight: .black, design: .monospaced))
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 10, weight: .bold))
-                }
-                .foregroundStyle(.black)
-                .padding(.horizontal, 16)
-                .padding(.vertical, 12)
-                .background(Color.white)
-                .cornerRadius(14)
+                Text("MỞ MENU")
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .background(RoundedRectangle(cornerRadius: 8).stroke(Color.white.opacity(0.4), lineWidth: 1))
+                
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(.gray)
             }
-            .padding(18)
-            .background(Color.black)
-            .cornerRadius(22)
-            .overlay(RoundedRectangle(cornerRadius: 22).stroke(Color.white, lineWidth: 1.5))
+            .padding(16)
+            .background(RoundedRectangle(cornerRadius: 16).fill(Color.black.opacity(0.8)))
+            .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.white.opacity(0.2), lineWidth: 1))
         }
         .buttonStyle(.plain)
     }
 
+    // ĐỒNG BỘ NỀN KHÔNG KHÓA GIAO DIỆN
     private func startContinuousAutoSync() async {
         guard !isAutoSyncing else { return }
         isAutoSyncing = true
@@ -189,7 +176,7 @@ struct PatchProjectsView: View {
                         if let fileURL = URL(string: item.url) {
                             await MainActor.run { store.importPackage(from: .remote(fileURL)) }
                             hasNewFiles = true
-                            try await Task.sleep(nanoseconds: 3_000_000_000)
+                            try await Task.sleep(nanoseconds: 2_000_000_000)
                         }
                     }
                 }
@@ -207,11 +194,10 @@ struct PatchProjectsView: View {
     }
 }
 
-// MARK: - ENUM & MODEL
 enum GameType: String, Hashable, Identifiable {
     case ffmax, ffnormal
     var id: String { self.rawValue }
-    var title: String { self == .ffmax ? "FREE FIRE MAX" : "FREE FIRE THƯỜNG" }
+    var title: String { self == .ffmax ? "Free Fire Max" : "Free Fire Thường" }
     var bundleID: String { self == .ffmax ? "com.dts.freefiremax" : "com.dts.freefirethuong" }
 }
 
@@ -221,11 +207,11 @@ struct RemotePatchItem: Codable, Identifiable {
     let gameType: String
     let folder: String
     let displayName: String
-    let note: String?
+    let note: String? // Thêm trường Ghi chú (Cho phép trống đối với file cũ)
     let url: String
 }
 
-// MARK: - ITEM ROW VIEW
+// VIEW ITEM: HIỂN THỊ GHI CHÚ, CHỐNG LỖI XOAY VÒNG
 struct PatchItemRowView: View {
     let rItem: RemotePatchItem
     let selectedTab: String
@@ -235,6 +221,7 @@ struct PatchItemRowView: View {
     @Binding var menuAlert: PatchStoreAlert?
     
     var body: some View {
+        // Thuật toán match siêu rộng tránh rớt file
         let matchedStoreItem = store.items.first(where: {
             let local = $0.packageURL.lastPathComponent.lowercased().replacingOccurrences(of: "%20", with: "_").replacingOccurrences(of: " ", with: "_")
             let remote = rItem.filename.lowercased().replacingOccurrences(of: "%20", with: "_").replacingOccurrences(of: " ", with: "_")
@@ -247,56 +234,49 @@ struct PatchItemRowView: View {
         let isApplied = matchedStoreItem != nil ? (DevicePatchService.latestReceipt(projectID: matchedStoreItem!.id) != nil) : false
         let isWorking = workingFilename == rItem.filename
         
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 16) {
-                ZStack {
-                    RoundedRectangle(cornerRadius: 14).fill(Color.white.opacity(0.1)).frame(width: 46, height: 46)
-                    Image(systemName: isApplied ? "checkmark.shield.fill" : "shield.fill")
-                        .font(.system(size: 18))
-                        .foregroundStyle(.white)
-                }
+        HStack(spacing: 12) {
+            Image(systemName: "shield.checkerboard")
+                .font(.title3)
+                .foregroundStyle(.white)
+            
+            VStack(alignment: .leading, spacing: 2) {
+                Text(rItem.displayName)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.white)
                 
-                VStack(alignment: .leading, spacing: 5) {
-                    Text(rItem.displayName)
-                        .font(.system(size: 15, weight: .bold, design: .monospaced))
-                        .foregroundStyle(.white)
-                    Text(selectedTab.uppercased())
-                        .font(.system(size: 9, weight: .bold, design: .monospaced))
-                        .foregroundStyle(.gray)
-                }
-                
-                Spacer()
-                
-                if isWorking {
-                    ProgressView().tint(.white).scaleEffect(0.8)
-                } else {
-                    Toggle("", isOn: Binding(
-                        get: { isApplied },
-                        set: { newValue in
-                            playiPhoneTickSound()
-                            if let item = matchedStoreItem {
-                                togglePatch(item: item, activate: newValue, filename: rItem.filename)
-                            } else {
-                                downloadAndNotify(rItem: rItem)
-                            }
-                        }
-                    ))
-                    .labelsHidden()
-                    .tint(.white)
-                }
+                // Hiển thị Ghi chú (nếu có), nếu không hiển thị tên Tab
+                Text((rItem.note?.isEmpty == false) ? rItem.note! : selectedTab.lowercased())
+                    .font(.caption2)
+                    .foregroundStyle(.gray)
             }
             
-            if let note = rItem.note, !note.isEmpty {
-                Text("Ghi chú: \(note)")
-                    .font(.system(size: 11, design: .monospaced))
-                    .foregroundStyle(.yellow.opacity(0.8))
-                    .padding(.leading, 6)
+            Spacer()
+            
+            if isWorking {
+                ProgressView()
+                    .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                    .scaleEffect(0.9)
+                    .padding(.trailing, 8)
+            } else {
+                Toggle("", isOn: Binding(
+                    get: { isApplied },
+                    set: { newValue in
+                        playiPhoneTickSound()
+                        if let item = matchedStoreItem {
+                            togglePatch(item: item, activate: newValue, filename: rItem.filename)
+                        } else {
+                            // CHƯA CÓ FILE THÌ TỰ ĐỘNG TẢI KHI GẠT NÚT
+                            downloadAndNotify(rItem: rItem)
+                        }
+                    }
+                ))
+                .labelsHidden()
+                .tint(.green)
             }
         }
-        .padding(16)
-        .background(Color.black)
-        .cornerRadius(20)
-        .overlay(RoundedRectangle(cornerRadius: 20).stroke(Color.white, lineWidth: 1.5))
+        .padding(14)
+        .background(RoundedRectangle(cornerRadius: 14).fill(Color.black.opacity(0.8)))
+        .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.white.opacity(0.2), lineWidth: 1))
     }
     
     private func togglePatch(item: PatchLibraryItem, activate: Bool, filename: String) {
@@ -344,18 +324,17 @@ struct PatchItemRowView: View {
                 store.importPackage(from: .remote(fileURL))
             }
             
-            try? await Task.sleep(nanoseconds: 2_500_000_000)
+            try? await Task.sleep(nanoseconds: 2_000_000_000)
             
             await MainActor.run {
                 store.reload()
                 workingFilename = nil
-                menuAlert = PatchStoreAlert(titleKey: "THÔNG BÁO", messageKey: "ĐÃ XẢY RA LỖI VUI LÒNG KÍCH HOẠT LẠI")
+                menuAlert = PatchStoreAlert(titleKey: "Tải hoàn tất", messageKey: "Đã nạp xong file! Vui lòng gạt lại để kích hoạt.")
             }
         }
     }
 }
 
-// MARK: - GAME DETAIL MENU VIEW
 struct GameDetailMenuView: View {
     let gameType: GameType
     let remoteItems: [RemotePatchItem]
@@ -373,66 +352,60 @@ struct GameDetailMenuView: View {
             ParticleEffectView()
             
             VStack(spacing: 0) {
-                HStack(spacing: 14) {
-                    Button(action: { playiPhoneTickSound(); dismiss() }) {
-                        Image(systemName: "chevron.left")
-                            .font(.system(size: 16, weight: .bold))
-                            .foregroundStyle(.black)
-                            .frame(width: 42, height: 42)
-                            .background(Color.white)
-                            .clipShape(Circle())
+                HStack {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(gameType.title)
+                            .font(.headline)
+                            .foregroundStyle(.white)
+                        Text(gameType.bundleID)
+                            .font(.caption2)
+                            .foregroundStyle(.gray)
                     }
-                    
-                    Text(gameType.title)
-                        .font(.system(size: 18, weight: .black, design: .monospaced))
-                        .foregroundStyle(.white)
-                    
                     Spacer()
+                    Button { dismiss() } label: {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 14, weight: .bold))
+                            .foregroundStyle(.white)
+                            .padding(8)
+                            .background(Circle().stroke(Color.white.opacity(0.3), lineWidth: 1))
+                    }
                 }
-                .padding(.horizontal, 20)
-                .padding(.top, 15)
+                .padding(16)
                 
                 let gameItems = remoteItems.filter { $0.gameType == gameType.rawValue }
                 let folders = Array(Set(gameItems.map { $0.folder })).sorted()
                 let currentFolders = folders.isEmpty ? ["Aim", "Guns", "Chams", "Outfits"] : folders
                 
                 ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 12) {
+                    HStack(spacing: 10) {
                         ForEach(currentFolders, id: \.self) { folder in
-                            let isSelected = selectedTab.lowercased() == folder.lowercased()
-                            Button(action: {
-                                playiPhoneTickSound()
+                            Button {
                                 selectedTab = folder
-                            }) {
-                                Text(folder.uppercased())
-                                    .font(.system(size: 12, weight: .black, design: .monospaced))
-                                    .padding(.horizontal, 22)
-                                    .padding(.vertical, 12)
-                                    .background(isSelected ? Color.white : Color.black)
-                                    .foregroundStyle(isSelected ? Color.black : Color.white)
-                                    .cornerRadius(22)
-                                    .overlay(RoundedRectangle(cornerRadius: 22).stroke(Color.white, lineWidth: 1.5))
+                            } label: {
+                                Text(folder)
+                                    .font(.subheadline.weight(.semibold))
+                                    .padding(.horizontal, 18)
+                                    .padding(.vertical, 8)
+                                    .background(selectedTab == folder ? Color.white : Color.black)
+                                    .foregroundStyle(selectedTab == folder ? Color.black : Color.white)
+                                    .clipShape(Capsule())
+                                    .overlay(Capsule().stroke(Color.white.opacity(0.4), lineWidth: 1))
                             }
                         }
                     }
-                    .padding(.horizontal, 20)
-                    .padding(.vertical, 16)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 8)
                 }
                 
-                ScrollView(showsIndicators: false) {
-                    VStack(spacing: 16) {
+                ScrollView {
+                    VStack(spacing: 12) {
                         let activeItemsInFolder = gameItems.filter { $0.folder == selectedTab }
                         
                         if activeItemsInFolder.isEmpty {
-                            VStack(spacing: 12) {
-                                Image(systemName: "folder.badge.questionmark")
-                                    .font(.system(size: 45))
-                                    .foregroundStyle(.white.opacity(0.3))
-                                Text("Chưa có cấu hình nào trong thư mục này.")
-                                    .font(.system(size: 12, design: .monospaced))
-                                    .foregroundStyle(.gray)
-                            }
-                            .padding(.top, 120)
+                            Text("Chưa có cấu hình nào trong thư mục này.")
+                                .font(.footnote)
+                                .foregroundStyle(.gray)
+                                .padding(.top, 40)
                         } else {
                             ForEach(activeItemsInFolder) { rItem in
                                 PatchItemRowView(
@@ -445,11 +418,20 @@ struct GameDetailMenuView: View {
                             }
                         }
                     }
-                    .padding(.horizontal, 20)
-                    .padding(.bottom, 50)
+                    .padding(16)
                 }
                 
-                Spacer()
+                Button {
+                    // Hành động vào game
+                } label: {
+                    Text("🎮 VÀO GAME NGAY (\(gameType.title))")
+                        .font(.headline.weight(.bold))
+                        .foregroundStyle(.black)
+                        .frame(maxWidth: .infinity)
+                        .padding()
+                        .background(RoundedRectangle(cornerRadius: 14).fill(Color.white))
+                }
+                .padding(16)
             }
         }
         .navigationBarHidden(true)
@@ -465,7 +447,7 @@ struct GameDetailMenuView: View {
     }
 }
 
-// MARK: - EXTENSION HỆ THỐNG GỐC
+// EXTENSION HỆ THỐNG GỐC CỦA DỰ ÁN
 struct PatchUnlockView: View {
     @Environment(\.appLanguage) private var language
     @Environment(\.dismiss) private var dismiss
