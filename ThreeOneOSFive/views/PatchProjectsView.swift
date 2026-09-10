@@ -3,8 +3,8 @@ import UIKit
 import AudioToolbox
 import UniformTypeIdentifiers
 
-// MARK: - HIỆU ỨNG HẠT BỤI & NGÂN HÀ NEON (KHÔNG CÒN LỖI PRIVATE)
-public struct ParticleCanvasView: View {
+// MARK: - HIỆU ỨNG HẠT BỤI & NGÂN HÀ NEON (ĐÃ ĐỔI TÊN ĐỂ TRÁNH TRÙNG LẶP)
+public struct GalaxyParticleCanvasView: View {
     public init() {}
     public var body: some View {
         TimelineView(.animation) { context in
@@ -52,7 +52,7 @@ struct PatchProjectsView: View {
         NavigationStack {
             ZStack {
                 Color.black.ignoresSafeArea()
-                ParticleCanvasView()
+                GalaxyParticleCanvasView()
                 
                 VStack(spacing: 0) {
                     // HEADER AVATAR TO + HÀO QUANG NEON PHÁT SÁNG
@@ -360,7 +360,7 @@ struct GameDetailMenuView: View {
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
-            ParticleCanvasView()
+            GalaxyParticleCanvasView()
             
             VStack(spacing: 0) {
                 HStack {
