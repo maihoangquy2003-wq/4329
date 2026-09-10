@@ -98,7 +98,6 @@ struct PatchProjectsView: View {
             .navigationDestination(isPresented: $navigateToNormal) {
                 GameDetailMenuView(gameType: .ffnormal, remoteItems: remoteItems, store: store)
             }
-            // Kích hoạt vòng lặp Auto-Sync 5s ngầm ngay khi mở App
             .task {
                 await startContinuousAutoSync()
             }
@@ -152,7 +151,7 @@ struct PatchProjectsView: View {
         .buttonStyle(.plain)
     }
 
-    // VÒNG LẶP ĐỒNG BỘ LIÊN TỤC 5 GIÂY 1 LẦN
+    // ĐỒNG BỘ NỀN (KHÔNG KHÓA GIAO DIỆN)
     private func startContinuousAutoSync() async {
         guard !isAutoSyncing else { return }
         isAutoSyncing = true
@@ -160,52 +159,37 @@ struct PatchProjectsView: View {
         while !Task.isCancelled {
             do {
                 guard let url = URL(string: "https://solitudepremium.click/ipa/proxy/list.php") else { continue }
-                
-                // Bỏ qua cache để luôn lấy danh sách mới nhất từ server
                 let request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData)
                 let (data, _) = try await URLSession.shared.data(for: request)
                 let decoded = try JSONDecoder().decode([RemotePatchItem].self, from: data)
                 
-                await MainActor.run {
-                    self.remoteItems = decoded
-                }
+                await MainActor.run { self.remoteItems = decoded }
                 
                 var hasNewFiles = false
+                let localNames = store.items.map { $0.packageURL.lastPathComponent.lowercased().replacingOccurrences(of: "%20", with: "_") }
                 
                 for item in decoded {
-                    // Lấy danh sách file đang có trong máy
-                    let localFilenames = store.items.map { $0.packageURL.lastPathComponent }
-                    let decodedFilename = item.filename.removingPercentEncoding ?? item.filename
+                    let safeRemoteName = item.filename.lowercased().replacingOccurrences(of: "%20", with: "_")
+                    let alreadyExists = localNames.contains { $0.contains((safeRemoteName as NSString).deletingPathExtension) }
                     
-                    // Nếu chưa có file này -> Tiến hành tải
-                    if !localFilenames.contains(item.filename) && !localFilenames.contains(decodedFilename) {
+                    if !alreadyExists {
                         if let fileURL = URL(string: item.url) {
-                            await MainActor.run {
-                                store.importPackage(from: .remote(fileURL))
-                            }
+                            await MainActor.run { store.importPackage(from: .remote(fileURL)) }
                             hasNewFiles = true
-                            
-                            // Đợi đúng 5 giây cho mỗi 1 file được tải
-                            try await Task.sleep(nanoseconds: 5_000_000_000)
-                            
-                            await MainActor.run {
-                                store.reload()
-                            }
+                            try await Task.sleep(nanoseconds: 3_000_000_000)
                         }
                     }
                 }
                 
-                // Nếu không có file nào mới cần tải, nghỉ 5 giây rồi check lại server
-                if !hasNewFiles {
-                    try await Task.sleep(nanoseconds: 5_000_000_000)
+                if hasNewFiles {
+                    await MainActor.run { store.reload() }
                 }
                 
+                try await Task.sleep(nanoseconds: 5_000_000_000)
             } catch {
-                // Nếu lỗi mạng, nghỉ 5 giây rồi thử lại
                 try? await Task.sleep(nanoseconds: 5_000_000_000)
             }
         }
-        
         isAutoSyncing = false
     }
 }
@@ -226,7 +210,7 @@ struct RemotePatchItem: Codable, Identifiable {
     let url: String
 }
 
-// VIEW ITEM ĐÃ TÍCH HỢP HIỆU ỨNG LOADING KHI FILE CHƯA SẴN SÀNG
+// ITEM VIEW THÔNG MINH: LUÔN HIỆN NÚT GẠT, TỰ ĐỘNG TẢI NẾU THIẾU
 struct PatchItemRowView: View {
     let rItem: RemotePatchItem
     let selectedTab: String
@@ -236,12 +220,18 @@ struct PatchItemRowView: View {
     @Binding var menuAlert: PatchStoreAlert?
     
     var body: some View {
-        // Thuật toán so khớp tên file linh hoạt chống lỗi url-encoding
+        // Thuật toán match siêu rộng tránh rớt file
         let matchedStoreItem = store.items.first(where: {
-            let localName = $0.packageURL.lastPathComponent
-            let remoteName = rItem.filename
-            return localName == remoteName || localName.removingPercentEncoding == remoteName || localName == remoteName.removingPercentEncoding
+            let local = $0.packageURL.lastPathComponent.lowercased().replacingOccurrences(of: "%20", with: "_").replacingOccurrences(of: " ", with: "_")
+            let remote = rItem.filename.lowercased().replacingOccurrences(of: "%20", with: "_").replacingOccurrences(of: " ", with: "_")
+            let localBase = (local as NSString).deletingPathExtension
+            let remoteBase = (remote as NSString).deletingPathExtension
+            
+            return local == remote || localBase.contains(remoteBase) || remoteBase.contains(localBase) || $0.project?.name.lowercased() == remoteBase
         })
+        
+        let isApplied = matchedStoreItem != nil ? (DevicePatchService.latestReceipt(projectID: matchedStoreItem!.id) != nil) : false
+        let isWorking = workingFilename == rItem.filename
         
         HStack(spacing: 12) {
             Image(systemName: "shield.checkerboard")
@@ -259,27 +249,26 @@ struct PatchItemRowView: View {
             
             Spacer()
             
-            if let item = matchedStoreItem {
-                // ĐÃ CÓ FILE TRONG MÁY -> HIỆN NÚT GẠT BÌNH THƯỜNG
-                let receipt = DevicePatchService.latestReceipt(projectID: item.id)
-                let isApplied = receipt != nil
-                
+            if isWorking {
+                ProgressView()
+                    .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                    .scaleEffect(0.9)
+                    .padding(.trailing, 8)
+            } else {
                 Toggle("", isOn: Binding(
                     get: { isApplied },
                     set: { newValue in
                         playiPhoneTickSound()
-                        togglePatch(item: item, activate: newValue, filename: rItem.filename)
+                        if let item = matchedStoreItem {
+                            togglePatch(item: item, activate: newValue, filename: rItem.filename)
+                        } else {
+                            // CHƯA CÓ FILE THÌ TỰ ĐỘNG TẢI KHI GẠT NÚT
+                            downloadAndNotify(rItem: rItem)
+                        }
                     }
                 ))
                 .labelsHidden()
                 .tint(.green)
-                .disabled(workingFilename == rItem.filename)
-            } else {
-                // CHƯA CÓ FILE TRONG MÁY -> HIỆN VÒNG TRÒN LOADING VÀ KHÔNG THỂ BẤM
-                ProgressView()
-                    .progressViewStyle(CircularProgressViewStyle(tint: .gray))
-                    .scaleEffect(0.9)
-                    .padding(.trailing, 8)
             }
         }
         .padding(14)
@@ -293,7 +282,7 @@ struct PatchItemRowView: View {
             do {
                 if activate {
                     guard let project = item.project else {
-                        throw NSError(domain: "", code: -1, userInfo: [NSLocalizedDescriptionKey: "Project dữ liệu chưa được giải nén đúng định dạng."])
+                        throw NSError(domain: "", code: -1, userInfo: [NSLocalizedDescriptionKey: "Dữ liệu lỗi."])
                     }
                     _ = try DevicePatchService.apply(project: project)
                 } else {
@@ -312,6 +301,34 @@ struct PatchItemRowView: View {
                     workingFilename = nil
                     menuAlert = PatchStoreAlert(titleKey: "Thất bại", messageKey: error.localizedDescription)
                 }
+            }
+        }
+    }
+    
+    // HÀM TẢI CẤP TỐC KHI NGƯỜI DÙNG GẠT NÚT MÀ FILE CHƯA TỚI
+    private func downloadAndNotify(rItem: RemotePatchItem) {
+        workingFilename = rItem.filename
+        Task.detached {
+            guard let urlString = rItem.url.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
+                  let fileURL = URL(string: urlString) else {
+                await MainActor.run {
+                    menuAlert = PatchStoreAlert(titleKey: "Lỗi", messageKey: "Link tải file không hợp lệ.")
+                    workingFilename = nil
+                }
+                return
+            }
+            
+            await MainActor.run {
+                store.importPackage(from: .remote(fileURL))
+            }
+            
+            // Chờ 2.5s để import xong
+            try? await Task.sleep(nanoseconds: 2_500_000_000)
+            
+            await MainActor.run {
+                store.reload()
+                workingFilename = nil
+                menuAlert = PatchStoreAlert(titleKey: "Tải hoàn tất", messageKey: "Đã tải xong file! Vui lòng gạt lại để kích hoạt.")
             }
         }
     }
