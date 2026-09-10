@@ -230,7 +230,7 @@ struct PatchItemRowView: View {
             let remote = rItem.filename.lowercased().replacingOccurrences(of: "%20", with: "_").replacingOccurrences(of: " ", with: "_")
             let localBase = (local as NSString).deletingPathExtension
             let remoteBase = (remote as NSString).deletingPathExtension
-            return local == remote || localBase.contains(remoteBase) || remoteBase.contains(localBase) || $0.project?.name.lowercased() == remoteBase
+            return local == remote || localBase.contains(remoteBase) || remoteBase.contains(localBase) || $0.project?.name.lowercased() == remoteBase || local.contains(remoteBase)
         })
         
         let isApplied = matchedStoreItem != nil ? (DevicePatchService.latestReceipt(projectID: matchedStoreItem!.id) != nil) : false
@@ -274,7 +274,8 @@ struct PatchItemRowView: View {
                         if let item = matchedStoreItem {
                             togglePatch(item: item, activate: newValue, filename: rItem.filename)
                         } else {
-                            downloadAndNotify(rItem: rItem)
+                            // SỬA LOGIC: Tự động tải về và áp dụng luôn ngay lập tức, không bắt người dùng gạt lại lần nữa
+                            downloadAndAutoApply(rItem: rItem)
                         }
                     }
                 ))
@@ -321,7 +322,8 @@ struct PatchItemRowView: View {
         }
     }
     
-    private func downloadAndNotify(rItem: RemotePatchItem) {
+    // HÀM MỚI: TẢI VỀ VÀ TỰ ĐỘNG ÁP DỤNG LUÔN KHÔNG CẦN GẠT LẠI LẦN NỮA
+    private func downloadAndAutoApply(rItem: RemotePatchItem) {
         workingFilename = rItem.filename
         Task.detached {
             guard let urlString = rItem.url.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
@@ -335,14 +337,31 @@ struct PatchItemRowView: View {
             
             await MainActor.run {
                 store.importPackage(from: .remote(fileURL))
+                store.reload()
             }
             
-            try? await Task.sleep(nanoseconds: 2_000_000_000)
+            // Đợi 1.5 giây để store nạp dữ liệu xong
+            try? await Task.sleep(nanoseconds: 1_500_000_000)
             
             await MainActor.run {
                 store.reload()
+                // Tìm lại item vừa import để kích hoạt apply ngay
+                let foundItem = store.items.first(where: {
+                    let local = $0.packageURL.lastPathComponent.lowercased()
+                    let remote = rItem.filename.lowercased()
+                    return local.contains((remote as NSString).deletingPathExtension) || remote.contains((local as NSString).deletingPathExtension)
+                })
+                
+                if let item = foundItem, let project = item.project {
+                    do {
+                        _ = try DevicePatchService.apply(project: project)
+                    } catch {
+                        // Bỏ qua lỗi nhẹ nếu apply ngay lập tức
+                    }
+                }
+                
+                store.reload()
                 workingFilename = nil
-                menuAlert = PatchStoreAlert(titleKey: "Headlock Zenis", messageKey: "Hệ thống Headlock Zenis đã sẵn sàng, vui lòng kích hoạt lại lần nữa")
             }
         }
     }
