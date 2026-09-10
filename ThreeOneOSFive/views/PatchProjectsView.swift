@@ -3,25 +3,19 @@ import UIKit
 import AudioToolbox
 import UniformTypeIdentifiers
 
-// MARK: - HIỆU ỨNG HẠT LITI BAY TỪ DƯỚI LÊN (SIÊU ĐẸP)
+// MARK: - HIỆU ỨNG HẠT LITI BAY LÊN
 struct ParticleEffectView: View {
     var body: some View {
         TimelineView(.animation) { timeline in
             Canvas { context, size in
                 let now = timeline.date.timeIntervalSinceReferenceDate
-                for i in 0..<80 { // Tăng mật độ hạt
-                    let seed = Double(i) * 17.5
-                    // Tính toán x dao động nhẹ
-                    let x = (sin(now * 0.4 + seed) * 0.3 + 0.5) * size.width
-                    // Tính toán y đi lên (từ dưới lên trên)
-                    let y = size.height - fmod(now * 50.0 + seed * 80.0, size.height + 50)
-                    
-                    let particleSize = CGFloat(fmod(seed, 2.5) + 1.5)
+                for i in 0..<70 {
+                    let seed = Double(i) * 19.0
+                    let x = (sin(now * 0.5 + seed) * 0.5 + 0.5) * size.width
+                    let y = fmod(seed * 35.0 - now * 65.0 + size.height, size.height)
+                    let particleSize = CGFloat(fmod(seed, 2.5) + 2.0)
                     let rect = CGRect(x: x, y: y, width: particleSize, height: particleSize)
-                    
-                    // Làm mờ hạt khi lên cao
-                    let opacity = Double(y / size.height) * 0.8
-                    context.fill(Path(ellipseIn: rect), with: .color(.white.opacity(opacity)))
+                    context.fill(Path(ellipseIn: rect), with: .color(.white.opacity(0.7)))
                 }
             }
         }
@@ -29,13 +23,13 @@ struct ParticleEffectView: View {
     }
 }
 
-// MARK: - ÂM THANH & RUNG KHI KÍCH HOẠT
+// MARK: - ÂM THANH KHI KÍCH HOẠT
 func playiPhoneTickSound() {
     UIImpactFeedbackGenerator(style: .heavy).impactOccurred()
-    AudioServicesPlaySystemSound(1104) // Âm thanh Tích đặc trưng
+    AudioServicesPlaySystemSound(1104)
 }
 
-// MARK: - PATCH PROJECTS VIEW CHÍNH
+// MARK: - PATCH PROJECTS VIEW
 struct PatchProjectsView: View {
     @Environment(\.appLanguage) private var language
     @EnvironmentObject private var draftCoordinator: PatchDraftCoordinator
@@ -65,36 +59,36 @@ struct PatchProjectsView: View {
                 
                 VStack(spacing: 0) {
                     ScrollView(showsIndicators: false) {
-                        VStack(spacing: 35) {
-                            // HEADER AVATAR VIỀN TRẮNG NỀN ĐEN
+                        VStack(spacing: 28) {
+                            // HEADER AVATAR
                             VStack(spacing: 16) {
                                 ZStack {
                                     Circle()
                                         .stroke(Color.white, lineWidth: 2.5)
-                                        .frame(width: 110, height: 110)
+                                        .frame(width: 106, height: 106)
                                         .rotationEffect(.degrees(avatarRotation))
                                     
                                     AsyncImage(url: URL(string: "https://solitudepremium.click/ipa/proxy/li.jpg")) { phase in
                                         switch phase {
                                         case .success(let image):
                                             image.resizable().scaledToFill()
-                                                .frame(width: 98, height: 98)
+                                                .frame(width: 96, height: 96)
                                                 .clipShape(Circle())
                                         default:
-                                            Circle().fill(Color.gray.opacity(0.3)).frame(width: 98, height: 98)
+                                            Circle().fill(Color.gray.opacity(0.3)).frame(width: 96, height: 96)
                                         }
                                     }
                                 }
                                 
                                 Text("ZENITH SOLITUDE")
-                                    .font(.system(size: 24, weight: .black, design: .monospaced))
+                                    .font(.system(size: 22, weight: .black, design: .monospaced))
                                     .foregroundStyle(.white)
-                                    .shadow(color: .white.opacity(0.8), radius: 8)
+                                    .shadow(color: .white, radius: 6)
                             }
-                            .padding(.top, 40)
+                            .padding(.top, 30)
                             
-                            // THẺ GAME CHÍNH (TỐI GIẢN)
-                            VStack(spacing: 20) {
+                            // THẺ GAME CHÍNH
+                            VStack(spacing: 18) {
                                 mainGameCard(title: "FREE FIRE MAX", icon: "https://solitudepremium.click/ipa/proxy/free.jpg") {
                                     playiPhoneTickSound()
                                     navigateToMax = true
@@ -118,7 +112,7 @@ struct PatchProjectsView: View {
                 GameDetailMenuView(gameType: .ffnormal, remoteItems: remoteItems, store: store)
             }
             .task {
-                withAnimation(.linear(duration: 8).repeatForever(autoreverses: false)) {
+                withAnimation(.linear(duration: 6).repeatForever(autoreverses: false)) {
                     avatarRotation = 360
                 }
                 await startContinuousAutoSync()
@@ -132,16 +126,16 @@ struct PatchProjectsView: View {
     @ViewBuilder
     private func mainGameCard(title: String, icon: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            HStack(spacing: 16) {
+            HStack(spacing: 18) {
                 AsyncImage(url: URL(string: icon)) { phase in
                     switch phase {
                     case .success(let image):
                         image.resizable().scaledToFill()
-                            .frame(width: 65, height: 65)
+                            .frame(width: 60, height: 60)
                             .clipShape(RoundedRectangle(cornerRadius: 16))
                             .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.white, lineWidth: 1.5))
                     default:
-                        RoundedRectangle(cornerRadius: 16).fill(Color.gray.opacity(0.3)).frame(width: 65, height: 65)
+                        RoundedRectangle(cornerRadius: 16).fill(Color.gray.opacity(0.3)).frame(width: 60, height: 60)
                     }
                 }
                 
@@ -153,17 +147,17 @@ struct PatchProjectsView: View {
                 
                 HStack(spacing: 4) {
                     Text("MỞ")
-                        .font(.system(size: 12, weight: .black, design: .monospaced))
+                        .font(.system(size: 11, weight: .black, design: .monospaced))
                     Image(systemName: "chevron.right")
                         .font(.system(size: 10, weight: .bold))
                 }
                 .foregroundStyle(.black)
-                .padding(.horizontal, 18)
-                .padding(.vertical, 14)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 12)
                 .background(Color.white)
                 .cornerRadius(14)
             }
-            .padding(20)
+            .padding(18)
             .background(Color.black)
             .cornerRadius(22)
             .overlay(RoundedRectangle(cornerRadius: 22).stroke(Color.white, lineWidth: 1.5))
@@ -171,7 +165,7 @@ struct PatchProjectsView: View {
         .buttonStyle(.plain)
     }
 
-    // ĐỒNG BỘ NỀN
+    // ĐỒNG BỘ NỀN (Fix lỗi tìm tên trùng)
     private func startContinuousAutoSync() async {
         guard !isAutoSyncing else { return }
         isAutoSyncing = true
@@ -190,7 +184,7 @@ struct PatchProjectsView: View {
                 
                 for item in decoded {
                     let safeRemoteName = item.filename.lowercased().replacingOccurrences(of: "%20", with: "_")
-                    let alreadyExists = localNames.contains { $0.contains((safeRemoteName as NSString).deletingPathExtension) }
+                    let alreadyExists = localNames.contains { $0 == safeRemoteName } // So khớp tuyệt đối tên file
                     
                     if !alreadyExists {
                         if let fileURL = URL(string: item.url) {
@@ -214,7 +208,7 @@ struct PatchProjectsView: View {
     }
 }
 
-// MARK: - ENUM & MODEL (BỔ SUNG NOTE)
+// MARK: - ENUM & MODEL (FIX LỖI ID FOREACH)
 enum GameType: String, Hashable, Identifiable {
     case ffmax, ffnormal
     var id: String { self.rawValue }
@@ -223,36 +217,33 @@ enum GameType: String, Hashable, Identifiable {
 }
 
 struct RemotePatchItem: Codable, Identifiable {
-    var id: String { filename }
+    var id: String { url } // SỬ DỤNG URL LÀM ID ĐỘC NHẤT, ĐỂ SwiftUI KHÔNG BỊ TRÙNG LẶP HÀNG KHI TÊN FILE GIỐNG NHAU
     let filename: String
     let gameType: String
     let folder: String
     let displayName: String
     let url: String
-    let note: String? // Thêm trường ghi chú
+    let note: String?
 }
 
-// MARK: - ITEM ROW VIEW (HIỂN THỊ GHI CHÚ, TIẾNG TÍCH)
+// MARK: - ITEM ROW VIEW (FIX LOGIC KÍCH HOẠT CHUẨN GỐC)
 struct PatchItemRowView: View {
     let rItem: RemotePatchItem
     let selectedTab: String
     
     @ObservedObject var store: PatchProjectStore
-    @Binding var workingFilename: String?
+    @Binding var workingItemURL: String? // Đổi sang đối chiếu bằng URL để không nhầm file
     @Binding var menuAlert: PatchStoreAlert?
     
     var body: some View {
         let matchedStoreItem = store.items.first(where: {
             let local = $0.packageURL.lastPathComponent.lowercased().replacingOccurrences(of: "%20", with: "_").replacingOccurrences(of: " ", with: "_")
             let remote = rItem.filename.lowercased().replacingOccurrences(of: "%20", with: "_").replacingOccurrences(of: " ", with: "_")
-            let localBase = (local as NSString).deletingPathExtension
-            let remoteBase = (remote as NSString).deletingPathExtension
-            
-            return local == remote || localBase.contains(remoteBase) || remoteBase.contains(localBase) || $0.project?.name.lowercased() == remoteBase
+            return local == remote // Match đúng tên file 100%, tránh râu ông nọ cắm cằm bà kia
         })
         
         let isApplied = matchedStoreItem != nil ? (DevicePatchService.latestReceipt(projectID: matchedStoreItem!.id) != nil) : false
-        let isWorking = workingFilename == rItem.filename
+        let isWorking = workingItemURL == rItem.url
         
         HStack(spacing: 16) {
             ZStack {
@@ -286,16 +277,16 @@ struct PatchItemRowView: View {
                 Toggle("", isOn: Binding(
                     get: { isApplied },
                     set: { newValue in
-                        playiPhoneTickSound() // Tiếng tích
+                        playiPhoneTickSound()
                         if let item = matchedStoreItem {
-                            togglePatch(item: item, activate: newValue, filename: rItem.filename)
+                            togglePatch(item: item, activate: newValue)
                         } else {
                             downloadAndNotify(rItem: rItem)
                         }
                     }
                 ))
                 .labelsHidden()
-                .tint(.white) // Gạt bật lên màu trắng
+                .tint(.white)
             }
         }
         .padding(18)
@@ -304,29 +295,49 @@ struct PatchItemRowView: View {
         .overlay(RoundedRectangle(cornerRadius: 20).stroke(Color.white, lineWidth: 1.5))
     }
     
-    private func togglePatch(item: PatchLibraryItem, activate: Bool, filename: String) {
-        workingFilename = filename
+    // ĐÂY LÀ ĐOẠN KHÔI PHỤC LẠI CHÍNH XÁC LOGIC FILE CŨ THEO YÊU CẦU CỦA BẠN
+    private func togglePatch(item: PatchLibraryItem, activate: Bool) {
+        workingItemURL = rItem.url
         Task.detached(priority: .userInitiated) {
             do {
                 if activate {
-                    guard let project = item.project else {
-                        throw NSError(domain: "", code: -1, userInfo: [NSLocalizedDescriptionKey: "Dữ liệu lỗi."])
+                    // 1. Phải tắt các patch khác đi để tránh xung đột
+                    let currentItems = await MainActor.run { store.items }
+                    for otherItem in currentItems where otherItem.id != item.id {
+                        if let receipt = DevicePatchService.latestReceipt(projectID: otherItem.id) {
+                            try? DevicePatchService.restore(receipt: receipt, allowChangedTargets: true)
+                        }
                     }
+                    
+                    // 2. Load Base Project
+                    let baseProject = await MainActor.run { item.project }
+                    guard let baseProject else {
+                        throw NSError(domain: "", code: 0, userInfo: [NSLocalizedDescriptionKey: "Dự án không tồn tại."])
+                    }
+                    
+                    // 3. Xử lý Workspace theo đúng chuẩn file ban đầu
+                    let schemaVersion = await MainActor.run { item.summary.schemaVersion }
+                    let canInspect = await MainActor.run { item.canInspectContents }
+                    let project = (schemaVersion >= 2 && canInspect)
+                        ? ((try? PatchProjectLibrary.synchronizeWorkspace(item: item)) ?? baseProject)
+                        : baseProject
+                    
+                    // 4. Bật file
                     _ = try DevicePatchService.apply(project: project)
                 } else {
-                    guard let receipt = DevicePatchService.latestReceipt(projectID: item.id) else {
-                        await MainActor.run { workingFilename = nil }
-                        return
+                    // Tắt file hiện tại
+                    if let receipt = DevicePatchService.latestReceipt(projectID: item.id) {
+                        try DevicePatchService.restore(receipt: receipt, allowChangedTargets: true)
                     }
-                    try DevicePatchService.restore(receipt: receipt)
                 }
+                
                 await MainActor.run {
                     store.reload()
-                    workingFilename = nil
+                    workingItemURL = nil
                 }
             } catch {
                 await MainActor.run {
-                    workingFilename = nil
+                    workingItemURL = nil
                     menuAlert = PatchStoreAlert(titleKey: "Thất bại", messageKey: error.localizedDescription)
                 }
             }
@@ -334,13 +345,13 @@ struct PatchItemRowView: View {
     }
     
     private func downloadAndNotify(rItem: RemotePatchItem) {
-        workingFilename = rItem.filename
+        workingItemURL = rItem.url
         Task.detached {
             guard let urlString = rItem.url.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
                   let fileURL = URL(string: urlString) else {
                 await MainActor.run {
                     menuAlert = PatchStoreAlert(titleKey: "Lỗi", messageKey: "Link tải file không hợp lệ.")
-                    workingFilename = nil
+                    workingItemURL = nil
                 }
                 return
             }
@@ -353,7 +364,7 @@ struct PatchItemRowView: View {
             
             await MainActor.run {
                 store.reload()
-                workingFilename = nil
+                workingItemURL = nil
                 menuAlert = PatchStoreAlert(titleKey: "THÔNG BÁO", messageKey: "ĐÃ SẢY RA LỖI VUI LÒNG KÍCH HOẠT LẠI")
             }
         }
@@ -369,7 +380,7 @@ struct GameDetailMenuView: View {
     @Environment(\.appLanguage) private var language
     @Environment(\.dismiss) private var dismiss
     @State private var selectedTab: String = "Aim"
-    @State private var workingFilename: String? = nil
+    @State private var workingItemURL: String? = nil // Quản lý trạng thái bằng URL
     @State private var menuAlert: PatchStoreAlert?
     
     var body: some View {
@@ -447,7 +458,7 @@ struct GameDetailMenuView: View {
                                     rItem: rItem,
                                     selectedTab: selectedTab,
                                     store: store,
-                                    workingFilename: $workingFilename,
+                                    workingItemURL: $workingItemURL,
                                     menuAlert: $menuAlert
                                 )
                             }
@@ -472,7 +483,7 @@ struct GameDetailMenuView: View {
     }
 }
 
-// MARK: - EXTENSION HỆ THỐNG GỐC CỦA ZENITH
+// MARK: - EXTENSION HỆ THỐNG GỐC CỦA ZENITH (KHÔNG THAY ĐỔI)
 struct PatchUnlockView: View {
     @Environment(\.appLanguage) private var language
     @Environment(\.dismiss) private var dismiss
