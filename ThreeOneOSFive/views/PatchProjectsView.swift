@@ -3,6 +3,30 @@ import UIKit
 import AudioToolbox
 import UniformTypeIdentifiers
 
+// MARK: - HIỆU ỨNG HẠT BỤI & NGÂN HÀ NEON (KHÔNG CÒN LỖI PRIVATE)
+public struct ParticleCanvasView: View {
+    public init() {}
+    public var body: some View {
+        TimelineView(.animation) { context in
+            Canvas { graphicsContext, size in
+                let time = context.date.timeIntervalSinceReferenceDate
+                for i in 0..<220 {
+                    let seed = Double(i) * 73.0
+                    let x = (sin(time * 0.3 + seed) * 0.5 + 0.5) * size.width
+                    let speed = 80.0 + fmod(seed, 140.0)
+                    let y = size.height - fmod(time * speed + seed, size.height + 100)
+                    let particleSize = CGFloat(fmod(seed, 3.5) + 1.5)
+                    let opacity = Double(sin(time * 2.0 + seed) * 0.5 + 0.5)
+                    
+                    let rect = CGRect(x: x, y: y, width: particleSize, height: particleSize)
+                    graphicsContext.fill(Path(ellipseIn: rect), with: .color(.white.opacity(opacity)))
+                }
+            }
+        }
+        .allowsHitTesting(false)
+    }
+}
+
 struct PatchProjectsView: View {
     @Environment(\.appLanguage) private var language
     @EnvironmentObject private var draftCoordinator: PatchDraftCoordinator
@@ -28,7 +52,7 @@ struct PatchProjectsView: View {
         NavigationStack {
             ZStack {
                 Color.black.ignoresSafeArea()
-                ParticleCanvasView() // Sử dụng hiệu ứng hạt bụi ngân hà
+                ParticleCanvasView()
                 
                 VStack(spacing: 0) {
                     // HEADER AVATAR TO + HÀO QUANG NEON PHÁT SÁNG
@@ -244,7 +268,7 @@ struct PatchItemRowView: View {
                 Toggle("", isOn: Binding(
                     get: { isApplied },
                     set: { newValue in
-                        UXFeedback.click() // Âm thanh chuẩn xịn như nút Tìm Key
+                        UXFeedback.click()
                         if let item = matchedStoreItem {
                             togglePatch(item: item, activate: newValue, filename: rItem.filename)
                         } else {
