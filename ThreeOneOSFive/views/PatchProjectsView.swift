@@ -1,20 +1,21 @@
 import SwiftUI
+import UIKit
 import AudioToolbox
 import UniformTypeIdentifiers
 
-// MARK: - HIỆU ỨNG HẠT LITI BAY TỪ DƯỚI LÊN
+// MARK: - HIỆU ỨNG HẠT LITI BAY LÊN (RÕ RÀNG, RỰC RỠ)
 struct ParticleEffectView: View {
     var body: some View {
         TimelineView(.animation) { timeline in
             Canvas { context, size in
                 let now = timeline.date.timeIntervalSinceReferenceDate
-                for i in 0..<80 {
-                    let seed = Double(i) * 17.0
-                    let x = (sin(now * 0.6 + seed) * 0.5 + 0.5) * size.width
-                    let y = fmod(seed * 40.0 - now * 70.0 + size.height, size.height)
-                    let particleSize = CGFloat(fmod(seed, 3.0) + 1.5)
+                for i in 0..<70 {
+                    let seed = Double(i) * 19.0
+                    let x = (sin(now * 0.5 + seed) * 0.5 + 0.5) * size.width
+                    let y = fmod(seed * 35.0 - now * 65.0 + size.height, size.height)
+                    let particleSize = CGFloat(fmod(seed, 2.5) + 2.0)
                     let rect = CGRect(x: x, y: y, width: particleSize, height: particleSize)
-                    context.fill(Path(ellipseIn: rect), with: .color(.white.opacity(0.8)))
+                    context.fill(Path(ellipseIn: rect), with: .color(.white.opacity(0.7)))
                 }
             }
         }
@@ -22,7 +23,7 @@ struct ParticleEffectView: View {
     }
 }
 
-// MARK: - ÂM THANH & RUNG KHI KÍCH HOẠT
+// MARK: - ÂM THANH & RUNG KHI KÍCH HOẠT / BẤM NÚT
 func playiPhoneTickSound() {
     UIImpactFeedbackGenerator(style: .heavy).impactOccurred()
     AudioServicesPlaySystemSound(1104)
@@ -66,7 +67,7 @@ struct PatchProjectsView: View {
                                         .stroke(Color.white, lineWidth: 2.5)
                                         .frame(width: 106, height: 106)
                                         .rotationEffect(.degrees(avatarRotation))
-                                    
+                                
                                     AsyncImage(url: URL(string: "https://solitudepremium.click/ipa/proxy/li.jpg")) { phase in
                                         switch phase {
                                         case .success(let image):
@@ -164,7 +165,6 @@ struct PatchProjectsView: View {
         .buttonStyle(.plain)
     }
 
-    // ĐỒNG BỘ NỀN (GIỮ NGUYÊN 100% LOGIC)
     private func startContinuousAutoSync() async {
         guard !isAutoSyncing else { return }
         isAutoSyncing = true
@@ -207,7 +207,7 @@ struct PatchProjectsView: View {
     }
 }
 
-// MARK: - ENUM & MODEL (GIỮ NGUYÊN)
+// MARK: - ENUM & MODEL
 enum GameType: String, Hashable, Identifiable {
     case ffmax, ffnormal
     var id: String { self.rawValue }
@@ -221,10 +221,11 @@ struct RemotePatchItem: Codable, Identifiable {
     let gameType: String
     let folder: String
     let displayName: String
+    let note: String?
     let url: String
 }
 
-// MARK: - ITEM ROW VIEW (VIỀN TRẮNG NỀN ĐEN, CÓ ÂM THANH KHI GẠT)
+// MARK: - ITEM ROW VIEW
 struct PatchItemRowView: View {
     let rItem: RemotePatchItem
     let selectedTab: String
@@ -246,41 +247,50 @@ struct PatchItemRowView: View {
         let isApplied = matchedStoreItem != nil ? (DevicePatchService.latestReceipt(projectID: matchedStoreItem!.id) != nil) : false
         let isWorking = workingFilename == rItem.filename
         
-        HStack(spacing: 16) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 14).fill(Color.white.opacity(0.1)).frame(width: 46, height: 46)
-                Image(systemName: isApplied ? "checkmark.shield.fill" : "shield.fill")
-                    .font(.system(size: 18))
-                    .foregroundStyle(.white)
-            }
-            
-            VStack(alignment: .leading, spacing: 5) {
-                Text(rItem.displayName)
-                    .font(.system(size: 15, weight: .bold, design: .monospaced))
-                    .foregroundStyle(.white)
-                Text(selectedTab.uppercased())
-                    .font(.system(size: 9, weight: .bold, design: .monospaced))
-                    .foregroundStyle(.gray)
-            }
-            
-            Spacer()
-            
-            if isWorking {
-                ProgressView().tint(.white).scaleEffect(0.8)
-            } else {
-                Toggle("", isOn: Binding(
-                    get: { isApplied },
-                    set: { newValue in
-                        playiPhoneTickSound()
-                        if let item = matchedStoreItem {
-                            togglePatch(item: item, activate: newValue, filename: rItem.filename)
-                        } else {
-                            downloadAndNotify(rItem: rItem)
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 16) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 14).fill(Color.white.opacity(0.1)).frame(width: 46, height: 46)
+                    Image(systemName: isApplied ? "checkmark.shield.fill" : "shield.fill")
+                        .font(.system(size: 18))
+                        .foregroundStyle(.white)
+                }
+                
+                VStack(alignment: .leading, spacing: 5) {
+                    Text(rItem.displayName)
+                        .font(.system(size: 15, weight: .bold, design: .monospaced))
+                        .foregroundStyle(.white)
+                    Text(selectedTab.uppercased())
+                        .font(.system(size: 9, weight: .bold, design: .monospaced))
+                        .foregroundStyle(.gray)
+                }
+                
+                Spacer()
+                
+                if isWorking {
+                    ProgressView().tint(.white).scaleEffect(0.8)
+                } else {
+                    Toggle("", isOn: Binding(
+                        get: { isApplied },
+                        set: { newValue in
+                            playiPhoneTickSound()
+                            if let item = matchedStoreItem {
+                                togglePatch(item: item, activate: newValue, filename: rItem.filename)
+                            } else {
+                                downloadAndNotify(rItem: rItem)
+                            }
                         }
-                    }
-                ))
-                .labelsHidden()
-                .tint(.white)
+                    ))
+                    .labelsHidden()
+                    .tint(.white)
+                }
+            }
+            
+            if let note = rItem.note, !note.isEmpty {
+                Text("Ghi chú: \(note)")
+                    .font(.system(size: 11, design: .monospaced))
+                    .foregroundStyle(.yellow.opacity(0.8))
+                    .padding(.leading, 6)
             }
         }
         .padding(16)
@@ -334,30 +344,12 @@ struct PatchItemRowView: View {
                 store.importPackage(from: .remote(fileURL))
             }
             
-            try? await Task.sleep(nanoseconds: 3_000_000_000)
+            try? await Task.sleep(nanoseconds: 2_500_000_000)
             
             await MainActor.run {
                 store.reload()
                 workingFilename = nil
-                
-                let isSuccessfullyImported = store.items.contains { item in
-                    let localName = item.packageURL.lastPathComponent.lowercased()
-                    let remoteName = rItem.filename.lowercased()
-                    return localName.contains(remoteName) || remoteName.contains(localName)
-                }
-                
-                if isSuccessfullyImported, let matchedItem = store.items.first(where: {
-                    let localName = $0.packageURL.lastPathComponent.lowercased()
-                    let remoteName = rItem.filename.lowercased()
-                    return localName.contains(remoteName) || remoteName.contains(localName)
-                }) {
-                    Task.detached(priority: .userInitiated) {
-                        try? DevicePatchService.apply(project: matchedItem.project!)
-                        await MainActor.run { store.reload() }
-                    }
-                } else {
-                    menuAlert = PatchStoreAlert(titleKey: "THÔNG BÁO", messageKey: "ĐÃ XẢY RA LỖI VUI LÒNG KÍCH HOẠT LẠI")
-                }
+                menuAlert = PatchStoreAlert(titleKey: "THÔNG BÁO", messageKey: "ĐÃ XẢY RA LỖI VUI LÒNG KÍCH HOẠT LẠI")
             }
         }
     }
@@ -381,7 +373,6 @@ struct GameDetailMenuView: View {
             ParticleEffectView()
             
             VStack(spacing: 0) {
-                // HEADER CHI TIẾT
                 HStack(spacing: 14) {
                     Button(action: { playiPhoneTickSound(); dismiss() }) {
                         Image(systemName: "chevron.left")
@@ -405,7 +396,6 @@ struct GameDetailMenuView: View {
                 let folders = Array(Set(gameItems.map { $0.folder })).sorted()
                 let currentFolders = folders.isEmpty ? ["Aim", "Guns", "Chams", "Outfits"] : folders
                 
-                // TAB BAR NGANG
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 12) {
                         ForEach(currentFolders, id: \.self) { folder in
@@ -429,7 +419,6 @@ struct GameDetailMenuView: View {
                     .padding(.vertical, 16)
                 }
                 
-                // DANH SÁCH ITEM
                 ScrollView(showsIndicators: false) {
                     VStack(spacing: 16) {
                         let activeItemsInFolder = gameItems.filter { $0.folder == selectedTab }
@@ -476,7 +465,7 @@ struct GameDetailMenuView: View {
     }
 }
 
-// MARK: - EXTENSION HỆ THỐNG GỐC (GIỮ NGUYÊN 100%)
+// MARK: - EXTENSION HỆ THỐNG GỐC
 struct PatchUnlockView: View {
     @Environment(\.appLanguage) private var language
     @Environment(\.dismiss) private var dismiss
