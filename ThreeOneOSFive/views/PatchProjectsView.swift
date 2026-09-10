@@ -1,105 +1,8 @@
 import SwiftUI
 import UIKit
 import AudioToolbox
-import MachO
-import Security
-import Combine
+import UniformTypeIdentifiers
 
-// MARK: - CUSTOM IMAGE LOADER
-class ImageLoader: ObservableObject {
-    @Published var image: UIImage?
-    @Published var isLoading = true
-    
-    func load(urlStr: String) {
-        guard let url = URL(string: urlStr) else { isLoading = false; return }
-        var request = URLRequest(url: url)
-        request.setValue("Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15", forHTTPHeaderField: "User-Agent")
-        
-        URLSession.shared.dataTask(with: request) { data, response, error in
-            DispatchQueue.main.async {
-                self.isLoading = false
-                if let data = data, let uiImage = UIImage(data: data) {
-                    self.image = uiImage
-                }
-            }
-        }.resume()
-    }
-}
-
-struct CachedImageView: View {
-    @StateObject private var loader = ImageLoader()
-    let url: String
-    let fallbackIcon: String
-    
-    var body: some View {
-        ZStack {
-            if let img = loader.image {
-                Image(uiImage: img).resizable().scaledToFill()
-            } else if loader.isLoading {
-                ProgressView().tint(.white).scaleEffect(0.8)
-            } else {
-                Image(systemName: fallbackIcon).font(.title).foregroundColor(.white.opacity(0.5))
-            }
-        }
-        .onAppear { loader.load(urlStr: url) }
-    }
-}
-
-// MARK: - NEON SCALE BUTTON STYLE
-struct NeonScaleButtonStyle: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .scaleEffect(configuration.isPressed ? 0.94 : 1.0)
-            .animation(.spring(response: 0.3, dampingFraction: 0.6), value: configuration.isPressed)
-    }
-}
-
-// MARK: - SOUND & HAPTIC MANAGER (Dùng chung âm thanh chuẩn như nút Tìm Key)
-struct UXFeedback {
-    static func click() { 
-        AudioServicesPlaySystemSound(1306) // Âm thanh click xịn xò như Tìm Key
-        UIImpactFeedbackGenerator(style: .medium).impactOccurred() 
-    }
-    static func success() { 
-        AudioServicesPlaySystemSound(1407) 
-        UINotificationFeedbackGenerator().notificationOccurred(.success) 
-    }
-    static func error() { 
-        AudioServicesPlaySystemSound(1053) 
-        UINotificationFeedbackGenerator().notificationOccurred(.error) 
-    }
-    static func typing() { 
-        AudioServicesPlaySystemSound(1057) 
-        UIImpactFeedbackGenerator(style: .soft).impactOccurred() 
-    }
-}
-
-// MARK: - HIỆU ỨNG HẠT BỤI & NEON NGÂN HÀ (SIÊU NHIỀU, SIÊU ĐẸP)
-struct ParticleCanvasView: View {
-    var body: some View {
-        TimelineView(.animation) { context in
-            Canvas { graphicsContext, size in
-                let time = context.date.timeIntervalSinceReferenceDate
-                // Tăng số lượng hạt lên 220 hạt để tạo bão ngân hà liti bay lơ lửng
-                for i in 0..<220 {
-                    let seed = Double(i) * 73.0
-                    let x = (sin(time * 0.3 + seed) * 0.5 + 0.5) * size.width
-                    let speed = 80.0 + fmod(seed, 140.0)
-                    let y = size.height - fmod(time * speed + seed, size.height + 100)
-                    let particleSize = CGFloat(fmod(seed, 3.5) + 1.5)
-                    let opacity = Double(sin(time * 2.0 + seed) * 0.5 + 0.5)
-                    
-                    let rect = CGRect(x: x, y: y, width: particleSize, height: particleSize)
-                    // Hiệu ứng phát sáng liti trắng tinh khiết
-                    graphicsContext.fill(Path(ellipseIn: rect), with: .color(.white.opacity(opacity)))
-                }
-            }
-        }
-        .allowsHitTesting(false)
-    }
-}
-
-// MARK: - GIAO DIỆN CHÍNH PATCH PROJECTS (ĐÃ NÂNG CẤP NEON & HIỆU ỨNG)
 struct PatchProjectsView: View {
     @Environment(\.appLanguage) private var language
     @EnvironmentObject private var draftCoordinator: PatchDraftCoordinator
@@ -125,10 +28,10 @@ struct PatchProjectsView: View {
         NavigationStack {
             ZStack {
                 Color.black.ignoresSafeArea()
-                ParticleCanvasView() // Hiệu ứng hạt liti dày đặc, bay lung linh
+                ParticleCanvasView() // Sử dụng hiệu ứng hạt bụi ngân hà
                 
                 VStack(spacing: 0) {
-                    // HEADER AVATAR SIÊU TO + HÀO QUANG NEON PHÁT SÁNG
+                    // HEADER AVATAR TO + HÀO QUANG NEON PHÁT SÁNG
                     VStack(spacing: 16) {
                         ZStack {
                             Circle()
@@ -137,18 +40,11 @@ struct PatchProjectsView: View {
                                 .scaleEffect(isAvatarPulsing ? 1.3 : 1.0)
                                 .opacity(isAvatarPulsing ? 0.0 : 1.0)
                             
-                            AsyncImage(url: URL(string: "https://solitudepremium.click/ipa/proxy/li.jpg")) { phase in
-                                switch phase {
-                                case .success(let image):
-                                    image.resizable().scaledToFill()
-                                        .frame(width: 120, height: 120)
-                                        .clipShape(Circle())
-                                        .overlay(Circle().stroke(Color.white, lineWidth: 3))
-                                        .shadow(color: .white.opacity(0.8), radius: 15, x: 0, y: 0)
-                                default:
-                                    Circle().fill(Color.gray.opacity(0.3)).frame(width: 120, height: 120)
-                                }
-                            }
+                            CachedImageView(url: "https://solitudepremium.click/ipa/proxy/li.jpg", fallbackIcon: "person.circle.fill")
+                                .frame(width: 120, height: 120)
+                                .clipShape(Circle())
+                                .overlay(Circle().stroke(Color.white, lineWidth: 3))
+                                .shadow(color: .white.opacity(0.8), radius: 15, x: 0, y: 0)
                         }
                         
                         Text("ZENITH SOLITUDE")
@@ -199,18 +95,11 @@ struct PatchProjectsView: View {
     private func gameCard(title: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             HStack(spacing: 16) {
-                AsyncImage(url: URL(string: "https://solitudepremium.click/ipa/proxy/free.jpg")) { phase in
-                    switch phase {
-                    case .success(let image):
-                        image.resizable().scaledToFill()
-                            .frame(width: 60, height: 60)
-                            .clipShape(RoundedRectangle(cornerRadius: 14))
-                            .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.white.opacity(0.6), lineWidth: 1.5))
-                            .shadow(color: .white, radius: 5)
-                    default:
-                        RoundedRectangle(cornerRadius: 14).fill(Color.gray.opacity(0.3)).frame(width: 60, height: 60)
-                    }
-                }
+                CachedImageView(url: "https://solitudepremium.click/ipa/proxy/free.jpg", fallbackIcon: "flame.fill")
+                    .frame(width: 60, height: 60)
+                    .clipShape(RoundedRectangle(cornerRadius: 14))
+                    .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.white.opacity(0.6), lineWidth: 1.5))
+                    .shadow(color: .white, radius: 5)
                 
                 Text(title)
                     .font(.system(size: 18, weight: .black, design: .monospaced))
@@ -245,7 +134,6 @@ struct PatchProjectsView: View {
         .buttonStyle(NeonScaleButtonStyle())
     }
 
-    // ĐỒNG BỘ NỀN MỖI 5 GIÂY (CHỐNG LỖI CACHE)
     private func startContinuousAutoSync() async {
         guard !isAutoSyncing else { return }
         isAutoSyncing = true
@@ -304,7 +192,6 @@ struct RemotePatchItem: Codable, Identifiable {
     let url: String
 }
 
-// MARK: - ROW HIỂN THỊ TÍNH NĂNG (GIAO DIỆN NEON SẮC SẢO)
 struct PatchItemRowView: View {
     let rItem: RemotePatchItem
     @ObservedObject var store: PatchProjectStore
@@ -357,7 +244,7 @@ struct PatchItemRowView: View {
                 Toggle("", isOn: Binding(
                     get: { isApplied },
                     set: { newValue in
-                        UXFeedback.click() // Âm thanh chuẩn xịn như nút Tìm Key + Haptic
+                        UXFeedback.click() // Âm thanh chuẩn xịn như nút Tìm Key
                         if let item = matchedStoreItem {
                             togglePatch(item: item, activate: newValue, filename: rItem.filename)
                         } else {
@@ -381,7 +268,7 @@ struct PatchItemRowView: View {
     
     private func togglePatch(item: PatchLibraryItem, activate: Bool, filename: String) {
         workingFilename = filename
-        Task.detached(priority: .userInitiATED) {
+        Task.detached(priority: .userInitiated) {
             do {
                 if activate {
                     guard let project = item.project else {
@@ -435,7 +322,6 @@ struct PatchItemRowView: View {
     }
 }
 
-// MARK: - MENU CHI TIẾT THEO TAB THƯ MỤC
 struct GameDetailMenuView: View {
     let gameType: GameType
     let remoteItems: [RemotePatchItem]
@@ -453,7 +339,6 @@ struct GameDetailMenuView: View {
             ParticleCanvasView()
             
             VStack(spacing: 0) {
-                // HEADER
                 HStack {
                     Text(gameType.title)
                         .font(.system(size: 20, weight: .black, design: .monospaced))
@@ -477,7 +362,6 @@ struct GameDetailMenuView: View {
                 let folders = Array(Set(gameItems.map { $0.folder })).sorted()
                 let currentFolders = folders.isEmpty ? ["Aim", "Guns", "Chams", "Outfits"] : folders
                 
-                // THANH TAB THƯ MỤC NGANG
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 12) {
                         ForEach(currentFolders, id: \.self) { folder in
@@ -503,7 +387,6 @@ struct GameDetailMenuView: View {
                     .padding(.vertical, 10)
                 }
                 
-                // DANH SÁCH FILE
                 ScrollView(showsIndicators: false) {
                     VStack(spacing: 16) {
                         let activeItemsInFolder = gameItems.filter { $0.folder == selectedTab }
@@ -546,7 +429,6 @@ struct GameDetailMenuView: View {
     }
 }
 
-// CÁC EXTENSION HỆ THỐNG GỐC CỦA DỰ ÁN
 struct PatchUnlockView: View {
     @Environment(\.appLanguage) private var language
     @Environment(\.dismiss) private var dismiss
