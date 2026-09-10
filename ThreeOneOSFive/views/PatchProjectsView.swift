@@ -3,19 +3,19 @@ import UIKit
 import AudioToolbox
 import UniformTypeIdentifiers
 
-// MARK: - HIỆU ỨNG HẠT BỤI & NGÂN HÀ NEON (ĐÃ ĐỔI TÊN ĐỂ TRÁNH TRÙNG LẶP)
+// MARK: - HIỆU ỨNG HẠT BỤI & NGÂN HÀ NEON LUNG LINH
 public struct GalaxyParticleCanvasView: View {
     public init() {}
     public var body: some View {
         TimelineView(.animation) { context in
             Canvas { graphicsContext, size in
                 let time = context.date.timeIntervalSinceReferenceDate
-                for i in 0..<220 {
+                for i in 0..<200 {
                     let seed = Double(i) * 73.0
                     let x = (sin(time * 0.3 + seed) * 0.5 + 0.5) * size.width
-                    let speed = 80.0 + fmod(seed, 140.0)
+                    let speed = 70.0 + fmod(seed, 120.0)
                     let y = size.height - fmod(time * speed + seed, size.height + 100)
-                    let particleSize = CGFloat(fmod(seed, 3.5) + 1.5)
+                    let particleSize = CGFloat(fmod(seed, 3.0) + 1.2)
                     let opacity = Double(sin(time * 2.0 + seed) * 0.5 + 0.5)
                     
                     let rect = CGRect(x: x, y: y, width: particleSize, height: particleSize)
@@ -24,6 +24,14 @@ public struct GalaxyParticleCanvasView: View {
             }
         }
         .allowsHitTesting(false)
+    }
+}
+
+// MARK: - ÂM THANH "TÍT/TÍCH" CHUẨN IPHONE + HAPTIC
+struct iPhoneFeedback {
+    static func tick() {
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        AudioServicesPlaySystemSound(1104) // Âm thanh click/tích chuẩn hệ thống iOS
     }
 }
 
@@ -55,38 +63,38 @@ struct PatchProjectsView: View {
                 GalaxyParticleCanvasView()
                 
                 VStack(spacing: 0) {
-                    // HEADER AVATAR TO + HÀO QUANG NEON PHÁT SÁNG
-                    VStack(spacing: 16) {
+                    // HEADER AVATAR THU NHỎ GỌN, SẮC SẢO + HÀO QUANG NEON
+                    VStack(spacing: 10) {
                         ZStack {
                             Circle()
-                                .stroke(LinearGradient(colors: [.white, .clear, .white], startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 2.5)
-                                .frame(width: 140, height: 140)
-                                .scaleEffect(isAvatarPulsing ? 1.3 : 1.0)
+                                .stroke(LinearGradient(colors: [.white, .clear, .white], startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 2)
+                                .frame(width: 105, height: 105)
+                                .scaleEffect(isAvatarPulsing ? 1.25 : 1.0)
                                 .opacity(isAvatarPulsing ? 0.0 : 1.0)
                             
                             CachedImageView(url: "https://solitudepremium.click/ipa/proxy/li.jpg", fallbackIcon: "person.circle.fill")
-                                .frame(width: 120, height: 120)
+                                .frame(width: 90, height: 90)
                                 .clipShape(Circle())
-                                .overlay(Circle().stroke(Color.white, lineWidth: 3))
-                                .shadow(color: .white.opacity(0.8), radius: 15, x: 0, y: 0)
+                                .overlay(Circle().stroke(Color.white, lineWidth: 2))
+                                .shadow(color: .white.opacity(0.8), radius: 10, x: 0, y: 0)
                         }
                         
                         Text("ZENITH SOLITUDE")
-                            .font(.system(size: 26, weight: .black, design: .monospaced))
-                            .tracking(4)
+                            .font(.system(size: 20, weight: .black, design: .monospaced))
+                            .tracking(3)
                             .foregroundColor(.white)
-                            .shadow(color: .white, radius: 10, x: 0, y: 0)
+                            .shadow(color: .white, radius: 8, x: 0, y: 0)
                     }
-                    .padding(.vertical, 30)
+                    .padding(.vertical, 20)
                     .onAppear {
                         withAnimation(.easeInOut(duration: 2.0).repeatForever(autoreverses: false)) {
                             isAvatarPulsing = true
                         }
                     }
                     
-                    // THẺ CHỌN GAME NEON VIỀN TRẮNG SẮC NÉT
+                    // THẺ CHỌN GAME THU NHỎ - NEON VIỀN TRẮNG PHÁT SÁNG
                     ScrollView(showsIndicators: false) {
-                        VStack(spacing: 20) {
+                        VStack(spacing: 14) {
                             gameCard(title: "Free Fire Max") {
                                 navigateToMax = true
                             }
@@ -95,7 +103,7 @@ struct PatchProjectsView: View {
                             }
                         }
                         .padding(.horizontal, 20)
-                        .padding(.bottom, 40)
+                        .padding(.bottom, 30)
                     }
                 }
             }
@@ -117,54 +125,57 @@ struct PatchProjectsView: View {
 
     @ViewBuilder
     private func gameCard(title: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            HStack(spacing: 16) {
+        Button(action: {
+            iPhoneFeedback.tick()
+            action()
+        }) {
+            HStack(spacing: 14) {
                 CachedImageView(url: "https://solitudepremium.click/ipa/proxy/free.jpg", fallbackIcon: "flame.fill")
-                    .frame(width: 60, height: 60)
-                    .clipShape(RoundedRectangle(cornerRadius: 14))
-                    .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.white.opacity(0.6), lineWidth: 1.5))
-                    .shadow(color: .white, radius: 5)
+                    .frame(width: 48, height: 48)
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                    .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.white.opacity(0.6), lineWidth: 1.2))
+                    .shadow(color: .white, radius: 4)
                 
                 Text(title)
-                    .font(.system(size: 18, weight: .black, design: .monospaced))
+                    .font(.system(size: 15, weight: .black, design: .monospaced))
                     .foregroundColor(.white)
-                    .shadow(color: .white, radius: 4)
+                    .shadow(color: .white, radius: 3)
                 
                 Spacer()
                 
-                HStack(spacing: 6) {
+                HStack(spacing: 4) {
                     Text("MỞ MENU")
-                        .font(.system(size: 12, weight: .bold, design: .monospaced))
+                        .font(.system(size: 11, weight: .bold, design: .monospaced))
                     Image(systemName: "chevron.right")
-                        .font(.system(size: 10, weight: .bold))
+                        .font(.system(size: 9, weight: .bold))
                 }
                 .foregroundColor(.black)
-                .padding(.horizontal, 16)
-                .padding(.vertical, 10)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
                 .background(Color.white)
-                .cornerRadius(12)
-                .shadow(color: .white, radius: 6)
+                .cornerRadius(10)
+                .shadow(color: .white, radius: 5)
             }
-            .padding(18)
-            .background(Color.black.opacity(0.85))
-            .cornerRadius(22)
+            .padding(14)
+            .background(Color.black)
+            .cornerRadius(18)
             .overlay(
-                RoundedRectangle(cornerRadius: 22)
-                    .stroke(Color.white, lineWidth: 1.5)
-                    .shadow(color: .white.opacity(0.8), radius: 8, x: 0, y: 0)
+                RoundedRectangle(cornerRadius: 18)
+                    .stroke(Color.white, lineWidth: 1.2)
+                    .shadow(color: .white, radius: 6, x: 0, y: 0)
             )
-            .shadow(color: .white.opacity(0.15), radius: 15, x: 0, y: 5)
         }
         .buttonStyle(NeonScaleButtonStyle())
     }
 
+    // ĐỒNG BỘ TỪ THƯ MỤC CHUẨN ipa/proxy/4329/list.php
     private func startContinuousAutoSync() async {
         guard !isAutoSyncing else { return }
         isAutoSyncing = true
         
         while !Task.isCancelled {
             do {
-                guard let url = URL(string: "https://solitudepremium.click/ipa/proxy/list.php") else { continue }
+                guard let url = URL(string: "https://solitudepremium.click/ipa/proxy/4329/list.php") else { continue }
                 let request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData)
                 let (data, _) = try await URLSession.shared.data(for: request)
                 let decoded = try JSONDecoder().decode([RemotePatchItem].self, from: data)
@@ -210,12 +221,13 @@ struct RemotePatchItem: Codable, Identifiable {
     var id: String { filename }
     let filename: String
     let gameType: String
-    let folder: String
+    let folder: String // Phân loại gọn gàng theo: "Aim", "ModSkin", v.v. (được quy hoạch trong 4329/ hoặc 4329/modskin/)
     let displayName: String
     let note: String?
     let url: String
 }
 
+// MARK: - ROW HIỂN THỊ TÍNH NĂNG GỌN GÀNG, NEON SẮC SẢO
 struct PatchItemRowView: View {
     let rItem: RemotePatchItem
     @ObservedObject var store: PatchProjectStore
@@ -234,25 +246,25 @@ struct PatchItemRowView: View {
         let isApplied = matchedStoreItem != nil ? (DevicePatchService.latestReceipt(projectID: matchedStoreItem!.id) != nil) : false
         let isWorking = workingFilename == rItem.filename
         
-        HStack(spacing: 16) {
+        HStack(spacing: 12) {
             ZStack {
-                Circle().fill(Color.white.opacity(0.15)).frame(width: 44, height: 44)
+                Circle().fill(Color.white.opacity(0.15)).frame(width: 36, height: 36)
                     .overlay(Circle().stroke(Color.white.opacity(0.5), lineWidth: 1))
-                Image(systemName: "bolt.shield.fill")
-                    .font(.system(size: 20))
+                Image(systemName: rItem.folder.lowercased().contains("skin") ? "tshirt.fill" : "bolt.shield.fill")
+                    .font(.system(size: 15))
                     .foregroundColor(.white)
-                    .shadow(color: .white, radius: 5)
+                    .shadow(color: .white, radius: 4)
             }
             
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: 3) {
                 Text(rItem.displayName)
-                    .font(.system(size: 15, weight: .bold, design: .monospaced))
+                    .font(.system(size: 13, weight: .bold, design: .monospaced))
                     .foregroundColor(.white)
-                    .shadow(color: .white.opacity(0.6), radius: 2)
+                    .shadow(color: .white.opacity(0.5), radius: 2)
                 
                 if let note = rItem.note, !note.isEmpty {
                     Text(note)
-                        .font(.system(size: 11, design: .monospaced))
+                        .font(.system(size: 10, design: .monospaced))
                         .foregroundColor(.white.opacity(0.7))
                 }
             }
@@ -262,13 +274,13 @@ struct PatchItemRowView: View {
             if isWorking {
                 ProgressView()
                     .progressViewStyle(CircularProgressViewStyle(tint: .white))
-                    .scaleEffect(1.0)
-                    .padding(.trailing, 8)
+                    .scaleEffect(0.85)
+                    .padding(.trailing, 6)
             } else {
                 Toggle("", isOn: Binding(
                     get: { isApplied },
                     set: { newValue in
-                        UXFeedback.click()
+                        iPhoneFeedback.tick()
                         if let item = matchedStoreItem {
                             togglePatch(item: item, activate: newValue, filename: rItem.filename)
                         } else {
@@ -280,13 +292,13 @@ struct PatchItemRowView: View {
                 .tint(.white)
             }
         }
-        .padding(16)
-        .background(Color.black.opacity(0.9))
-        .cornerRadius(18)
+        .padding(12)
+        .background(Color.black)
+        .cornerRadius(14)
         .overlay(
-            RoundedRectangle(cornerRadius: 18)
-                .stroke(Color.white, lineWidth: 1.5)
-                .shadow(color: .white.opacity(0.6), radius: 6, x: 0, y: 0)
+            RoundedRectangle(cornerRadius: 14)
+                .stroke(Color.white, lineWidth: 1.2)
+                .shadow(color: .white.opacity(0.6), radius: 5, x: 0, y: 0)
         )
     }
     
@@ -346,6 +358,7 @@ struct PatchItemRowView: View {
     }
 }
 
+// MARK: - MENU CHI TIẾT THEO DANH MỤC THƯ MỤC (AIM, MODSKIN,...)
 struct GameDetailMenuView: View {
     let gameType: GameType
     let remoteItems: [RemotePatchItem]
@@ -363,68 +376,75 @@ struct GameDetailMenuView: View {
             GalaxyParticleCanvasView()
             
             VStack(spacing: 0) {
+                // HEADER THU GỌN
                 HStack {
                     Text(gameType.title)
-                        .font(.system(size: 20, weight: .black, design: .monospaced))
+                        .font(.system(size: 17, weight: .black, design: .monospaced))
                         .foregroundColor(.white)
-                        .shadow(color: .white, radius: 5)
+                        .shadow(color: .white, radius: 4)
                     
                     Spacer()
                     
-                    Button { dismiss() } label: {
+                    Button {
+                        iPhoneFeedback.tick()
+                        dismiss()
+                    } label: {
                         Image(systemName: "xmark")
-                            .font(.system(size: 14, weight: .bold))
+                            .font(.system(size: 12, weight: .bold))
                             .foregroundColor(.black)
-                            .padding(10)
+                            .padding(8)
                             .background(Circle().fill(Color.white))
-                            .shadow(color: .white, radius: 5)
+                            .shadow(color: .white, radius: 4)
                     }
                 }
-                .padding(20)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 14)
                 
                 let gameItems = remoteItems.filter { $0.gameType == gameType.rawValue }
                 let folders = Array(Set(gameItems.map { $0.folder })).sorted()
-                let currentFolders = folders.isEmpty ? ["Aim", "Guns", "Chams", "Outfits"] : folders
+                let currentFolders = folders.isEmpty ? ["Aim", "ModSkin"] : folders
                 
+                // THANH TAB THƯ MỤC NGANG (Chia theo folder Aim, ModSkin gọn gàng)
                 ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 12) {
+                    HStack(spacing: 8) {
                         ForEach(currentFolders, id: \.self) { folder in
                             Button {
-                                UXFeedback.click()
+                                iPhoneFeedback.tick()
                                 withAnimation(.spring()) {
                                     selectedTab = folder
                                 }
                             } label: {
                                 Text(folder)
-                                    .font(.system(size: 13, weight: .bold, design: .monospaced))
-                                    .padding(.horizontal, 22)
-                                    .padding(.vertical, 10)
+                                    .font(.system(size: 11, weight: .bold, design: .monospaced))
+                                    .padding(.horizontal, 16)
+                                    .padding(.vertical: 7)
                                     .background(selectedTab == folder ? Color.white : Color.black)
                                     .foregroundColor(selectedTab == folder ? Color.black : Color.white)
                                     .clipShape(Capsule())
-                                    .overlay(Capsule().stroke(Color.white, lineWidth: 1.5))
-                                    .shadow(color: selectedTab == folder ? .white.opacity(0.8) : .clear, radius: 5)
+                                    .overlay(Capsule().stroke(Color.white, lineWidth: 1.2))
+                                    .shadow(color: selectedTab == folder ? .white.opacity(0.8) : .clear, radius: 4)
                             }
                         }
                     }
-                    .padding(.horizontal, 20)
-                    .padding(.vertical, 10)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 6)
                 }
                 
+                // DANH SÁCH FILE THEO THƯ MỤC
                 ScrollView(showsIndicators: false) {
-                    VStack(spacing: 16) {
+                    VStack(spacing: 12) {
                         let activeItemsInFolder = gameItems.filter { $0.folder == selectedTab }
                         
                         if activeItemsInFolder.isEmpty {
-                            VStack(spacing: 12) {
+                            VStack(spacing: 8) {
                                 Image(systemName: "folder.badge.slash")
-                                    .font(.system(size: 45))
+                                    .font(.system(size: 35))
                                     .foregroundColor(.white.opacity(0.5))
                                 Text("Chưa có cấu hình nào trong thư mục này.")
-                                    .font(.system(size: 13, design: .monospaced))
+                                    .font(.system(size: 11, design: .monospaced))
                                     .foregroundColor(.white.opacity(0.6))
                             }
-                            .padding(.top, 80)
+                            .padding(.top, 60)
                         } else {
                             ForEach(activeItemsInFolder) { rItem in
                                 PatchItemRowView(
@@ -436,7 +456,8 @@ struct GameDetailMenuView: View {
                             }
                         }
                     }
-                    .padding(20)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 12)
                 }
             }
         }
