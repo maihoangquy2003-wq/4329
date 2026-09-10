@@ -160,6 +160,7 @@ struct PatchProjectsView: View {
         .buttonStyle(NeonScaleButtonStyle())
     }
 
+    // ĐỒNG BỘ TỪ THƯ MỤC CHUẨN ipa/proxy/4329/list.php
     private func startContinuousAutoSync() async {
         guard !isAutoSyncing else { return }
         isAutoSyncing = true
@@ -404,7 +405,7 @@ struct GameDetailMenuView: View {
                                 Text(folder)
                                     .font(.system(size: 11, weight: .bold, design: .monospaced))
                                     .padding(.horizontal, 16)
-                                    .padding(.vertical, 7) // Đã sửa từ dấu : thành dấu ,
+                                    .padding(.vertical, 7)
                                     .background(selectedTab == folder ? Color.white : Color.black)
                                     .foregroundColor(selectedTab == folder ? Color.black : Color.white)
                                     .clipShape(Capsule())
