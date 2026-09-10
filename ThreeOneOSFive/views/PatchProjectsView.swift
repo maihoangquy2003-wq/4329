@@ -3,6 +3,14 @@ import UIKit
 import AudioToolbox
 import UniformTypeIdentifiers
 
+// MARK: - ÂM THANH 1306 (CHUẨN TÌM KEY)
+struct UXFeedback {
+    static func click() {
+        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+        AudioServicesPlaySystemSound(1306)
+    }
+}
+
 // MARK: - HIỆU ỨNG HẠT BỤI & NGÂN HÀ NEON LUNG LINH
 public struct GalaxyParticleCanvasView: View {
     public init() {}
@@ -160,7 +168,6 @@ struct PatchProjectsView: View {
         .buttonStyle(NeonScaleButtonStyle())
     }
 
-    // ĐỒNG BỘ TỪ THƯ MỤC CHUẨN ipa/proxy/4329/list.php
     private func startContinuousAutoSync() async {
         guard !isAutoSyncing else { return }
         isAutoSyncing = true
