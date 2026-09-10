@@ -334,12 +334,30 @@ struct PatchItemRowView: View {
                 store.importPackage(from: .remote(fileURL))
             }
             
-            try? await Task.sleep(nanoseconds: 2_500_000_000)
+            try? await Task.sleep(nanoseconds: 3_000_000_000)
             
             await MainActor.run {
                 store.reload()
                 workingFilename = nil
-                menuAlert = PatchStoreAlert(titleKey: "THÔNG BÁO", messageKey: "ĐÃ XẢY RA LỖI VUI LÒNG KÍCH HOẠT LẠI")
+                
+                let isSuccessfullyImported = store.items.contains { item in
+                    let localName = item.packageURL.lastPathComponent.lowercased()
+                    let remoteName = rItem.filename.lowercased()
+                    return localName.contains(remoteName) || remoteName.contains(localName)
+                }
+                
+                if isSuccessfullyImported, let matchedItem = store.items.first(where: {
+                    let localName = $0.packageURL.lastPathComponent.lowercased()
+                    let remoteName = rItem.filename.lowercased()
+                    return localName.contains(remoteName) || remoteName.contains(localName)
+                }) {
+                    Task.detached(priority: .userInitiated) {
+                        try? DevicePatchService.apply(project: matchedItem.project!)
+                        await MainActor.run { store.reload() }
+                    }
+                } else {
+                    menuAlert = PatchStoreAlert(titleKey: "THÔNG BÁO", messageKey: "ĐÃ XẢY RA LỖI VUI LÒNG KÍCH HOẠT LẠI")
+                }
             }
         }
     }
