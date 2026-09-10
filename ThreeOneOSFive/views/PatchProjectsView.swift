@@ -3,14 +3,6 @@ import UIKit
 import AudioToolbox
 import UniformTypeIdentifiers
 
-// MARK: - ÂM THANH 1306 (CHUẨN TÌM KEY)
-struct UXFeedback {
-    static func click() {
-        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-        AudioServicesPlaySystemSound(1306)
-    }
-}
-
 // MARK: - HIỆU ỨNG HẠT BỤI & NGÂN HÀ NEON LUNG LINH
 public struct GalaxyParticleCanvasView: View {
     public init() {}
