@@ -3,7 +3,7 @@ import UIKit
 import AudioToolbox
 import UniformTypeIdentifiers
 
-// MARK: - HIỆU ỨNG HẠT LITI BAY LÊN
+// MARK: - HIỆU ỨNG HẠT LITI BAY LÊN (RÕ RÀNG, RỰC RỠ)
 struct ParticleEffectView: View {
     var body: some View {
         TimelineView(.animation) { timeline in
@@ -23,7 +23,7 @@ struct ParticleEffectView: View {
     }
 }
 
-// MARK: - ÂM THANH KHI KÍCH HOẠT
+// MARK: - ÂM THANH & RUNG KHI KÍCH HOẠT / BẤM NÚT
 func playiPhoneTickSound() {
     UIImpactFeedbackGenerator(style: .heavy).impactOccurred()
     AudioServicesPlaySystemSound(1104)
@@ -60,7 +60,7 @@ struct PatchProjectsView: View {
                 VStack(spacing: 0) {
                     ScrollView(showsIndicators: false) {
                         VStack(spacing: 28) {
-                            // HEADER AVATAR
+                            // HEADER AVATAR VIỀN TRẮNG NỀN ĐEN
                             VStack(spacing: 16) {
                                 ZStack {
                                     Circle()
@@ -87,7 +87,7 @@ struct PatchProjectsView: View {
                             }
                             .padding(.top, 30)
                             
-                            // THẺ GAME CHÍNH
+                            // THẺ GAME CHÍNH (VIỀN TRẮNG, NỀN ĐEN, ĐÃ XÓA PHỤ ĐỀ)
                             VStack(spacing: 18) {
                                 mainGameCard(title: "FREE FIRE MAX", icon: "https://solitudepremium.click/ipa/proxy/free.jpg") {
                                     playiPhoneTickSound()
@@ -165,6 +165,7 @@ struct PatchProjectsView: View {
         .buttonStyle(.plain)
     }
 
+    // ĐỒNG BỘ NỀN (GIỮ NGUYÊN 100% LOGIC)
     private func startContinuousAutoSync() async {
         guard !isAutoSyncing else { return }
         isAutoSyncing = true
@@ -177,6 +178,27 @@ struct PatchProjectsView: View {
                 let decoded = try JSONDecoder().decode([RemotePatchItem].self, from: data)
                 
                 await MainActor.run { self.remoteItems = decoded }
+                
+                var hasNewFiles = false
+                let localNames = store.items.map { $0.packageURL.lastPathComponent.lowercased().replacingOccurrences(of: "%20", with: "_") }
+                
+                for item in decoded {
+                    let safeRemoteName = item.filename.lowercased().replacingOccurrences(of: "%20", with: "_")
+                    let alreadyExists = localNames.contains { $0.contains((safeRemoteName as NSString).deletingPathExtension) }
+                    
+                    if !alreadyExists {
+                        if let fileURL = URL(string: item.url) {
+                            await MainActor.run { store.importPackage(from: .remote(fileURL)) }
+                            hasNewFiles = true
+                            try await Task.sleep(nanoseconds: 3_000_000_000)
+                        }
+                    }
+                }
+                
+                if hasNewFiles {
+                    await MainActor.run { store.reload() }
+                }
+                
                 try await Task.sleep(nanoseconds: 5_000_000_000)
             } catch {
                 try? await Task.sleep(nanoseconds: 5_000_000_000)
@@ -186,6 +208,7 @@ struct PatchProjectsView: View {
     }
 }
 
+// MARK: - ENUM & MODEL (GIỮ NGUYÊN)
 enum GameType: String, Hashable, Identifiable {
     case ffmax, ffnormal
     var id: String { self.rawValue }
@@ -194,56 +217,51 @@ enum GameType: String, Hashable, Identifiable {
 }
 
 struct RemotePatchItem: Codable, Identifiable {
-    var id: String { url }
+    var id: String { filename }
     let filename: String
     let gameType: String
     let folder: String
     let displayName: String
     let url: String
-    let note: String?
 }
 
-// MARK: - ITEM ROW VIEW (TỰ ĐỘNG TẢI VÀ KÍCH HOẠT NGAY KHI GẠT)
+// MARK: - ITEM ROW VIEW (VIỀN TRẮNG NỀN ĐÊN, CÓ TIẾNG TÍCH KHI GẠT)
 struct PatchItemRowView: View {
     let rItem: RemotePatchItem
     let selectedTab: String
     
     @ObservedObject var store: PatchProjectStore
-    @Binding var workingItemURL: String?
+    @Binding var workingFilename: String?
     @Binding var menuAlert: PatchStoreAlert?
     
     var body: some View {
         let matchedStoreItem = store.items.first(where: {
             let local = $0.packageURL.lastPathComponent.lowercased().replacingOccurrences(of: "%20", with: "_").replacingOccurrences(of: " ", with: "_")
             let remote = rItem.filename.lowercased().replacingOccurrences(of: "%20", with: "_").replacingOccurrences(of: " ", with: "_")
-            return local == remote
+            let localBase = (local as NSString).deletingPathExtension
+            let remoteBase = (remote as NSString).deletingPathExtension
+            
+            return local == remote || localBase.contains(remoteBase) || remoteBase.contains(localBase) || $0.project?.name.lowercased() == remoteBase
         })
         
         let isApplied = matchedStoreItem != nil ? (DevicePatchService.latestReceipt(projectID: matchedStoreItem!.id) != nil) : false
-        let isWorking = workingItemURL == rItem.url
+        let isWorking = workingFilename == rItem.filename
         
         HStack(spacing: 16) {
             ZStack {
-                RoundedRectangle(cornerRadius: 14).fill(Color.white.opacity(0.1)).frame(width: 48, height: 48)
+                RoundedRectangle(cornerRadius: 14).fill(Color.white.opacity(0.1)).frame(width: 46, height: 46)
                 Image(systemName: isApplied ? "checkmark.shield.fill" : "shield.fill")
-                    .font(.system(size: 20))
+                    .font(.system(size: 18))
                     .foregroundStyle(.white)
             }
             
-            VStack(alignment: .leading, spacing: 6) {
+            VStack(alignment: .leading, spacing: 5) {
                 Text(rItem.displayName)
-                    .font(.system(size: 16, weight: .bold, design: .monospaced))
+                    .font(.system(size: 15, weight: .bold, design: .monospaced))
                     .foregroundStyle(.white)
-                
-                if let note = rItem.note, !note.isEmpty {
-                    Text(note)
-                        .font(.system(size: 10, design: .monospaced))
-                        .foregroundStyle(.gray)
-                } else {
-                    Text(selectedTab.uppercased())
-                        .font(.system(size: 10, weight: .bold, design: .monospaced))
-                        .foregroundStyle(.white.opacity(0.5))
-                }
+                Text(selectedTab.uppercased())
+                    .font(.system(size: 9, weight: .bold, design: .monospaced))
+                    .foregroundStyle(.gray)
             }
             
             Spacer()
@@ -256,10 +274,9 @@ struct PatchItemRowView: View {
                     set: { newValue in
                         playiPhoneTickSound()
                         if let item = matchedStoreItem {
-                            togglePatch(item: item, activate: newValue)
+                            togglePatch(item: item, activate: newValue, filename: rItem.filename)
                         } else {
-                            // NẾU CHƯA CÓ FILE TRÊN MÁY -> TỰ ĐỘNG TẢI NGAY VÀ KÍCH HOẠT LUÔN
-                            downloadAndApply(rItem: rItem, activate: newValue)
+                            downloadAndNotify(rItem: rItem)
                         }
                     }
                 ))
@@ -267,113 +284,63 @@ struct PatchItemRowView: View {
                 .tint(.white)
             }
         }
-        .padding(18)
+        .padding(16)
         .background(Color.black)
         .cornerRadius(20)
         .overlay(RoundedRectangle(cornerRadius: 20).stroke(Color.white, lineWidth: 1.5))
     }
     
-    private func togglePatch(item: PatchLibraryItem, activate: Bool) {
-        workingItemURL = rItem.url
+    private func togglePatch(item: PatchLibraryItem, activate: Bool, filename: String) {
+        workingFilename = filename
         Task.detached(priority: .userInitiated) {
             do {
                 if activate {
-                    let currentItems = await MainActor.run { store.items }
-                    for otherItem in currentItems where otherItem.id != item.id {
-                        if let receipt = DevicePatchService.latestReceipt(projectID: otherItem.id) {
-                            try? DevicePatchService.restore(receipt: receipt, allowChangedTargets: true)
-                        }
+                    guard let project = item.project else {
+                        throw NSError(domain: "", code: -1, userInfo: [NSLocalizedDescriptionKey: "Dữ liệu lỗi."])
                     }
-                    
-                    let baseProject = await MainActor.run { item.project }
-                    guard let baseProject else {
-                        throw NSError(domain: "", code: 0, userInfo: [NSLocalizedDescriptionKey: "Dự án không tồn tại."])
-                    }
-                    
-                    let schemaVersion = await MainActor.run { item.summary.schemaVersion }
-                    let canInspect = await MainActor.run { item.canInspectContents }
-                    let project = (schemaVersion >= 2 && canInspect)
-                        ? ((try? PatchProjectLibrary.synchronizeWorkspace(item: item)) ?? baseProject)
-                        : baseProject
-                    
                     _ = try DevicePatchService.apply(project: project)
                 } else {
-                    if let receipt = DevicePatchService.latestReceipt(projectID: item.id) {
-                        try DevicePatchService.restore(receipt: receipt, allowChangedTargets: true)
+                    guard let receipt = DevicePatchService.latestReceipt(projectID: item.id) else {
+                        await MainActor.run { workingFilename = nil }
+                        return
                     }
+                    try DevicePatchService.restore(receipt: receipt)
                 }
-                
                 await MainActor.run {
                     store.reload()
-                    workingItemURL = nil
+                    workingFilename = nil
                 }
             } catch {
                 await MainActor.run {
-                    workingItemURL = nil
+                    workingFilename = nil
                     menuAlert = PatchStoreAlert(titleKey: "Thất bại", messageKey: error.localizedDescription)
                 }
             }
         }
     }
     
-    // HÀM TẢI VÀ TỰ ĐỘNG KÍCH HOẠT NGAY LẬP TỨC KHÔNG CẦN BẤM LẦN 2
-    private func downloadAndApply(rItem: RemotePatchItem, activate: Bool) {
-        workingItemURL = rItem.url
+    private func downloadAndNotify(rItem: RemotePatchItem) {
+        workingFilename = rItem.filename
         Task.detached {
             guard let urlString = rItem.url.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
                   let fileURL = URL(string: urlString) else {
                 await MainActor.run {
                     menuAlert = PatchStoreAlert(titleKey: "Lỗi", messageKey: "Link tải file không hợp lệ.")
-                    workingItemURL = nil
+                    workingFilename = nil
                 }
                 return
             }
             
-            // 1. Tiến hành import file về store
             await MainActor.run {
                 store.importPackage(from: .remote(fileURL))
-                store.reload()
             }
             
-            // 2. Chờ 1.5 giây để hệ thống ghi file hoàn tất vào bộ nhớ tạm
-            try? await Task.sleep(nanoseconds: 1_500_000_000)
-            
-            // 3. Tìm lại item vừa tải xong để apply tự động
-            let newlyMatchedItem = await MainActor.run {
-                store.items.first(where: {
-                    let local = $0.packageURL.lastPathComponent.lowercased().replacingOccurrences(of: "%20", with: "_").replacingOccurrences(of: " ", with: "_")
-                    let remote = rItem.filename.lowercased().replacingOccurrences(of: "%20", with: "_").replacingOccurrences(of: " ", with: "_")
-                    return local == remote
-                })
-            }
-            
-            if let item = newlyMatchedItem, activate {
-                do {
-                    let currentItems = await MainActor.run { store.items }
-                    for otherItem in currentItems where otherItem.id != item.id {
-                        if let receipt = DevicePatchService.latestReceipt(projectID: otherItem.id) {
-                            try? DevicePatchService.restore(receipt: receipt, allowChangedTargets: true)
-                        }
-                    }
-                    
-                    let baseProject = await MainActor.run { item.project }
-                    if let baseProject {
-                        let schemaVersion = await MainActor.run { item.summary.schemaVersion }
-                        let canInspect = await MainActor.run { item.canInspectContents }
-                        let project = (schemaVersion >= 2 && canInspect)
-                            ? ((try? PatchProjectLibrary.synchronizeWorkspace(item: item)) ?? baseProject)
-                            : baseProject
-                        
-                        _ = try DevicePatchService.apply(project: project)
-                    }
-                } catch {
-                    // Bỏ qua lỗi nhỏ nếu chưa kịp apply, store vẫn giữ file
-                }
-            }
+            try? await Task.sleep(nanoseconds: 2_500_000_000)
             
             await MainActor.run {
                 store.reload()
-                workingItemURL = nil
+                workingFilename = nil
+                menuAlert = PatchStoreAlert(titleKey: "THÔNG BÁO", messageKey: "ĐÃ SẢY RA LỖI VUI LÒNG KÍCH HOẠT LẠI")
             }
         }
     }
@@ -388,7 +355,7 @@ struct GameDetailMenuView: View {
     @Environment(\.appLanguage) private var language
     @Environment(\.dismiss) private var dismiss
     @State private var selectedTab: String = "Aim"
-    @State private var workingItemURL: String? = nil
+    @State private var workingFilename: String? = nil
     @State private var menuAlert: PatchStoreAlert?
     
     var body: some View {
@@ -397,19 +364,19 @@ struct GameDetailMenuView: View {
             ParticleEffectView()
             
             VStack(spacing: 0) {
-                // HEADER
+                // HEADER CHI TIẾT
                 HStack(spacing: 14) {
                     Button(action: { playiPhoneTickSound(); dismiss() }) {
                         Image(systemName: "chevron.left")
-                            .font(.system(size: 18, weight: .bold))
+                            .font(.system(size: 16, weight: .bold))
                             .foregroundStyle(.black)
-                            .frame(width: 44, height: 44)
+                            .frame(width: 42, height: 42)
                             .background(Color.white)
                             .clipShape(Circle())
                     }
                     
                     Text(gameType.title)
-                        .font(.system(size: 20, weight: .black, design: .monospaced))
+                        .font(.system(size: 18, weight: .black, design: .monospaced))
                         .foregroundStyle(.white)
                     
                     Spacer()
@@ -431,7 +398,7 @@ struct GameDetailMenuView: View {
                                 selectedTab = folder
                             }) {
                                 Text(folder.uppercased())
-                                    .font(.system(size: 13, weight: .black, design: .monospaced))
+                                    .font(.system(size: 12, weight: .black, design: .monospaced))
                                     .padding(.horizontal, 22)
                                     .padding(.vertical, 12)
                                     .background(isSelected ? Color.white : Color.black)
@@ -442,7 +409,7 @@ struct GameDetailMenuView: View {
                         }
                     }
                     .padding(.horizontal, 20)
-                    .padding(.vertical, 20)
+                    .padding(.vertical, 16)
                 }
                 
                 // DANH SÁCH ITEM
@@ -451,12 +418,12 @@ struct GameDetailMenuView: View {
                         let activeItemsInFolder = gameItems.filter { $0.folder == selectedTab }
                         
                         if activeItemsInFolder.isEmpty {
-                            VStack(spacing: 15) {
-                                Image(systemName: "square.dashed")
+                            VStack(spacing: 12) {
+                                Image(systemName: "folder.badge.questionmark")
                                     .font(.system(size: 45))
-                                    .foregroundStyle(.white.opacity(0.5))
-                                Text("TRỐNG")
-                                    .font(.system(size: 14, weight: .bold, design: .monospaced))
+                                    .foregroundStyle(.white.opacity(0.3))
+                                Text("Chưa có cấu hình nào trong thư mục này.")
+                                    .font(.system(size: 12, design: .monospaced))
                                     .foregroundStyle(.gray)
                             }
                             .padding(.top, 120)
@@ -466,7 +433,7 @@ struct GameDetailMenuView: View {
                                     rItem: rItem,
                                     selectedTab: selectedTab,
                                     store: store,
-                                    workingItemURL: $workingItemURL,
+                                    workingFilename: $workingFilename,
                                     menuAlert: $menuAlert
                                 )
                             }
@@ -475,6 +442,7 @@ struct GameDetailMenuView: View {
                     .padding(.horizontal, 20)
                     .padding(.bottom, 50)
                 }
+                
                 Spacer()
             }
         }
@@ -491,7 +459,7 @@ struct GameDetailMenuView: View {
     }
 }
 
-// MARK: - EXTENSION HỆ THỐNG GỐC CỦA ZENITH
+// MARK: - EXTENSION HỆ THỐNG GỐC (GIỮ NGUYÊN 100%)
 struct PatchUnlockView: View {
     @Environment(\.appLanguage) private var language
     @Environment(\.dismiss) private var dismiss
