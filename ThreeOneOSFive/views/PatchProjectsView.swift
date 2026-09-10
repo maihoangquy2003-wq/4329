@@ -1,21 +1,20 @@
 import SwiftUI
-import UIKit
 import AudioToolbox
 import UniformTypeIdentifiers
 
-// MARK: - HIỆU ỨNG HẠT LITI BAY LÊN (RÕ RÀNG, RỰC RỠ)
+// MARK: - HIỆU ỨNG HẠT LITI BAY TỪ DƯỚI LÊN
 struct ParticleEffectView: View {
     var body: some View {
         TimelineView(.animation) { timeline in
             Canvas { context, size in
                 let now = timeline.date.timeIntervalSinceReferenceDate
-                for i in 0..<70 {
-                    let seed = Double(i) * 19.0
-                    let x = (sin(now * 0.5 + seed) * 0.5 + 0.5) * size.width
-                    let y = fmod(seed * 35.0 - now * 65.0 + size.height, size.height)
-                    let particleSize = CGFloat(fmod(seed, 2.5) + 2.0)
+                for i in 0..<80 {
+                    let seed = Double(i) * 17.0
+                    let x = (sin(now * 0.6 + seed) * 0.5 + 0.5) * size.width
+                    let y = fmod(seed * 40.0 - now * 70.0 + size.height, size.height)
+                    let particleSize = CGFloat(fmod(seed, 3.0) + 1.5)
                     let rect = CGRect(x: x, y: y, width: particleSize, height: particleSize)
-                    context.fill(Path(ellipseIn: rect), with: .color(.white.opacity(0.7)))
+                    context.fill(Path(ellipseIn: rect), with: .color(.white.opacity(0.8)))
                 }
             }
         }
@@ -23,7 +22,7 @@ struct ParticleEffectView: View {
     }
 }
 
-// MARK: - ÂM THANH & RUNG KHI KÍCH HOẠT / BẤM NÚT
+// MARK: - ÂM THANH & RUNG KHI KÍCH HOẠT
 func playiPhoneTickSound() {
     UIImpactFeedbackGenerator(style: .heavy).impactOccurred()
     AudioServicesPlaySystemSound(1104)
@@ -87,7 +86,7 @@ struct PatchProjectsView: View {
                             }
                             .padding(.top, 30)
                             
-                            // THẺ GAME CHÍNH (VIỀN TRẮNG, NỀN ĐEN, ĐÃ XÓA PHỤ ĐỀ)
+                            // THẺ GAME CHÍNH (VIỀN TRẮNG, NỀN ĐEN)
                             VStack(spacing: 18) {
                                 mainGameCard(title: "FREE FIRE MAX", icon: "https://solitudepremium.click/ipa/proxy/free.jpg") {
                                     playiPhoneTickSound()
@@ -225,7 +224,7 @@ struct RemotePatchItem: Codable, Identifiable {
     let url: String
 }
 
-// MARK: - ITEM ROW VIEW (VIỀN TRẮNG NỀN ĐÊN, CÓ TIẾNG TÍCH KHI GẠT)
+// MARK: - ITEM ROW VIEW (VIỀN TRẮNG NỀN ĐEN, CÓ ÂM THANH KHI GẠT)
 struct PatchItemRowView: View {
     let rItem: RemotePatchItem
     let selectedTab: String
@@ -340,7 +339,7 @@ struct PatchItemRowView: View {
             await MainActor.run {
                 store.reload()
                 workingFilename = nil
-                menuAlert = PatchStoreAlert(titleKey: "THÔNG BÁO", messageKey: "ĐÃ SẢY RA LỖI VUI LÒNG KÍCH HOẠT LẠI")
+                menuAlert = PatchStoreAlert(titleKey: "THÔNG BÁO", messageKey: "ĐÃ XẢY RA LỖI VUI LÒNG KÍCH HOẠT LẠI")
             }
         }
     }
