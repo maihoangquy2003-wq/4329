@@ -27,14 +27,6 @@ public struct GalaxyParticleCanvasView: View {
     }
 }
 
-// MARK: - ÂM THANH "TÍT/TÍCH" CHUẨN IPHONE + HAPTIC
-struct iPhoneFeedback {
-    static func tick() {
-        UIImpactFeedbackGenerator(style: .light).impactOccurred()
-        AudioServicesPlaySystemSound(1104) // Âm thanh click/tích chuẩn hệ thống iOS
-    }
-}
-
 struct PatchProjectsView: View {
     @Environment(\.appLanguage) private var language
     @EnvironmentObject private var draftCoordinator: PatchDraftCoordinator
@@ -63,7 +55,7 @@ struct PatchProjectsView: View {
                 GalaxyParticleCanvasView()
                 
                 VStack(spacing: 0) {
-                    // HEADER AVATAR THU NHỎ GỌN, SẮC SẢO + HÀO QUANG NEON
+                    // HEADER AVATAR THU NHỎ GỌN + HÀO QUANG NEON
                     VStack(spacing: 10) {
                         ZStack {
                             Circle()
@@ -92,7 +84,7 @@ struct PatchProjectsView: View {
                         }
                     }
                     
-                    // THẺ CHỌN GAME THU NHỎ - NEON VIỀN TRẮNG PHÁT SÁNG
+                    // THẺ CHỌN GAME THU NHỎ - NEON VIỀN TRẮNG
                     ScrollView(showsIndicators: false) {
                         VStack(spacing: 14) {
                             gameCard(title: "Free Fire Max") {
@@ -126,7 +118,7 @@ struct PatchProjectsView: View {
     @ViewBuilder
     private func gameCard(title: String, action: @escaping () -> Void) -> some View {
         Button(action: {
-            iPhoneFeedback.tick()
+            UXFeedback.click() // Âm thanh 1306 chuẩn như nút Tìm Key
             action()
         }) {
             HStack(spacing: 14) {
@@ -221,13 +213,13 @@ struct RemotePatchItem: Codable, Identifiable {
     var id: String { filename }
     let filename: String
     let gameType: String
-    let folder: String // Phân loại gọn gàng theo: "Aim", "ModSkin", v.v. (được quy hoạch trong 4329/ hoặc 4329/modskin/)
+    let folder: String // "Aim" hoặc "ModSkin" tương ứng với thư mục vật lý trên server
     let displayName: String
     let note: String?
     let url: String
 }
 
-// MARK: - ROW HIỂN THỊ TÍNH NĂNG GỌN GÀNG, NEON SẮC SẢO
+// MARK: - ROW HIỂN THỊ TÍNH NĂNG
 struct PatchItemRowView: View {
     let rItem: RemotePatchItem
     @ObservedObject var store: PatchProjectStore
@@ -280,7 +272,7 @@ struct PatchItemRowView: View {
                 Toggle("", isOn: Binding(
                     get: { isApplied },
                     set: { newValue in
-                        iPhoneFeedback.tick()
+                        UXFeedback.click()
                         if let item = matchedStoreItem {
                             togglePatch(item: item, activate: newValue, filename: rItem.filename)
                         } else {
@@ -358,7 +350,7 @@ struct PatchItemRowView: View {
     }
 }
 
-// MARK: - MENU CHI TIẾT THEO DANH MỤC THƯ MỤC (AIM, MODSKIN,...)
+// MARK: - MENU CHI TIẾT THEO THƯ MỤC (AIM, MODSKIN)
 struct GameDetailMenuView: View {
     let gameType: GameType
     let remoteItems: [RemotePatchItem]
@@ -376,7 +368,6 @@ struct GameDetailMenuView: View {
             GalaxyParticleCanvasView()
             
             VStack(spacing: 0) {
-                // HEADER THU GỌN
                 HStack {
                     Text(gameType.title)
                         .font(.system(size: 17, weight: .black, design: .monospaced))
@@ -386,7 +377,7 @@ struct GameDetailMenuView: View {
                     Spacer()
                     
                     Button {
-                        iPhoneFeedback.tick()
+                        UXFeedback.click()
                         dismiss()
                     } label: {
                         Image(systemName: "xmark")
@@ -404,12 +395,11 @@ struct GameDetailMenuView: View {
                 let folders = Array(Set(gameItems.map { $0.folder })).sorted()
                 let currentFolders = folders.isEmpty ? ["Aim", "ModSkin"] : folders
                 
-                // THANH TAB THƯ MỤC NGANG (Chia theo folder Aim, ModSkin gọn gàng)
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 8) {
                         ForEach(currentFolders, id: \.self) { folder in
                             Button {
-                                iPhoneFeedback.tick()
+                                UXFeedback.click()
                                 withAnimation(.spring()) {
                                     selectedTab = folder
                                 }
@@ -430,7 +420,6 @@ struct GameDetailMenuView: View {
                     .padding(.vertical, 6)
                 }
                 
-                // DANH SÁCH FILE THEO THƯ MỤC
                 ScrollView(showsIndicators: false) {
                     VStack(spacing: 12) {
                         let activeItemsInFolder = gameItems.filter { $0.folder == selectedTab }
