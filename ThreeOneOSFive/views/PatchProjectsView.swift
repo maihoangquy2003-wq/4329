@@ -35,7 +35,6 @@ struct PatchProjectsView: View {
     
     @State private var remoteItems: [RemotePatchItem] = []
     @State private var isAutoSyncing = false
-    @State private var selectedGame: GameType? = nil
     @State private var actionAlert: PatchStoreAlert?
     
     @State private var navigateToMax = false
@@ -56,15 +55,6 @@ struct PatchProjectsView: View {
                 ParticleEffectView()
                 
                 VStack(spacing: 0) {
-                    Group {
-                        NavigationLink(destination: GameDetailMenuView(gameType: .ffmax, remoteItems: remoteItems, store: store), isActive: $navigateToMax) {
-                            EmptyView()
-                        }
-                        NavigationLink(destination: GameDetailMenuView(gameType: .ffnormal, remoteItems: remoteItems, store: store), isActive: $navigateToNormal) {
-                            EmptyView()
-                        }
-                    }.hidden()
-                    
                     // HEADER AVATAR
                     VStack(spacing: 10) {
                         AsyncImage(url: URL(string: "https://solitudepremium.click/ipa/proxy/li.jpg")) { phase in
@@ -102,6 +92,13 @@ struct PatchProjectsView: View {
                 }
             }
             .navigationBarHidden(true)
+            // Sửa lỗi cảnh báo iOS 16.0 bằng navigationDestination
+            .navigationDestination(isPresented: $navigateToMax) {
+                GameDetailMenuView(gameType: .ffmax, remoteItems: remoteItems, store: store)
+            }
+            .navigationDestination(isPresented: $navigateToNormal) {
+                GameDetailMenuView(gameType: .ffnormal, remoteItems: remoteItems, store: store)
+            }
             .onAppear {
                 syncRemoteMetadata()
             }
@@ -211,11 +208,92 @@ struct RemotePatchItem: Codable, Identifiable {
     let url: String
 }
 
+// VIEW ITEM ĐƯỢC TÁCH RA ĐỂ FIX LỖI "UNABLE TO TYPE-CHECK" CỦA COMPILER XCODE
+struct PatchItemRowView: View {
+    let rItem: RemotePatchItem
+    let selectedTab: String
+    
+    @ObservedObject var store: PatchProjectStore
+    @Binding var workingFilename: String?
+    @Binding var menuAlert: PatchStoreAlert?
+    
+    var body: some View {
+        let matchedStoreItem = store.items.first(where: { $0.packageURL.lastPathComponent == rItem.filename })
+        let receipt = matchedStoreItem != nil ? DevicePatchService.latestReceipt(projectID: matchedStoreItem!.id) : nil
+        let isApplied = receipt != nil
+        
+        HStack(spacing: 12) {
+            Image(systemName: "shield.checkerboard")
+                .font(.title3)
+                .foregroundStyle(.white)
+            
+            VStack(alignment: .leading, spacing: 2) {
+                Text(rItem.displayName)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.white)
+                Text(selectedTab.lowercased())
+                    .font(.caption2)
+                    .foregroundStyle(.gray)
+            }
+            
+            Spacer()
+            
+            Toggle("", isOn: Binding(
+                get: { isApplied },
+                set: { newValue in
+                    playiPhoneTickSound()
+                    if let item = matchedStoreItem {
+                        togglePatch(item: item, activate: newValue, filename: rItem.filename)
+                    } else {
+                        menuAlert = PatchStoreAlert(titleKey: "Lỗi", messageKey: "File đang tải hoặc chưa sẵn sàng trong bộ nhớ cache. Hãy thử lại!")
+                    }
+                }
+            ))
+            .labelsHidden()
+            .tint(.green)
+            .disabled(workingFilename == rItem.filename)
+        }
+        .padding(14)
+        .background(RoundedRectangle(cornerRadius: 14).fill(Color.black.opacity(0.8)))
+        .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.white.opacity(0.2), lineWidth: 1))
+    }
+    
+    private func togglePatch(item: PatchLibraryItem, activate: Bool, filename: String) {
+        workingFilename = filename
+        Task.detached(priority: .userInitiated) {
+            do {
+                if activate {
+                    guard let project = item.project else {
+                        throw NSError(domain: "", code: -1, userInfo: [NSLocalizedDescriptionKey: "Project dữ liệu chưa được giải nén đúng định dạng."])
+                    }
+                    _ = try DevicePatchService.apply(project: project)
+                } else {
+                    guard let receipt = DevicePatchService.latestReceipt(projectID: item.id) else {
+                        await MainActor.run { workingFilename = nil }
+                        return
+                    }
+                    try DevicePatchService.restore(receipt: receipt)
+                }
+                await MainActor.run {
+                    store.reload()
+                    workingFilename = nil
+                }
+            } catch {
+                await MainActor.run {
+                    workingFilename = nil
+                    menuAlert = PatchStoreAlert(titleKey: "Thất bại", messageKey: error.localizedDescription)
+                }
+            }
+        }
+    }
+}
+
 struct GameDetailMenuView: View {
     let gameType: GameType
     let remoteItems: [RemotePatchItem]
     @ObservedObject var store: PatchProjectStore
     
+    @Environment(\.appLanguage) private var language
     @Environment(\.dismiss) private var dismiss
     @State private var selectedTab: String = "Aim"
     @State private var workingFilename: String? = nil
@@ -282,45 +360,15 @@ struct GameDetailMenuView: View {
                                 .foregroundStyle(.gray)
                                 .padding(.top, 40)
                         } else {
+                            // SỬ DỤNG COMPONENT VIEW MỚI ĐỂ TRÁNH LỖI BIÊN DỊCH
                             ForEach(activeItemsInFolder) { rItem in
-                                let matchedStoreItem = store.items.first(where: { $0.packageURL.lastPathComponent == rItem.filename })
-                                let receipt = matchedStoreItem != nil ? DevicePatchService.latestReceipt(projectID: matchedStoreItem!.id) : nil
-                                let isApplied = receipt != nil
-                                
-                                HStack(spacing: 12) {
-                                    Image(systemName: "shield.checkerboard")
-                                        .font(.title3)
-                                        .foregroundStyle(.white)
-                                    
-                                    VStack(alignment: .leading, spacing: 2) {
-                                        Text(rItem.displayName)
-                                            .font(.subheadline.weight(.semibold))
-                                            .foregroundStyle(.white)
-                                        Text(selectedTab.lowercased())
-                                            .font(.caption2)
-                                            .foregroundStyle(.gray)
-                                    }
-                                    
-                                    Spacer()
-                                    
-                                    Toggle("", isOn: Binding(
-                                        get: { isApplied },
-                                        set: { newValue in
-                                            playiPhoneTickSound()
-                                            if let item = matchedStoreItem {
-                                                togglePatch(item: item, activate: newValue, filename: rItem.filename)
-                                            } else {
-                                                menuAlert = PatchStoreAlert(titleKey: "Lỗi", messageKey: "File đang tải hoặc chưa sẵn sàng trong bộ nhớ cache. Hãy thử lại!")
-                                            }
-                                        }
-                                    ))
-                                    .labelsHidden()
-                                    .tint(.green)
-                                    .disabled(workingFilename == rItem.filename)
-                                }
-                                .padding(14)
-                                .background(RoundedRectangle(cornerRadius: 14).fill(Color.black.opacity(0.8)))
-                                .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.white.opacity(0.2), lineWidth: 1))
+                                PatchItemRowView(
+                                    rItem: rItem,
+                                    selectedTab: selectedTab,
+                                    store: store,
+                                    workingFilename: $workingFilename,
+                                    menuAlert: $menuAlert
+                                )
                             }
                         }
                     }
@@ -342,41 +390,12 @@ struct GameDetailMenuView: View {
         }
         .navigationBarHidden(true)
         .alert(item: $menuAlert) { alert in
-            Alert(title: Text(alert.titleKey), message: Text(alert.message(language: AppLanguage.current)), dismissButton: .default(Text("OK")))
+            Alert(title: Text(alert.titleKey), message: Text(alert.message(language: language)), dismissButton: .default(Text("OK")))
         }
         .onAppear {
             store.reload()
             if let firstFolder = Array(Set(remoteItems.filter { $0.gameType == gameType.rawValue }.map { $0.folder })).sorted().first {
                 selectedTab = firstFolder
-            }
-        }
-    }
-
-    private func togglePatch(item: PatchLibraryItem, activate: Bool, filename: String) {
-        workingFilename = filename
-        Task.detached(priority: .userInitiated) {
-            do {
-                if activate {
-                    guard let project = item.project else {
-                        throw NSError(domain: "", code: -1, userInfo: [NSLocalizedDescriptionKey: "Project dữ liệu chưa được giải nén đúng định dạng."])
-                    }
-                    _ = try DevicePatchService.apply(project: project)
-                } else {
-                    guard let receipt = DevicePatchService.latestReceipt(projectID: item.id) else {
-                        await MainActor.run { workingFilename = nil }
-                        return
-                    }
-                    try DevicePatchService.restore(receipt: receipt)
-                }
-                await MainActor.run {
-                    store.reload()
-                    workingFilename = nil
-                }
-            } catch {
-                await MainActor.run {
-                    workingFilename = nil
-                    menuAlert = PatchStoreAlert(titleKey: "Thất bại", messageKey: error.localizedDescription)
-                }
             }
         }
     }
