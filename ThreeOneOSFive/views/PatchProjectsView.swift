@@ -3,6 +3,14 @@ import UIKit
 import AudioToolbox
 import UniformTypeIdentifiers
 
+// MARK: - ÂM THANH 1306 (CHUẨN TÌM KEY)
+struct UXFeedback {
+    static func click() {
+        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+        AudioServicesPlaySystemSound(1306)
+    }
+}
+
 // MARK: - HIỆU ỨNG HẠT BỤI & NGÂN HÀ NEON LUNG LINH
 public struct GalaxyParticleCanvasView: View {
     public init() {}
@@ -166,7 +174,8 @@ struct PatchProjectsView: View {
         
         while !Task.isCancelled {
             do {
-                guard let url = URL(string: "https://solitudepremium.click/ipa/proxy/4329/list.php") else { continue }
+                // ĐÃ SỬA URL ĐÚNG THEO BẠN CUNG CẤP
+                guard let url = URL(string: "https://solitudepremium.click/ipa/proxy/list.php") else { continue }
                 let request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData)
                 let (data, _) = try await URLSession.shared.data(for: request)
                 let decoded = try JSONDecoder().decode([RemotePatchItem].self, from: data)
