@@ -118,7 +118,7 @@ struct PatchProjectsView: View {
     @ViewBuilder
     private func gameCard(title: String, action: @escaping () -> Void) -> some View {
         Button(action: {
-            UXFeedback.click() // Âm thanh 1306 chuẩn như nút Tìm Key
+            UXFeedback.click()
             action()
         }) {
             HStack(spacing: 14) {
@@ -160,7 +160,6 @@ struct PatchProjectsView: View {
         .buttonStyle(NeonScaleButtonStyle())
     }
 
-    // ĐỒNG BỘ TỪ THƯ MỤC CHUẨN ipa/proxy/4329/list.php
     private func startContinuousAutoSync() async {
         guard !isAutoSyncing else { return }
         isAutoSyncing = true
@@ -213,13 +212,12 @@ struct RemotePatchItem: Codable, Identifiable {
     var id: String { filename }
     let filename: String
     let gameType: String
-    let folder: String // "Aim" hoặc "ModSkin" tương ứng với thư mục vật lý trên server
+    let folder: String
     let displayName: String
     let note: String?
     let url: String
 }
 
-// MARK: - ROW HIỂN THỊ TÍNH NĂNG
 struct PatchItemRowView: View {
     let rItem: RemotePatchItem
     @ObservedObject var store: PatchProjectStore
@@ -350,7 +348,6 @@ struct PatchItemRowView: View {
     }
 }
 
-// MARK: - MENU CHI TIẾT THEO THƯ MỤC (AIM, MODSKIN)
 struct GameDetailMenuView: View {
     let gameType: GameType
     let remoteItems: [RemotePatchItem]
@@ -407,7 +404,7 @@ struct GameDetailMenuView: View {
                                 Text(folder)
                                     .font(.system(size: 11, weight: .bold, design: .monospaced))
                                     .padding(.horizontal, 16)
-                                    .padding(.vertical: 7)
+                                    .padding(.vertical, 7) // Đã sửa từ dấu : thành dấu ,
                                     .background(selectedTab == folder ? Color.white : Color.black)
                                     .foregroundColor(selectedTab == folder ? Color.black : Color.white)
                                     .clipShape(Capsule())
