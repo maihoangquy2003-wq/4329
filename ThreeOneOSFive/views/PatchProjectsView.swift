@@ -19,7 +19,7 @@ enum SoundFX {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// MARK: - PARTICLE BACKGROUND
+// MARK: - PARTICLE
 // ═══════════════════════════════════════════════════════════════
 struct FloatingParticlesView: View {
     var particleCount: Int = 60
@@ -76,119 +76,91 @@ struct GameSelection: Identifiable, Hashable {
     let id = UUID()
     let title: String
     let prefix: String
-    let logoURL: String
 }
 
 // ═══════════════════════════════════════════════════════════════
-// MARK: - USER OVERRIDES
+// MARK: - PATCH METADATA (UserDefaults)
 // ═══════════════════════════════════════════════════════════════
-enum PatchOverrides {
-    static func displayName(for id: UUID) -> String? {
-        UserDefaults.standard.string(forKey: "patch_display_\(id.uuidString)")
+enum PatchMetadata {
+    // Folder
+    static func folder(for filename: String) -> String? {
+        UserDefaults.standard.string(forKey: "patch_folder_\(filename)")
     }
-    static func setDisplayName(_ name: String, for id: UUID) {
-        UserDefaults.standard.set(name, forKey: "patch_display_\(id.uuidString)")
+    static func setFolder(_ v: String, for filename: String) {
+        UserDefaults.standard.set(v, forKey: "patch_folder_\(filename)")
     }
-    static func tag(for id: UUID) -> String? {
-        UserDefaults.standard.string(forKey: "patch_tag_\(id.uuidString)")
+    // Display name
+    static func displayName(for filename: String) -> String? {
+        UserDefaults.standard.string(forKey: "patch_dname_\(filename)")
     }
-    static func setTag(_ tag: String, for id: UUID) {
-        UserDefaults.standard.set(tag, forKey: "patch_tag_\(id.uuidString)")
+    static func setDisplayName(_ v: String, for filename: String) {
+        UserDefaults.standard.set(v, forKey: "patch_dname_\(filename)")
+    }
+    // Tag
+    static func tag(for filename: String) -> String? {
+        UserDefaults.standard.string(forKey: "patch_tag_\(filename)")
+    }
+    static func setTag(_ v: String, for filename: String) {
+        UserDefaults.standard.set(v, forKey: "patch_tag_\(filename)")
     }
 }
 
 // ═══════════════════════════════════════════════════════════════
-// MARK: - SIMPLE BUILDING BLOCKS
+// MARK: - SUB VIEWS
 // ═══════════════════════════════════════════════════════════════
 
-// ─── TAG BADGE ─── (fix lỗi dòng 113)
 private struct TagBadge: View {
     let tag: String
 
     private var isVIP: Bool { tag == "VIP" }
-    private var bgColor: Color {
-        if isVIP { return Color.yellow.opacity(0.22) }
-        return Color.white.opacity(0.10)
-    }
-    private var fgColor: Color {
-        if isVIP { return Color.yellow }
-        return Color.white.opacity(0.80)
-    }
-    private var borderColor: Color {
-        if isVIP { return Color.yellow.opacity(0.50) }
-        return Color.white.opacity(0.25)
-    }
+    private var bg: Color { isVIP ? Color.yellow.opacity(0.22) : Color.white.opacity(0.10) }
+    private var fg: Color { isVIP ? Color.yellow : Color.white.opacity(0.80) }
+    private var bd: Color { isVIP ? Color.yellow.opacity(0.50) : Color.white.opacity(0.25) }
 
     var body: some View {
         Text(tag)
             .font(.system(size: 9, weight: .heavy))
             .tracking(1)
-            .padding(.horizontal, 7)
+            .padding(.horizontal, 8)
             .padding(.vertical, 3)
-            .background(Capsule().fill(bgColor))
-            .foregroundStyle(fgColor)
-            .overlay(Capsule().stroke(borderColor, lineWidth: 0.7))
+            .background(Capsule().fill(bg))
+            .foregroundStyle(fg)
+            .overlay(Capsule().stroke(bd, lineWidth: 0.7))
     }
 }
 
-// ─── PATCH ICON ───
 private struct PatchIconView: View {
     let tag: String
-
     private var isVIP: Bool { tag == "VIP" }
     private var iconName: String { isVIP ? "crown.fill" : "shield.lefthalf.filled" }
-    private var iconColor: Color {
-        if isVIP { return Color.yellow }
-        return Color.white.opacity(0.90)
-    }
-    private var borderColor: Color {
-        if isVIP { return Color.yellow.opacity(0.50) }
-        return Color.white.opacity(0.30)
-    }
+    private var iconColor: Color { isVIP ? Color.yellow : Color.white.opacity(0.90) }
+    private var borderColor: Color { isVIP ? Color.yellow.opacity(0.50) : Color.white.opacity(0.30) }
     private var gradient: LinearGradient {
-        if isVIP {
-            return LinearGradient(
-                colors: [Color.yellow.opacity(0.25), Color.orange.opacity(0.10)],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-        }
-        return LinearGradient(
-            colors: [Color.white.opacity(0.12), Color.white.opacity(0.03)],
-            startPoint: .topLeading,
-            endPoint: .bottomTrailing
-        )
+        isVIP
+            ? LinearGradient(colors: [Color.yellow.opacity(0.25), Color.orange.opacity(0.10)],
+                            startPoint: .topLeading, endPoint: .bottomTrailing)
+            : LinearGradient(colors: [Color.white.opacity(0.12), Color.white.opacity(0.03)],
+                            startPoint: .topLeading, endPoint: .bottomTrailing)
     }
 
     var body: some View {
         ZStack {
-            RoundedRectangle(cornerRadius: 13)
-                .fill(gradient)
-                .frame(width: 48, height: 48)
-
+            RoundedRectangle(cornerRadius: 13).fill(gradient).frame(width: 48, height: 48)
             Image(systemName: iconName)
                 .font(.system(size: 20, weight: .bold))
                 .foregroundStyle(iconColor)
         }
-        .overlay(
-            RoundedRectangle(cornerRadius: 13)
-                .stroke(borderColor, lineWidth: 1)
-        )
+        .overlay(RoundedRectangle(cornerRadius: 13).stroke(borderColor, lineWidth: 1))
     }
 }
 
-// ─── FOLDER TAB ───
 private struct FolderTabButton: View {
     let title: String
     let isActive: Bool
     let action: () -> Void
 
-    private var bgColor: Color {
-        isActive ? Color.white : Color.white.opacity(0.06)
-    }
-    private var fgColor: Color {
-        isActive ? Color.black : Color.white.opacity(0.85)
-    }
+    private var bg: Color { isActive ? Color.white : Color.white.opacity(0.06) }
+    private var fg: Color { isActive ? Color.black : Color.white.opacity(0.85) }
 
     var body: some View {
         Button(action: action) {
@@ -197,61 +169,46 @@ private struct FolderTabButton: View {
                 .tracking(1.2)
                 .padding(.horizontal, 20)
                 .padding(.vertical, 10)
-                .background(Capsule().fill(bgColor))
-                .foregroundStyle(fgColor)
+                .background(Capsule().fill(bg))
+                .foregroundStyle(fg)
                 .overlay(Capsule().stroke(Color.white.opacity(0.35), lineWidth: 1))
         }
         .buttonStyle(.plain)
     }
 }
 
-// ─── GAME LOGO ───
-private struct GameCardLogo: View {
-    let accent: Color
-
+private struct FFLogo: View {
     var body: some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: 16)
-                .fill(Color.white.opacity(0.05))
-                .frame(width: 68, height: 68)
-
-            logoImage
-        }
-        .overlay(
-            RoundedRectangle(cornerRadius: 16)
-                .stroke(accent.opacity(0.55), lineWidth: 1.2)
-        )
-    }
-
-    private var logoImage: some View {
         AsyncImage(url: URL(string: "https://solitudepremium.click/ipa/proxy/free.jpg")) { phase in
             switch phase {
             case .empty:
-                ProgressView().tint(.white)
+                ZStack {
+                    RoundedRectangle(cornerRadius: 14).fill(Color.white.opacity(0.05))
+                    ProgressView().tint(.white)
+                }
             case .success(let image):
                 image
                     .resizable()
                     .scaledToFill()
-                    .frame(width: 68, height: 68)
-                    .clipShape(RoundedRectangle(cornerRadius: 16))
+                    .clipShape(RoundedRectangle(cornerRadius: 14))
             case .failure:
-                Image(systemName: "flame.fill")
-                    .font(.system(size: 30, weight: .bold))
-                    .foregroundStyle(accent)
+                ZStack {
+                    RoundedRectangle(cornerRadius: 14).fill(Color.white.opacity(0.05))
+                    Image(systemName: "flame.fill")
+                        .font(.system(size: 26, weight: .bold))
+                        .foregroundStyle(Color.orange)
+                }
             @unknown default:
                 EmptyView()
             }
         }
+        .frame(width: 60, height: 60)
+        .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.white.opacity(0.4), lineWidth: 1))
     }
 }
 
-// ─── AVATAR ───
 private struct AvatarView: View {
     var body: some View {
-        content
-    }
-
-    private var content: some View {
         AsyncImage(url: URL(string: "https://solitudepremium.click/ipa/proxy/li.jpg")) { phase in
             switch phase {
             case .empty:
@@ -262,9 +219,7 @@ private struct AvatarView: View {
                     .scaledToFill()
                     .frame(width: 88, height: 88)
                     .clipShape(Circle())
-                    .overlay(
-                        Circle().stroke(Color.white.opacity(0.85), lineWidth: 2)
-                    )
+                    .overlay(Circle().stroke(Color.white.opacity(0.85), lineWidth: 2))
             case .failure:
                 Image(systemName: "person.crop.circle.fill")
                     .font(.system(size: 88))
@@ -276,64 +231,22 @@ private struct AvatarView: View {
     }
 }
 
-// ─── GAME CARD HEADER ───
-private struct GameCardHeader: View {
-    let title: String
-    let accent: Color
-    let isSyncing: Bool
-
-    var body: some View {
-        HStack(spacing: 16) {
-            GameCardLogo(accent: accent)
-
-            VStack(alignment: .leading, spacing: 5) {
-                Text(title)
-                    .font(.system(size: 18, weight: .heavy, design: .rounded))
-                    .foregroundStyle(Color.white)
-
-                Text("Zenith Solitude Store")
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(Color.white.opacity(0.45))
-                    .tracking(0.5)
-            }
-
-            Spacer()
-
-            if isSyncing {
-                ProgressView().tint(.white)
-            }
-        }
-        .padding(16)
-    }
-}
-
-// ─── GAME CARD FOOTER ───
-private struct GameCardFooter: View {
+private struct MenuButtonBar: View {
     var body: some View {
         HStack(spacing: 8) {
             Image(systemName: "line.3.horizontal")
-                .font(.system(size: 12, weight: .heavy))
+                .font(.system(size: 13, weight: .heavy))
             Text("MỞ MENU")
-                .font(.system(size: 12, weight: .heavy))
+                .font(.system(size: 13, weight: .heavy))
                 .tracking(2.5)
         }
         .foregroundStyle(Color.white)
         .frame(maxWidth: .infinity)
-        .padding(.vertical, 13)
+        .padding(.vertical, 14)
+        .background(Color.white.opacity(0.06))
     }
 }
 
-// ─── GAME CARD DIVIDER ───
-private struct GameCardDivider: View {
-    var body: some View {
-        Rectangle()
-            .fill(Color.white.opacity(0.20))
-            .frame(height: 1)
-            .padding(.horizontal, 16)
-    }
-}
-
-// ─── PATCH ROW ───
 private struct PatchRowView: View {
     let isApplied: Bool
     let isWorking: Bool
@@ -343,12 +256,8 @@ private struct PatchRowView: View {
     let onTapTag: () -> Void
     let onRename: () -> Void
 
-    private var rowBg: Color {
-        isApplied ? Color.white.opacity(0.05) : Color.white.opacity(0.02)
-    }
-    private var rowBorder: Color {
-        isApplied ? Color.green.opacity(0.55) : Color.white.opacity(0.22)
-    }
+    private var rowBg: Color { isApplied ? Color.white.opacity(0.05) : Color.white.opacity(0.02) }
+    private var rowBorder: Color { isApplied ? Color.green.opacity(0.55) : Color.white.opacity(0.22) }
 
     var body: some View {
         HStack(spacing: 14) {
@@ -368,21 +277,14 @@ private struct PatchRowView: View {
 
             Spacer()
 
-            Toggle("", isOn: Binding(
-                get: { isApplied },
-                set: { onToggle($0) }
-            ))
-            .labelsHidden()
-            .tint(Color.green)
-            .disabled(isWorking)
+            Toggle("", isOn: Binding(get: { isApplied }, set: { onToggle($0) }))
+                .labelsHidden()
+                .tint(Color.green)
+                .disabled(isWorking)
         }
         .padding(13)
-        .background(
-            RoundedRectangle(cornerRadius: 16).fill(rowBg)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 16).stroke(rowBorder, lineWidth: 1)
-        )
+        .background(RoundedRectangle(cornerRadius: 16).fill(rowBg))
+        .overlay(RoundedRectangle(cornerRadius: 16).stroke(rowBorder, lineWidth: 1))
         .contextMenu {
             Button(action: onRename) {
                 Label("Đổi tên hiển thị", systemImage: "pencil")
@@ -405,6 +307,8 @@ struct PatchProjectsView: View {
     @State private var isAutoSyncing = false
     @State private var actionAlert: PatchStoreAlert?
     @State private var selectedGame: GameSelection?
+
+    private let autoTimer = Timer.publish(every: 15, on: .main, in: .common).autoconnect()
 
     let onOpenSettings: () -> Void
     let onOpenLogs: () -> Void
@@ -430,11 +334,14 @@ struct PatchProjectsView: View {
             }
             .navigationBarHidden(true)
             .onAppear { syncRemotePatches() }
+            .onReceive(autoTimer) { _ in
+                syncRemotePatches()
+                store.reload()
+            }
             .sheet(item: $selectedGame) { game in
                 PatchGameDetailView(
                     game: game,
                     store: store,
-                    isAutoSyncing: $isAutoSyncing,
                     actionAlert: $actionAlert,
                     language: language
                 )
@@ -468,44 +375,59 @@ struct PatchProjectsView: View {
     private var content: some View {
         ScrollView(showsIndicators: false) {
             VStack(spacing: 18) {
-                cardMax
-                cardNormal
+                gameCard(
+                    title: "Free Fire Max",
+                    prefix: "ffmax_",
+                    accent: Color(red: 1.0, green: 0.28, blue: 0.15)
+                )
+                gameCard(
+                    title: "Free Fire Thường",
+                    prefix: "ffnormal_",
+                    accent: Color(red: 0.25, green: 0.65, blue: 1.0)
+                )
             }
             .padding(.horizontal, 16)
             .padding(.bottom, 40)
         }
     }
 
-    private var cardMax: some View {
-        gameCard(
-            title: "Free Fire Max",
-            prefix: "ffmax_",
-            accent: Color(red: 1.0, green: 0.28, blue: 0.15)
-        )
-    }
-
-    private var cardNormal: some View {
-        gameCard(
-            title: "Free Fire Thường",
-            prefix: "ffnormal_",
-            accent: Color(red: 0.25, green: 0.65, blue: 1.0)
-        )
-    }
-
     @ViewBuilder
     private func gameCard(title: String, prefix: String, accent: Color) -> some View {
         Button {
             SoundFX.menu()
-            selectedGame = GameSelection(
-                title: title,
-                prefix: prefix,
-                logoURL: "https://solitudepremium.click/ipa/proxy/free.jpg"
-            )
+            selectedGame = GameSelection(title: title, prefix: prefix)
         } label: {
             VStack(spacing: 0) {
-                GameCardHeader(title: title, accent: accent, isSyncing: isAutoSyncing)
-                GameCardDivider()
-                GameCardFooter()
+                // NÚT MỞ MENU — TRÊN CÙNG
+                MenuButtonBar()
+
+                Rectangle()
+                    .fill(Color.white.opacity(0.15))
+                    .frame(height: 1)
+                    .padding(.horizontal, 16)
+
+                // HEADER LOGO + TÊN
+                HStack(spacing: 14) {
+                    FFLogo()
+
+                    VStack(alignment: .leading, spacing: 5) {
+                        Text(title)
+                            .font(.system(size: 18, weight: .heavy, design: .rounded))
+                            .foregroundStyle(Color.white)
+
+                        Text("HEADLOCK ZENIS")
+                            .font(.system(size: 11, weight: .bold))
+                            .foregroundStyle(Color.white.opacity(0.55))
+                            .tracking(1.5)
+                    }
+
+                    Spacer()
+
+                    if isAutoSyncing {
+                        ProgressView().tint(.white)
+                    }
+                }
+                .padding(16)
             }
             .background(
                 RoundedRectangle(cornerRadius: 20).fill(Color.black.opacity(0.65))
@@ -536,12 +458,28 @@ struct PatchProjectsView: View {
             let local = Set(store.items.map { $0.packageURL.lastPathComponent })
 
             for file in remoteFiles {
-                if local.contains(file.filename) { continue }
+                let fname = file.filename
+
+                // LUÔN cập nhật folder metadata (nguồn sự thật từ web)
+                PatchMetadata.setFolder(file.folder ?? "Khác", for: fname)
+
+                // displayName / tag: chỉ set nếu user CHƯA sửa
+                if PatchMetadata.displayName(for: fname) == nil,
+                   let dn = file.displayName, !dn.isEmpty {
+                    PatchMetadata.setDisplayName(dn, for: fname)
+                }
+                if PatchMetadata.tag(for: fname) == nil,
+                   let t = file.tag, !t.isEmpty {
+                    PatchMetadata.setTag(t, for: fname)
+                }
+
+                if local.contains(fname) { continue }
                 guard let fileURL = URL(string: file.url) else { continue }
+
                 await MainActor.run {
                     store.importPackage(from: .remote(fileURL))
                 }
-                try await Task.sleep(nanoseconds: 5_000_000_000)
+                try await Task.sleep(nanoseconds: 3_000_000_000)
             }
         } catch {
             print("Lỗi đồng bộ: \(error.localizedDescription)")
@@ -565,7 +503,6 @@ struct PatchProjectsView: View {
 struct PatchGameDetailView: View {
     let game: GameSelection
     @ObservedObject var store: PatchProjectStore
-    @Binding var isAutoSyncing: Bool
     @Binding var actionAlert: PatchStoreAlert?
     let language: AppLanguage
 
@@ -607,11 +544,7 @@ struct PatchGameDetailView: View {
                 Button("Huỷ", role: .cancel) { renameItem = nil }
                 Button("Lưu") { commitRename() }
             }
-            .confirmationDialog(
-                "Chọn loại tag",
-                isPresented: tagBinding,
-                titleVisibility: .visible
-            ) {
+            .confirmationDialog("Chọn loại tag", isPresented: tagBinding, titleVisibility: .visible) {
                 Button("VIP 👑") { commitTag("VIP") }
                 Button("FREE 🛡") { commitTag("FREE") }
                 Button("Huỷ", role: .cancel) { tagPickerItem = nil }
@@ -626,7 +559,7 @@ struct PatchGameDetailView: View {
             let isMax = name.hasPrefix("ffmax_")
             let isNormal = name.hasPrefix("ffnormal_")
             let isPlain = !isMax && !isNormal
-            if game.prefix == "ffmax_" { return isMax }
+            if game.prefix == "ffmax_" { return isMax || isPlain == false ? isMax : false }
             return isNormal || isPlain
         }
     }
@@ -643,17 +576,10 @@ struct PatchGameDetailView: View {
     }
 
     private var renameBinding: Binding<Bool> {
-        Binding(
-            get: { renameItem != nil },
-            set: { if !$0 { renameItem = nil } }
-        )
+        Binding(get: { renameItem != nil }, set: { if !$0 { renameItem = nil } })
     }
-
     private var tagBinding: Binding<Bool> {
-        Binding(
-            get: { tagPickerItem != nil },
-            set: { if !$0 { tagPickerItem = nil } }
-        )
+        Binding(get: { tagPickerItem != nil }, set: { if !$0 { tagPickerItem = nil } })
     }
 
     // MARK: Subviews
@@ -738,7 +664,8 @@ struct PatchGameDetailView: View {
 
     // MARK: Helpers
     private func displayName(for item: PatchLibraryItem) -> String {
-        if let override = PatchOverrides.displayName(for: item.id), !override.isEmpty {
+        let fname = item.packageURL.lastPathComponent
+        if let override = PatchMetadata.displayName(for: fname), !override.isEmpty {
             return override
         }
         if let name = item.project?.name, !name.isEmpty { return name }
@@ -752,20 +679,34 @@ struct PatchGameDetailView: View {
     }
 
     private func currentTag(for item: PatchLibraryItem) -> String {
-        if let override = PatchOverrides.tag(for: item.id) { return override }
+        let fname = item.packageURL.lastPathComponent
+        if let override = PatchMetadata.tag(for: fname), !override.isEmpty {
+            return override
+        }
         let base = item.packageURL.deletingPathExtension().lastPathComponent
         return base.hasSuffix("_VIP") ? "VIP" : "FREE"
     }
 
     private func folderName(for item: PatchLibraryItem) -> String {
+        let fname = item.packageURL.lastPathComponent
+
+        // 1. UserDefaults metadata (chính xác nhất)
+        if let f = PatchMetadata.folder(for: fname), !f.isEmpty {
+            return f
+        }
+
+        // 2. Fallback: parse từ path components
         let comps = item.packageURL.pathComponents.filter { $0 != "/" }
         if let idx = comps.firstIndex(where: { $0 == "ffmax" || $0 == "ffnormal" }),
            idx + 2 < comps.count {
             return comps[idx + 1]
         }
+
+        // 3. Bỏ các folder hệ thống
         let parent = item.packageURL.deletingLastPathComponent().lastPathComponent
-        let ignore: Set<String> = ["Documents", "tmp", "proxy", ""]
+        let ignore: Set<String> = ["Documents", "tmp", "proxy", "PatchProjects", "PatchProjectStore", ""]
         if !ignore.contains(parent) { return parent }
+
         return "Khác"
     }
 
@@ -773,7 +714,8 @@ struct PatchGameDetailView: View {
         guard let item = renameItem else { return }
         let trimmed = renameText.trimmingCharacters(in: .whitespacesAndNewlines)
         if !trimmed.isEmpty {
-            PatchOverrides.setDisplayName(trimmed, for: item.id)
+            let fname = item.packageURL.lastPathComponent
+            PatchMetadata.setDisplayName(trimmed, for: fname)
             store.reload()
         }
         renameItem = nil
@@ -781,7 +723,8 @@ struct PatchGameDetailView: View {
 
     private func commitTag(_ tag: String) {
         guard let item = tagPickerItem else { return }
-        PatchOverrides.setTag(tag, for: item.id)
+        let fname = item.packageURL.lastPathComponent
+        PatchMetadata.setTag(tag, for: fname)
         store.reload()
         tagPickerItem = nil
     }
