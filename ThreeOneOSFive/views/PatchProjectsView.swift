@@ -19,14 +19,16 @@ enum SoundFX {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// MARK: - BACKGROUND
+// MARK: - BACKGROUND LAYER
 // ═══════════════════════════════════════════════════════════════
 struct NeonBackgroundView: View {
     var body: some View {
         ZStack {
             Color.black
             StarfieldView()
-            FloatingParticlesView(particleCount: 65)
+            ShootingStarsView()
+            FloatingOrbsView()
+            FloatingParticlesView(particleCount: 80)
         }
         .ignoresSafeArea()
     }
@@ -34,10 +36,8 @@ struct NeonBackgroundView: View {
 
 struct StarfieldView: View {
     private struct Star {
-        let x: CGFloat
-        let y: CGFloat
-        let size: CGFloat
-        let phase: Double
+        let x: CGFloat; let y: CGFloat
+        let size: CGFloat; let phase: Double
     }
     @State private var stars: [Star] = []
 
@@ -48,8 +48,7 @@ struct StarfieldView: View {
                     let t = timeline.date.timeIntervalSinceReferenceDate
                     for s in stars {
                         let alpha = 0.25 + 0.45 * sin(t * 0.9 + s.phase)
-                        let rect = CGRect(x: s.x * size.width,
-                                          y: s.y * size.height,
+                        let rect = CGRect(x: s.x * size.width, y: s.y * size.height,
                                           width: s.size, height: s.size)
                         ctx.fill(Path(ellipseIn: rect),
                                  with: .color(Color.white.opacity(alpha)))
@@ -58,10 +57,10 @@ struct StarfieldView: View {
             }
             .onAppear {
                 guard stars.isEmpty else { return }
-                stars = (0..<120).map { _ in
+                stars = (0..<110).map { _ in
                     Star(x: CGFloat.random(in: 0...1),
                          y: CGFloat.random(in: 0...1),
-                         size: CGFloat.random(in: 0.7...2.1),
+                         size: CGFloat.random(in: 0.7...2.0),
                          phase: Double.random(in: 0...(2 * .pi)))
                 }
             }
@@ -70,9 +69,111 @@ struct StarfieldView: View {
     }
 }
 
+/// Sao băng chéo
+struct ShootingStarsView: View {
+    private struct Shot {
+        let startX: CGFloat
+        let startY: CGFloat
+        let speed: CGFloat
+        let delay: Double
+    }
+    @State private var shots: [Shot] = []
+
+    var body: some View {
+        GeometryReader { _ in
+            TimelineView(.animation(minimumInterval: 1.0 / 40.0)) { timeline in
+                Canvas { ctx, size in
+                    let t = timeline.date.timeIntervalSinceReferenceDate
+                    for s in shots {
+                        let elapsed = (t - s.delay).truncatingRemainder(dividingBy: 8)
+                        guard elapsed > 0 && elapsed < 3 else { continue }
+                        let progress = elapsed / 3.0
+                        let x = s.startX * size.width + CGFloat(progress) * 300
+                        let y = s.startY * size.height + CGFloat(progress) * 200
+                        let alpha = 1.0 - progress
+
+                        // Trail
+                        var path = Path()
+                        path.move(to: CGPoint(x: x, y: y))
+                        path.addLine(to: CGPoint(x: x - 60, y: y - 40))
+                        ctx.stroke(path,
+                                   with: .color(Color.white.opacity(alpha * 0.9)),
+                                   lineWidth: 1.6)
+
+                        // Head
+                        let head = CGRect(x: x - 2, y: y - 2, width: 4, height: 4)
+                        ctx.fill(Path(ellipseIn: head),
+                                 with: .color(Color.white.opacity(alpha)))
+                    }
+                }
+            }
+            .onAppear {
+                guard shots.isEmpty else { return }
+                shots = (0..<6).map { i in
+                    Shot(startX: CGFloat.random(in: 0...0.7),
+                         startY: CGFloat.random(in: 0...0.5),
+                         speed: CGFloat.random(in: 0.8...1.2),
+                         delay: Double(i) * 1.6)
+                }
+            }
+        }
+        .allowsHitTesting(false)
+    }
+}
+
+/// Quả cầu sáng bay lơ lửng
+struct FloatingOrbsView: View {
+    private struct Orb {
+        let baseX: CGFloat; let baseY: CGFloat
+        let radius: CGFloat
+        let colorSeed: Int
+        let phase: Double
+    }
+    @State private var orbs: [Orb] = []
+
+    var body: some View {
+        GeometryReader { _ in
+            TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { timeline in
+                Canvas { ctx, size in
+                    let t = timeline.date.timeIntervalSinceReferenceDate
+                    for o in orbs {
+                        let dx = sin(t * 0.35 + o.phase) * 40
+                        let dy = cos(t * 0.28 + o.phase) * 30
+                        let cx = o.baseX * size.width + dx
+                        let cy = o.baseY * size.height + dy
+                        let rect = CGRect(x: cx - o.radius, y: cy - o.radius,
+                                          width: o.radius * 2, height: o.radius * 2)
+
+                        let color: Color = {
+                            switch o.colorSeed % 3 {
+                            case 0: return Color.white.opacity(0.14)
+                            case 1: return Color.cyan.opacity(0.14)
+                            default: return Color.purple.opacity(0.14)
+                            }
+                        }()
+
+                        ctx.fill(Path(ellipseIn: rect), with: .color(color))
+                    }
+                }
+            }
+            .onAppear {
+                guard orbs.isEmpty else { return }
+                orbs = (0..<5).map { i in
+                    Orb(baseX: CGFloat.random(in: 0.1...0.9),
+                        baseY: CGFloat.random(in: 0.1...0.9),
+                        radius: CGFloat.random(in: 60...110),
+                        colorSeed: i,
+                        phase: Double.random(in: 0...(2 * .pi)))
+                }
+            }
+        }
+        .allowsHitTesting(false)
+        .blur(radius: 8)
+    }
+}
+
 struct FloatingParticlesView: View {
-    var particleCount: Int = 65
-    var color: Color = .white
+    var particleCount: Int = 80
 
     private struct Particle {
         let baseX: CGFloat
@@ -95,7 +196,7 @@ struct FloatingParticlesView: View {
                     let x = p.baseX * size.width + wobble
                     let rect = CGRect(x: x, y: y, width: p.size, height: p.size)
                     context.fill(Path(ellipseIn: rect),
-                                 with: .color(color.opacity(p.opacity)))
+                                 with: .color(Color.white.opacity(p.opacity)))
                 }
             }
         }
@@ -106,7 +207,7 @@ struct FloatingParticlesView: View {
         guard particles.isEmpty else { return }
         particles = (0..<particleCount).map { _ in
             Particle(baseX: CGFloat.random(in: 0...1),
-                     size: CGFloat.random(in: 1.2...3.4),
+                     size: CGFloat.random(in: 1.0...3.2),
                      speed: CGFloat.random(in: 20...55),
                      opacity: Double.random(in: 0.25...0.9),
                      phase: Double.random(in: 0...(2 * .pi)))
@@ -124,7 +225,7 @@ struct GameSelection: Identifiable, Hashable {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// MARK: - METADATA (keyed by LOCAL filename)
+// MARK: - METADATA (override flags để giữ sửa của user)
 // ═══════════════════════════════════════════════════════════════
 struct PatchMeta: Codable {
     var remoteName: String
@@ -132,10 +233,13 @@ struct PatchMeta: Codable {
     var tag: String
     var displayName: String
     var note: String
+    var tagOverride: Bool = false
+    var nameOverride: Bool = false
+    var noteOverride: Bool = false
 }
 
 enum PatchMetaStore {
-    private static let key = "patch_meta_v5"
+    private static let key = "patch_meta_v6"
 
     static func all() -> [String: PatchMeta] {
         guard let data = UserDefaults.standard.data(forKey: key),
@@ -149,9 +253,7 @@ enum PatchMetaStore {
         }
     }
     static func set(_ meta: PatchMeta, forKey local: String) {
-        var d = all()
-        d[local] = meta
-        save(d)
+        var d = all(); d[local] = meta; save(d)
     }
     static func get(forKey local: String) -> PatchMeta? {
         return all()[local]
@@ -174,24 +276,21 @@ enum PatchMetaStore {
 private struct NeonCard<Content: View>: View {
     let accent: Color
     @ViewBuilder let content: Content
-
     var body: some View {
         content
-            .background(
-                RoundedRectangle(cornerRadius: 22).fill(Color.black.opacity(0.88))
-            )
+            .background(RoundedRectangle(cornerRadius: 18).fill(Color.black.opacity(0.9)))
             .overlay(
-                RoundedRectangle(cornerRadius: 22)
+                RoundedRectangle(cornerRadius: 18)
                     .strokeBorder(
                         LinearGradient(
                             colors: [.white, accent.opacity(0.6), .white.opacity(0.35)],
                             startPoint: .topLeading, endPoint: .bottomTrailing
                         ),
-                        lineWidth: 1.4
+                        lineWidth: 1.2
                     )
             )
-            .shadow(color: accent.opacity(0.4), radius: 24)
-            .shadow(color: .white.opacity(0.18), radius: 10)
+            .shadow(color: accent.opacity(0.4), radius: 20)
+            .shadow(color: .white.opacity(0.18), radius: 8)
     }
 }
 
@@ -201,43 +300,108 @@ private struct FFLogoView: View {
             switch phase {
             case .empty:
                 ZStack {
-                    RoundedRectangle(cornerRadius: 16).fill(Color.white.opacity(0.06))
+                    RoundedRectangle(cornerRadius: 13).fill(Color.white.opacity(0.06))
                     ProgressView().tint(.white)
                 }
             case .success(let img):
-                img.resizable().scaledToFill().clipShape(RoundedRectangle(cornerRadius: 16))
+                img.resizable().scaledToFill().clipShape(RoundedRectangle(cornerRadius: 13))
             case .failure:
                 ZStack {
-                    RoundedRectangle(cornerRadius: 16).fill(Color.white.opacity(0.06))
+                    RoundedRectangle(cornerRadius: 13).fill(Color.white.opacity(0.06))
                     Image(systemName: "flame.fill")
-                        .font(.system(size: 26, weight: .bold))
+                        .font(.system(size: 22, weight: .bold))
                         .foregroundStyle(Color.orange)
                 }
             @unknown default: EmptyView()
             }
         }
-        .frame(width: 62, height: 62)
-        .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.white.opacity(0.75), lineWidth: 1))
-        .shadow(color: .white.opacity(0.4), radius: 12)
+        .frame(width: 52, height: 52)
+        .overlay(RoundedRectangle(cornerRadius: 13).stroke(Color.white.opacity(0.75), lineWidth: 1))
+        .shadow(color: .white.opacity(0.4), radius: 10)
     }
 }
 
+/// Avatar với vòng neon xoay + halo pulse
 private struct AvatarView: View {
+    @State private var rotate = false
+    @State private var pulse = false
+
     var body: some View {
+        ZStack {
+            // Halo pulse
+            Circle()
+                .fill(Color.white.opacity(0.15))
+                .frame(width: pulse ? 110 : 90, height: pulse ? 110 : 90)
+                .blur(radius: 20)
+
+            // Rotating neon ring
+            Circle()
+                .stroke(
+                    AngularGradient(
+                        gradient: Gradient(colors: [
+                            Color.white, Color.cyan, Color.white,
+                            Color.purple, Color.white
+                        ]),
+                        center: .center
+                    ),
+                    lineWidth: 2.5
+                )
+                .frame(width: 92, height: 92)
+                .rotationEffect(.degrees(rotate ? 360 : 0))
+                .blur(radius: 1.5)
+
+            // Second inner rotating ring (reverse)
+            Circle()
+                .stroke(
+                    AngularGradient(
+                        gradient: Gradient(colors: [
+                            Color.cyan.opacity(0.6),
+                            Color.clear,
+                            Color.purple.opacity(0.6),
+                            Color.clear,
+                            Color.cyan.opacity(0.6)
+                        ]),
+                        center: .center
+                    ),
+                    lineWidth: 1
+                )
+                .frame(width: 88, height: 88)
+                .rotationEffect(.degrees(rotate ? -360 : 0))
+
+            // Main avatar
+            avatarImage
+                .frame(width: 78, height: 78)
+                .clipShape(Circle())
+                .overlay(Circle().stroke(Color.white.opacity(0.95), lineWidth: 1.2))
+        }
+        .frame(width: 110, height: 110)
+        .onAppear {
+            withAnimation(.linear(duration: 9).repeatForever(autoreverses: false)) {
+                rotate = true
+            }
+            withAnimation(.easeInOut(duration: 1.6).repeatForever(autoreverses: true)) {
+                pulse = true
+            }
+        }
+    }
+
+    private var avatarImage: some View {
         AsyncImage(url: URL(string: "https://solitudepremium.click/ipa/proxy/li.jpg")) { phase in
             switch phase {
             case .empty:
-                ProgressView().frame(width: 92, height: 92).tint(.white)
+                ZStack {
+                    Color.black.opacity(0.6)
+                    ProgressView().tint(.white)
+                }
             case .success(let img):
                 img.resizable().scaledToFill()
-                    .frame(width: 92, height: 92)
-                    .clipShape(Circle())
-                    .overlay(Circle().stroke(Color.white.opacity(0.9), lineWidth: 1.5))
-                    .shadow(color: .white.opacity(0.55), radius: 18)
             case .failure:
-                Image(systemName: "person.crop.circle.fill")
-                    .font(.system(size: 92))
-                    .foregroundStyle(Color.white.opacity(0.35))
+                ZStack {
+                    Color.white.opacity(0.1)
+                    Image(systemName: "person.crop.circle.fill")
+                        .font(.system(size: 60))
+                        .foregroundStyle(Color.white.opacity(0.4))
+                }
             @unknown default: EmptyView()
             }
         }
@@ -246,18 +410,18 @@ private struct AvatarView: View {
 
 private struct MenuCapsuleButton: View {
     var body: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: 5) {
             Text("MỞ MENU")
-                .font(.system(size: 12, weight: .heavy))
-                .tracking(1)
+                .font(.system(size: 11, weight: .heavy))
+                .tracking(0.8)
             Image(systemName: "chevron.right")
-                .font(.system(size: 10, weight: .heavy))
+                .font(.system(size: 9, weight: .heavy))
         }
         .foregroundStyle(Color.black)
-        .padding(.horizontal, 14)
-        .padding(.vertical, 10)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
         .background(Capsule().fill(Color.white))
-        .shadow(color: .white.opacity(0.6), radius: 14)
+        .shadow(color: .white.opacity(0.6), radius: 10)
     }
 }
 
@@ -271,7 +435,7 @@ private struct TagBadge: View {
     var body: some View {
         Text(tag)
             .font(.system(size: 8, weight: .heavy))
-            .tracking(1)
+            .tracking(0.8)
             .padding(.horizontal, 6)
             .padding(.vertical, 2)
             .background(Capsule().fill(bg))
@@ -289,13 +453,13 @@ private struct PatchIconView: View {
 
     var body: some View {
         ZStack {
-            RoundedRectangle(cornerRadius: 13).fill(Color.white.opacity(0.05))
-                .frame(width: 46, height: 46)
+            RoundedRectangle(cornerRadius: 11).fill(Color.white.opacity(0.05))
+                .frame(width: 40, height: 40)
             Image(systemName: icon)
-                .font(.system(size: 19, weight: .bold))
+                .font(.system(size: 17, weight: .bold))
                 .foregroundStyle(color)
         }
-        .overlay(RoundedRectangle(cornerRadius: 13).stroke(border, lineWidth: 1))
+        .overlay(RoundedRectangle(cornerRadius: 11).stroke(border, lineWidth: 1))
         .shadow(color: isVIP ? .yellow.opacity(0.35) : .clear, radius: 8)
     }
 }
@@ -311,10 +475,10 @@ private struct FolderTabButton: View {
     var body: some View {
         Button(action: action) {
             Text(title.uppercased())
-                .font(.system(size: 12, weight: .heavy))
-                .tracking(1.2)
-                .padding(.horizontal, 18)
-                .padding(.vertical, 9)
+                .font(.system(size: 11, weight: .heavy))
+                .tracking(1)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 8)
                 .background(Capsule().fill(bg))
                 .foregroundStyle(fg)
                 .overlay(Capsule().stroke(Color.white.opacity(0.5), lineWidth: 1))
@@ -324,64 +488,63 @@ private struct FolderTabButton: View {
     }
 }
 
-private struct ActiveBanner: View {
-    let activeName: String
-    let activeNote: String
+/// Banner kích hoạt — hiển thị "HeadLock Zenis" + Note
+private struct NoteBanner: View {
+    let note: String
     @State private var pulse = false
     @State private var shimmer = false
 
+    private var hasNote: Bool { !note.trimmingCharacters(in: .whitespaces).isEmpty }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 10) {
-                Image(systemName: "checkmark.seal.fill")
-                    .font(.system(size: 17, weight: .bold))
+            HStack(spacing: 8) {
+                Image(systemName: "bolt.shield.fill")
+                    .font(.system(size: 14, weight: .bold))
                     .foregroundStyle(Color.green)
-                    .scaleEffect(pulse ? 1.18 : 1.0)
-                    .shadow(color: .green.opacity(0.9), radius: pulse ? 14 : 6)
+                    .scaleEffect(pulse ? 1.15 : 1.0)
+                    .shadow(color: .green.opacity(0.9), radius: pulse ? 12 : 5)
 
-                VStack(alignment: .leading, spacing: 1) {
-                    Text("ĐANG KÍCH HOẠT")
-                        .font(.system(size: 9, weight: .heavy))
-                        .tracking(1.5)
-                        .foregroundStyle(Color.white.opacity(0.55))
-                    Text(activeName)
-                        .font(.system(size: 14, weight: .bold))
-                        .foregroundStyle(Color.white)
-                        .lineLimit(1)
-                }
+                Text("HEADLOCK ZENIS")
+                    .font(.custom("Copperplate-Bold", size: 12))
+                    .tracking(2)
+                    .foregroundStyle(Color.white)
 
                 Spacer()
+
+                Circle()
+                    .fill(Color.green)
+                    .frame(width: 6, height: 6)
+                    .shadow(color: .green, radius: 6)
             }
 
-            if !activeNote.isEmpty {
+            if hasNote {
                 HStack(alignment: .top, spacing: 6) {
                     Image(systemName: "note.text")
                         .font(.system(size: 10, weight: .bold))
                         .foregroundStyle(Color.green.opacity(0.9))
-                    Text(activeNote)
+                    Text(note)
                         .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(Color.white.opacity(0.8))
+                        .foregroundStyle(Color.white.opacity(0.85))
                         .fixedSize(horizontal: false, vertical: true)
                 }
-                .padding(.top, 2)
+                .padding(.top, 1)
             }
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 11)
-        .background(
-            RoundedRectangle(cornerRadius: 14).fill(Color.green.opacity(0.09))
-        )
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .background(RoundedRectangle(cornerRadius: 12).fill(Color.green.opacity(0.09)))
         .overlay(
-            RoundedRectangle(cornerRadius: 14)
+            RoundedRectangle(cornerRadius: 12)
                 .strokeBorder(
                     LinearGradient(
-                        colors: [Color.green.opacity(0.9), Color.green.opacity(0.35), Color.green.opacity(0.9)],
+                        colors: [Color.green.opacity(0.9), Color.green.opacity(0.3), Color.green.opacity(0.9)],
                         startPoint: .leading, endPoint: .trailing
                     ),
-                    lineWidth: 1.2
+                    lineWidth: 1.1
                 )
         )
-        .shadow(color: .green.opacity(0.45), radius: 18)
+        .shadow(color: .green.opacity(0.4), radius: 16)
         .overlay(shimmerOverlay)
         .onAppear {
             withAnimation(.easeInOut(duration: 1.2).repeatForever(autoreverses: true)) {
@@ -396,14 +559,14 @@ private struct ActiveBanner: View {
     private var shimmerOverlay: some View {
         GeometryReader { geo in
             LinearGradient(
-                colors: [.clear, .white.opacity(0.12), .clear],
+                colors: [.clear, .white.opacity(0.14), .clear],
                 startPoint: .leading, endPoint: .trailing
             )
             .frame(width: geo.size.width * 0.5)
             .offset(x: shimmer ? geo.size.width : -geo.size.width * 0.5)
             .blendMode(.screen)
         }
-        .clipShape(RoundedRectangle(cornerRadius: 14))
+        .clipShape(RoundedRectangle(cornerRadius: 12))
         .allowsHitTesting(false)
     }
 }
@@ -423,26 +586,22 @@ private struct PatchRowView: View {
     private var rowBorder: Color { isApplied ? Color.green.opacity(0.7) : Color.white.opacity(0.32) }
 
     var body: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: 10) {
             PatchIconView(tag: tag)
 
-            VStack(alignment: .leading, spacing: 4) {
-                HStack(spacing: 6) {
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 5) {
                     Text(displayName)
-                        .font(.system(size: 14, weight: .bold))
+                        .font(.system(size: 13, weight: .bold))
                         .foregroundStyle(Color.white)
                         .lineLimit(1)
-
-                    Button(action: onTapTag) {
-                        TagBadge(tag: tag)
-                    }
-                    .buttonStyle(.plain)
+                    Button(action: onTapTag) { TagBadge(tag: tag) }
+                        .buttonStyle(.plain)
                 }
-
                 if !note.isEmpty {
                     HStack(alignment: .top, spacing: 4) {
                         Image(systemName: "note.text")
-                            .font(.system(size: 9, weight: .bold))
+                            .font(.system(size: 8, weight: .bold))
                             .foregroundStyle(Color.white.opacity(0.5))
                         Text(note)
                             .font(.system(size: 10, weight: .medium))
@@ -460,9 +619,9 @@ private struct PatchRowView: View {
                 .disabled(isWorking)
                 .shadow(color: isApplied ? .green.opacity(0.6) : .clear, radius: 10)
         }
-        .padding(12)
-        .background(RoundedRectangle(cornerRadius: 16).fill(rowBg))
-        .overlay(RoundedRectangle(cornerRadius: 16).stroke(rowBorder, lineWidth: 1))
+        .padding(11)
+        .background(RoundedRectangle(cornerRadius: 14).fill(rowBg))
+        .overlay(RoundedRectangle(cornerRadius: 14).stroke(rowBorder, lineWidth: 1))
         .shadow(color: isApplied ? Color.green.opacity(0.4) : .clear, radius: 14)
         .contextMenu {
             Button(action: onRename) { Label("Đổi tên hiển thị", systemImage: "pencil") }
@@ -528,30 +687,40 @@ struct PatchProjectsView: View {
     }
 
     private var header: some View {
-        VStack(spacing: 10) {
+        VStack(spacing: 6) {
             AvatarView()
+
             Text("ZENITH SOLITUDE")
-                .font(.system(size: 22, weight: .heavy, design: .rounded))
-                .foregroundStyle(Color.white)
-                .tracking(3)
-                .shadow(color: .white.opacity(0.65), radius: 16)
-            Text("PREMIUM PATCH STORE")
-                .font(.system(size: 10, weight: .bold))
-                .foregroundStyle(Color.white.opacity(0.55))
+                .font(.custom("Copperplate-Bold", size: 20))
                 .tracking(4)
+                .foregroundStyle(Color.white)
+                .shadow(color: .white.opacity(0.7), radius: 14)
+                .padding(.top, 4)
+
+            Text("HEADLOCK ZENIS")
+                .font(.system(size: 10, weight: .heavy))
+                .tracking(4)
+                .foregroundStyle(Color.white.opacity(0.55))
         }
-        .padding(.top, 20)
-        .padding(.bottom, 22)
+        .padding(.top, 14)
+        .padding(.bottom, 16)
     }
 
     private var content: some View {
         ScrollView(showsIndicators: false) {
-            VStack(spacing: 18) {
+            VStack(spacing: 14) {
                 cardMax
                 cardNormal
+
+                Text("By Zenith Solitude")
+                    .font(.custom("Copperplate", size: 11))
+                    .tracking(3)
+                    .foregroundStyle(Color.white.opacity(0.4))
+                    .padding(.top, 8)
+                    .shadow(color: .white.opacity(0.3), radius: 8)
             }
-            .padding(.horizontal, 16)
-            .padding(.bottom, 40)
+            .padding(.horizontal, 14)
+            .padding(.bottom, 36)
         }
     }
 
@@ -571,32 +740,32 @@ struct PatchProjectsView: View {
             selectedGame = GameSelection(title: title, prefix: prefix)
         } label: {
             NeonCard(accent: accent) {
-                HStack(spacing: 14) {
+                HStack(spacing: 12) {
                     FFLogoView()
-                    VStack(alignment: .leading, spacing: 5) {
+                    VStack(alignment: .leading, spacing: 4) {
                         Text(title)
-                            .font(.system(size: 18, weight: .heavy, design: .rounded))
+                            .font(.system(size: 16, weight: .heavy, design: .rounded))
                             .foregroundStyle(Color.white)
-                        Text("HEADLOCK ZENIS")
-                            .font(.system(size: 11, weight: .bold))
-                            .tracking(1.5)
+                        Text("Headlock Zenis")
+                            .font(.system(size: 10, weight: .bold))
+                            .tracking(1.2)
                             .foregroundStyle(Color.white.opacity(0.55))
                     }
                     Spacer()
                     if isAutoSyncing {
-                        ProgressView().tint(.white)
+                        ProgressView().tint(.white).scaleEffect(0.85)
                     } else {
                         MenuCapsuleButton()
                     }
                 }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 16)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 12)
             }
         }
         .buttonStyle(.plain)
     }
 
-    // MARK: Sync
+    // MARK: Sync — RE-MATCH TOÀN BỘ (fix folder)
     private func syncRemotePatches() {
         guard !isAutoSyncing else { return }
         isAutoSyncing = true
@@ -611,51 +780,47 @@ struct PatchProjectsView: View {
             }
             let (data, _) = try await URLSession.shared.data(from: listUrl)
             let remoteFiles = try JSONDecoder().decode([RemoteFile].self, from: data)
-            let imported = PatchMetaStore.importedRemoteNames()
 
+            // BƯỚC 1 — Import file chưa có
+            let imported = PatchMetaStore.importedRemoteNames()
+            var newlyImported = false
             for file in remoteFiles {
                 if imported.contains(file.filename) { continue }
                 guard let fileURL = URL(string: file.url) else { continue }
+                await MainActor.run { store.importPackage(from: .remote(fileURL)) }
+                newlyImported = true
+                try? await Task.sleep(nanoseconds: 2_000_000_000)
+            }
 
-                // Snapshot trước khi import
-                let before: Set<String> = await MainActor.run {
-                    Set(store.items.map { $0.packageURL.lastPathComponent })
-                }
-
-                await MainActor.run {
-                    store.importPackage(from: .remote(fileURL))
-                }
-
-                // Poll đợi file local xuất hiện (tối đa 30s)
-                var localName: String? = nil
-                for _ in 0..<60 {
-                    try? await Task.sleep(nanoseconds: 500_000_000)
-                    let after: Set<String> = await MainActor.run {
-                        Set(store.items.map { $0.packageURL.lastPathComponent })
-                    }
-                    let diff = after.subtracting(before)
-                    if let newFile = diff.first {
-                        localName = newFile
-                        break
-                    }
-                }
-
-                // Lưu metadata keyed by LOCAL filename
-                if let local = localName {
-                    let meta = PatchMeta(
-                        remoteName:  file.filename,
-                        folder:      file.folder ?? "Khác",
-                        tag:         file.tag ?? "FREE",
-                        displayName: file.displayName ?? "",
-                        note:        file.note ?? ""
-                    )
-                    PatchMetaStore.set(meta, forKey: local)
-                } else {
-                    // Fallback: lưu theo remote name để lần sau thử lại
-                    print("⚠️ Không tìm thấy file local cho \(file.filename)")
-                }
-
+            if newlyImported {
+                await MainActor.run { store.reload() }
                 try? await Task.sleep(nanoseconds: 1_000_000_000)
+            }
+
+            // BƯỚC 2 — Re-match TOÀN BỘ local items với remote files
+            let localItems = await MainActor.run { store.items }
+            for item in localItems {
+                let localName = item.packageURL.lastPathComponent
+                guard let remote = findRemoteMatch(localName: localName, in: remoteFiles) else { continue }
+
+                if var existing = PatchMetaStore.get(forKey: localName) {
+                    // Folder luôn cập nhật từ remote (nguồn sự thật)
+                    existing.folder = remote.folder ?? "Khác"
+                    existing.remoteName = remote.filename
+                    if !existing.tagOverride { existing.tag = remote.tag ?? "FREE" }
+                    if !existing.nameOverride { existing.displayName = remote.displayName ?? "" }
+                    if !existing.noteOverride { existing.note = remote.note ?? "" }
+                    PatchMetaStore.set(existing, forKey: localName)
+                } else {
+                    let meta = PatchMeta(
+                        remoteName:  remote.filename,
+                        folder:      remote.folder ?? "Khác",
+                        tag:         remote.tag ?? "FREE",
+                        displayName: remote.displayName ?? "",
+                        note:        remote.note ?? ""
+                    )
+                    PatchMetaStore.set(meta, forKey: localName)
+                }
             }
         } catch {
             print("Lỗi đồng bộ: \(error.localizedDescription)")
@@ -664,6 +829,24 @@ struct PatchProjectsView: View {
             store.reload()
             isAutoSyncing = false
         }
+    }
+
+    /// Tìm remote file khớp với local file.
+    /// Local: "ZENITH_aim_51067270_F5D3-XXXX.3105"
+    /// Remote: "aim_51067270_FREE.3105" → clean base "aim_51067270"
+    private func findRemoteMatch(localName: String, in remotes: [RemoteFile]) -> RemoteFile? {
+        let localBase = (localName as NSString).deletingPathExtension.lowercased()
+        for remote in remotes {
+            var remoteBase = (remote.filename as NSString).deletingPathExtension.lowercased()
+            remoteBase = remoteBase
+                .replacingOccurrences(of: "_vip", with: "")
+                .replacingOccurrences(of: "_free", with: "")
+            if remoteBase.isEmpty { continue }
+            if localBase.contains(remoteBase) {
+                return remote
+            }
+        }
+        return nil
     }
 
     private struct RemoteFile: Decodable {
@@ -704,15 +887,12 @@ struct PatchGameDetailView: View {
                 NeonBackgroundView()
                 VStack(spacing: 0) {
                     if let activeItem = activeItem {
-                        ActiveBanner(
-                            activeName: displayName(for: activeItem),
-                            activeNote: currentNote(for: activeItem)
-                        )
-                        .padding(.horizontal, 16)
-                        .padding(.top, 12)
-                        .animation(.spring(response: 0.4), value: activeItem.id)
+                        NoteBanner(note: currentNote(for: activeItem))
+                            .padding(.horizontal, 14)
+                            .padding(.top, 10)
+                            .transition(.opacity.combined(with: .move(edge: .top)))
+                            .animation(.spring(response: 0.4), value: activeItem.id)
                     }
-
                     if !folders.isEmpty { folderTabs }
                     listContent
                 }
@@ -752,7 +932,6 @@ struct PatchGameDetailView: View {
         }
     }
 
-    // MARK: Computed
     private var gameItems: [PatchLibraryItem] {
         _ = refreshTick
         return store.items.filter { item in
@@ -795,7 +974,6 @@ struct PatchGameDetailView: View {
         Binding(get: { noteItem != nil }, set: { if !$0 { noteItem = nil } })
     }
 
-    // MARK: Subviews
     private var closeButton: some ToolbarContent {
         ToolbarItem(placement: .cancellationAction) {
             Button {
@@ -803,7 +981,7 @@ struct PatchGameDetailView: View {
                 dismiss()
             } label: {
                 Image(systemName: "xmark")
-                    .font(.system(size: 14, weight: .bold))
+                    .font(.system(size: 13, weight: .bold))
                     .foregroundStyle(Color.white)
             }
         }
@@ -811,7 +989,7 @@ struct PatchGameDetailView: View {
 
     private var folderTabs: some View {
         ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 10) {
+            HStack(spacing: 8) {
                 ForEach(folders, id: \.self) { folder in
                     FolderTabButton(
                         title: folder,
@@ -820,21 +998,21 @@ struct PatchGameDetailView: View {
                     )
                 }
             }
-            .padding(.horizontal, 16)
+            .padding(.horizontal, 14)
         }
-        .padding(.vertical, 14)
+        .padding(.vertical, 10)
     }
 
     private var listContent: some View {
         ScrollView(showsIndicators: false) {
-            LazyVStack(spacing: 12) {
+            LazyVStack(spacing: 10) {
                 ForEach(displayedItems) { item in
                     patchRow(item: item)
                 }
             }
-            .padding(.horizontal, 16)
-            .padding(.top, 8)
-            .padding(.bottom, 40)
+            .padding(.horizontal, 14)
+            .padding(.top, 6)
+            .padding(.bottom, 36)
         }
     }
 
@@ -874,7 +1052,6 @@ struct PatchGameDetailView: View {
         )
     }
 
-    // MARK: Actions
     private func selectFolder(_ folder: String) {
         SoundFX.tap()
         withAnimation(.spring(response: 0.35, dampingFraction: 0.75)) {
@@ -882,7 +1059,6 @@ struct PatchGameDetailView: View {
         }
     }
 
-    // MARK: Helpers
     private func localKey(for item: PatchLibraryItem) -> String {
         return item.packageURL.lastPathComponent
     }
@@ -935,7 +1111,8 @@ struct PatchGameDetailView: View {
         guard let item = renameItem else { return }
         let trimmed = renameText.trimmingCharacters(in: .whitespacesAndNewlines)
         if !trimmed.isEmpty {
-            PatchMetaStore.update({ $0.displayName = trimmed }, forKey: localKey(for: item))
+            PatchMetaStore.update({ $0.displayName = trimmed; $0.nameOverride = true },
+                                  forKey: localKey(for: item))
             store.reload()
         }
         renameItem = nil
@@ -943,7 +1120,8 @@ struct PatchGameDetailView: View {
 
     private func commitTag(_ tag: String) {
         guard let item = tagPickerItem else { return }
-        PatchMetaStore.update({ $0.tag = tag }, forKey: localKey(for: item))
+        PatchMetaStore.update({ $0.tag = tag; $0.tagOverride = true },
+                              forKey: localKey(for: item))
         store.reload()
         tagPickerItem = nil
     }
@@ -951,7 +1129,8 @@ struct PatchGameDetailView: View {
     private func commitNote() {
         guard let item = noteItem else { return }
         let trimmed = noteText.trimmingCharacters(in: .whitespacesAndNewlines)
-        PatchMetaStore.update({ $0.note = trimmed }, forKey: localKey(for: item))
+        PatchMetaStore.update({ $0.note = trimmed; $0.noteOverride = true },
+                              forKey: localKey(for: item))
         store.reload()
         noteItem = nil
     }
@@ -963,16 +1142,17 @@ struct PatchGameDetailView: View {
         Task.detached(priority: .userInitiated) {
             do {
                 try await performToggle(item: item, activate: activate)
-                let name = await MainActor.run { displayName(for: item) }
                 await MainActor.run {
                     store.reload()
                     workingFileID = nil
-                    actionAlert = PatchStoreAlert(
-                        titleKey: activate ? "Đã kích hoạt" : "Đã tắt",
-                        messageKey: activate
-                            ? "Patch: \(name)"
-                            : "Đã khôi phục patch!"
-                    )
+                    if activate {
+                        // Chỉ hiện alert khi BẬT. Khi TẮT không hiện gì.
+                        let name = displayName(for: item)
+                        actionAlert = PatchStoreAlert(
+                            titleKey: "Đã kích hoạt",
+                            messageKey: "HeadLock Zenis — \(name)"
+                        )
+                    }
                 }
             } catch {
                 await MainActor.run {
@@ -1019,7 +1199,6 @@ struct PatchUnlockView: View {
                         .onChange(of: password) { _ in
                             store.clearUnlockError()
                         }
-
                     if let errorKey = store.unlockErrorKey {
                         Text(errorText(errorKey))
                             .font(.footnote)
