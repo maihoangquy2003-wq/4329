@@ -216,7 +216,8 @@ enum GameType: String, Hashable, Identifiable {
     var title: String { self == .ffmax ? "Free Fire Max" : "Free Fire Thường" }
 }
 
-struct RemotePatchItem: Codable, Identifiable {
+// MARK: - THÊM EQUATABLE VÀO ĐÂY ĐỂ XCODE HIỂU .onChange
+struct RemotePatchItem: Codable, Identifiable, Equatable {
     var id: String { filename }
     let filename: String
     let gameType: String
