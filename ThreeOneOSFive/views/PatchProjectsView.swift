@@ -507,4 +507,3 @@ extension View {
         modifier(PatchStorePresentationModifier(store: store))
     }
 }
-}
