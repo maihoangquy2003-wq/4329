@@ -1,289 +1,557 @@
-<?php
-session_start();
+import SwiftUI
+import UIKit
+import AudioToolbox
+import UniformTypeIdentifiers
 
-// ================== CẤU HÌNH HỆ THỐNG ==================
-$password = "Hoangquydzvl"; // Đổi mật khẩu của bạn ở đây
-$baseDir  = "4329"; // Thư mục lưu file vật lý
-$metadataFile = "metadata.json"; // File lưu database
-$baseUrl  = "https://solitudepremium.click/ipa/proxy/4329/"; // URL gốc trỏ tới thư mục chứa file
-
-// ================== HÀM TIỆN ÍCH ==================
-function loadMetadata($file) {
-    if (!file_exists($file)) return [];
-    $data = json_decode(file_get_contents($file), true);
-    return is_array($data) ? $data : [];
-}
-
-function saveMetadata($file, $data) {
-    // Luôn bọc array_values để Swift parse không bị lỗi
-    file_put_contents($file, json_encode(array_values($data), JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
-}
-
-function listFolders($baseDir) {
-    if (!is_dir($baseDir)) return [];
-    $dirs = array_diff(scandir($baseDir), ['.', '..']);
-    $result = [];
-    foreach ($dirs as $d) {
-        if (is_dir($baseDir . '/' . $d)) $result[] = $d;
-    }
-    return $result;
-}
-
-function rrmdir($dir) {
-    if (!is_dir($dir)) return @unlink($dir);
-    foreach (array_diff(scandir($dir), ['.', '..']) as $item) {
-        $path = $dir . '/' . $item;
-        is_dir($path) ? rrmdir($path) : @unlink($path);
-    }
-    return @rmdir($dir);
-}
-
-$metadata = loadMetadata($metadataFile);
-$message  = "";
-$messageType = "";
-
-// ================== ĐĂNG XUẤT ==================
-if (isset($_GET['logout'])) {
-    session_destroy();
-    header("Location: " . $_SERVER['PHP_SELF']);
-    exit;
-}
-
-// ================== ĐĂNG NHẬP ==================
-if (isset($_POST['login'])) {
-    if ($_POST['password'] === $password) {
-        $_SESSION['logged'] = true;
-        header("Location: " . $_SERVER['PHP_SELF']);
-        exit;
-    } else {
-        $message = "❌ Sai mật khẩu truy cập!";
-        $messageType = "error";
-    }
-}
-
-$isLogged = !empty($_SESSION['logged']);
-
-// ================== UPLOAD FILE ==================
-if ($isLogged && isset($_POST['upload'])) {
-    $gameType    = $_POST['gameType'] ?? 'ffmax';
-    $folder      = trim($_POST['folder'] ?? '') ?: 'Aim';
-    $newFolder   = trim($_POST['new_folder'] ?? '');
-    $displayName = trim($_POST['displayName'] ?? '') ?: 'New Feature';
-    $note        = trim($_POST['note'] ?? '');
-
-    if ($newFolder !== '') {
-        $folder = $newFolder;
-    }
-    // Làm sạch tên thư mục
-    $safeFolder = preg_replace('/[^A-Za-z0-9_\-]/', '_', $folder);
-
-    if (isset($_FILES["fileToUpload"]) && $_FILES["fileToUpload"]["error"] == 0) {
-        $original_name = basename($_FILES["fileToUpload"]["name"]);
-        $fileType = strtolower(pathinfo($original_name, PATHINFO_EXTENSION));
-
-        if ($fileType !== "3105") {
-            $message = "❌ Lỗi: Hệ thống chỉ chấp nhận định dạng file .3105";
-            $messageType = "error";
-        } else {
-            if (!is_dir($baseDir)) mkdir($baseDir, 0777, true);
-            $targetDir = $baseDir . "/" . $safeFolder;
-            if (!is_dir($targetDir)) mkdir($targetDir, 0777, true);
-
-            // Xóa khoảng trắng trong tên file để tránh lỗi URL
-            $safeName = str_replace(" ", "_", $original_name);
-            $targetFilePath = $targetDir . "/" . $safeName;
-
-            if (move_uploaded_file($_FILES["fileToUpload"]["tmp_name"], $targetFilePath)) {
-                $fileUrl = $baseUrl . urlencode($safeFolder) . '/' . urlencode($safeName);
-                
-                // Đẩy item mới nhất lên đầu danh sách (Đồng bộ đúng struct Swift)
-                array_unshift($metadata, [
-                    'filename'    => $safeName,
-                    'gameType'    => $gameType,
-                    'folder'      => $safeFolder,
-                    'displayName' => $displayName,
-                    'note'        => $note,
-                    'url'         => $fileUrl,
-                    'time'        => date('Y-m-d H:i:s')
-                ]);
-                
-                saveMetadata($metadataFile, $metadata);
-                $message = "✅ Upload thành công: <b>$safeName</b>";
-                $messageType = "success";
-            } else {
-                $message = "❌ Lỗi không thể lưu file lên máy chủ.";
-                $messageType = "error";
+// MARK: - HIỆU ỨNG HẠT BỤI & NGÂN HÀ NEON LUNG LINH
+public struct GalaxyParticleCanvasView: View {
+    public init() {}
+    public var body: some View {
+        TimelineView(.animation) { context in
+            Canvas { graphicsContext, size in
+                let time = context.date.timeIntervalSinceReferenceDate
+                for i in 0..<200 {
+                    let seed = Double(i) * 73.0
+                    let x = (sin(time * 0.3 + seed) * 0.5 + 0.5) * size.width
+                    let speed = 70.0 + fmod(seed, 120.0)
+                    let y = size.height - fmod(time * speed + seed, size.height + 100)
+                    let particleSize = CGFloat(fmod(seed, 3.0) + 1.2)
+                    let opacity = Double(sin(time * 2.0 + seed) * 0.5 + 0.5)
+                    
+                    let rect = CGRect(x: x, y: y, width: particleSize, height: particleSize)
+                    graphicsContext.fill(Path(ellipseIn: rect), with: .color(.white.opacity(opacity)))
+                }
             }
         }
-    } else {
-        $message = "❌ Vui lòng chọn file để upload.";
-        $messageType = "error";
+        .allowsHitTesting(false)
     }
 }
 
-// ================== XÓA FILE ==================
-if ($isLogged && isset($_POST['delete_file'])) {
-    $idx = (int)$_POST['file_index'];
-    if (isset($metadata[$idx])) {
-        $filePath = $baseDir . '/' . $metadata[$idx]['folder'] . '/' . $metadata[$idx]['filename'];
-        if (file_exists($filePath)) @unlink($filePath);
-        array_splice($metadata, $idx, 1);
-        saveMetadata($metadataFile, $metadata);
-        $message = "🗑️ Đã xóa file thành công.";
-        $messageType = "success";
+// MARK: - ÂM THANH "TÍT/TÍCH" CHUẨN IPHONE + HAPTIC
+struct iPhoneFeedback {
+    static func tick() {
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        AudioServicesPlaySystemSound(1104) // Âm thanh click/tích chuẩn hệ thống iOS
     }
 }
 
-// ================== XÓA THƯ MỤC ==================
-if ($isLogged && isset($_POST['delete_folder'])) {
-    $folderName = preg_replace('/[^A-Za-z0-9_\-]/', '_', $_POST['folder_name'] ?? '');
-    $folderPath = $baseDir . '/' . $folderName;
-    if ($folderName && is_dir($folderPath)) {
-        rrmdir($folderPath);
-        $metadata = array_values(array_filter($metadata, function($m) use ($folderName) {
-            return $m['folder'] !== $folderName;
-        }));
-        saveMetadata($metadataFile, $metadata);
-        $message = "🗑️ Đã xóa toàn bộ thư mục: <b>$folderName</b>";
-        $messageType = "success";
+struct PatchProjectsView: View {
+    @Environment(\.appLanguage) private var language
+    @EnvironmentObject private var draftCoordinator: PatchDraftCoordinator
+    @EnvironmentObject private var store: PatchProjectStore
+    
+    @State private var remoteItems: [RemotePatchItem] = []
+    @State private var isAutoSyncing = false
+    @State private var actionAlert: PatchStoreAlert?
+    
+    @State private var navigateToMax = false
+    @State private var navigateToNormal = false
+    @State private var isAvatarPulsing = false
+    
+    let onOpenSettings: () -> Void
+    let onOpenLogs: () -> Void
+
+    init(onOpenSettings: @escaping () -> Void = {}, onOpenLogs: @escaping () -> Void = {}) {
+        self.onOpenSettings = onOpenSettings
+        self.onOpenLogs = onOpenLogs
     }
-}
 
-$existingFolders = listFolders($baseDir);
-?>
-<!DOCTYPE html>
-<html lang="vi">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Zenith Solitude - Quản Lý Data</title>
-<style>
-    :root { --bg: #09090b; --card: #18181b; --border: #27272a; --text: #fafafa; --mut: #a1a1aa; --prim: #ffffff; }
-    * { box-sizing: border-box; }
-    body { font-family: -apple-system, system-ui, sans-serif; background: var(--bg); color: var(--text); padding: 20px; margin: 0; line-height: 1.5; }
-    .container { max-width: 800px; margin: auto; background: var(--card); padding: 24px; border-radius: 16px; border: 1px solid var(--border); box-shadow: 0 20px 40px rgba(0,0,0,0.8); }
-    h2, h3 { margin-top: 0; font-weight: 800; letter-spacing: 0.5px; }
-    h3 { margin-top: 30px; border-left: 3px solid var(--prim); padding-left: 10px; }
-    label { display: block; margin: 14px 0 6px; font-weight: 600; font-size: 14px; color: var(--mut); }
-    select, input[type=text], input[type=password], input[type=file] { width: 100%; padding: 12px; background: var(--bg); border: 1px solid var(--border); color: var(--text); border-radius: 8px; font-size: 14px; outline: none; transition: 0.2s; }
-    select:focus, input:focus { border-color: #555; }
-    button, input[type=submit] { background: var(--prim); color: #000; border: none; padding: 12px 20px; border-radius: 8px; font-size: 15px; font-weight: 700; cursor: pointer; transition: 0.2s; width: 100%; margin-top: 15px; }
-    button:hover, input[type=submit]:hover { opacity: 0.8; }
-    .btn-danger { background: #ef4444 !important; color: #fff !important; width: auto; padding: 6px 12px; font-size: 12px; margin-top: 0; }
-    .btn-danger:hover { background: #dc2626 !important; }
-    .msg { padding: 12px; border-radius: 8px; margin-bottom: 20px; font-size: 14px; }
-    .msg.success { background: rgba(34,197,94,0.1); border: 1px solid #22c55e; color: #4ade80; }
-    .msg.error { background: rgba(239,68,68,0.1); border: 1px solid #ef4444; color: #f87171; }
-    .flex-header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border); padding-bottom: 15px; margin-bottom: 20px; }
-    .flex-header a { color: #f87171; text-decoration: none; font-size: 14px; font-weight: bold; }
-    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; }
-    @media (max-width: 600px) { .grid { grid-template-columns: 1fr; gap: 0; } }
-    .file-card { background: var(--bg); border: 1px solid var(--border); border-radius: 12px; padding: 16px; margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center; gap: 10px; }
-    .file-info .title { font-weight: bold; font-size: 16px; margin-bottom: 4px; }
-    .file-info .meta { font-size: 12px; color: var(--mut); }
-    .badge { background: #27272a; padding: 3px 8px; border-radius: 6px; font-size: 11px; margin-right: 6px; color: #e4e4e7; }
-    .badge-game { background: #fff; color: #000; font-weight: bold; }
-    .folder-chips { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 10px; }
-    .chip { background: var(--bg); border: 1px solid var(--border); padding: 8px 12px; border-radius: 8px; display: flex; align-items: center; gap: 10px; font-size: 14px; }
-</style>
-</head>
-<body>
+    var body: some View {
+        NavigationStack {
+            ZStack {
+                Color.black.ignoresSafeArea()
+                GalaxyParticleCanvasView()
+                
+                VStack(spacing: 0) {
+                    // HEADER AVATAR THU NHỎ GỌN, SẮC SẢO + HÀO QUANG NEON
+                    VStack(spacing: 10) {
+                        ZStack {
+                            Circle()
+                                .stroke(LinearGradient(colors: [.white, .clear, .white], startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 2)
+                                .frame(width: 105, height: 105)
+                                .scaleEffect(isAvatarPulsing ? 1.25 : 1.0)
+                                .opacity(isAvatarPulsing ? 0.0 : 1.0)
+                            
+                            CachedImageView(url: "https://solitudepremium.click/ipa/proxy/li.jpg", fallbackIcon: "person.circle.fill")
+                                .frame(width: 90, height: 90)
+                                .clipShape(Circle())
+                                .overlay(Circle().stroke(Color.white, lineWidth: 2))
+                                .shadow(color: .white.opacity(0.8), radius: 10, x: 0, y: 0)
+                        }
+                        
+                        Text("ZENITH SOLITUDE")
+                            .font(.system(size: 20, weight: .black, design: .monospaced))
+                            .tracking(3)
+                            .foregroundColor(.white)
+                            .shadow(color: .white, radius: 8, x: 0, y: 0)
+                    }
+                    .padding(.vertical, 20)
+                    .onAppear {
+                        withAnimation(.easeInOut(duration: 2.0).repeatForever(autoreverses: false)) {
+                            isAvatarPulsing = true
+                        }
+                    }
+                    
+                    // THẺ CHỌN GAME THU NHỎ - NEON VIỀN TRẮNG PHÁT SÁNG
+                    ScrollView(showsIndicators: false) {
+                        VStack(spacing: 14) {
+                            gameCard(title: "Free Fire Max") {
+                                navigateToMax = true
+                            }
+                            gameCard(title: "Free Fire Thường") {
+                                navigateToNormal = true
+                            }
+                        }
+                        .padding(.horizontal, 20)
+                        .padding(.bottom, 30)
+                    }
+                }
+            }
+            .navigationBarHidden(true)
+            .navigationDestination(isPresented: $navigateToMax) {
+                GameDetailMenuView(gameType: .ffmax, remoteItems: remoteItems, store: store)
+            }
+            .navigationDestination(isPresented: $navigateToNormal) {
+                GameDetailMenuView(gameType: .ffnormal, remoteItems: remoteItems, store: store)
+            }
+            .task {
+                await startContinuousAutoSync()
+            }
+            .alert(item: $actionAlert) { alert in
+                Alert(title: Text(alert.titleKey), message: Text(alert.message(language: language)), dismissButton: .default(Text("Đã hiểu")))
+            }
+        }
+    }
 
-<div class="container">
-    <div class="flex-header">
-        <h2 style="margin:0;">⚙️ Zenith Solitude</h2>
-        <?php if ($isLogged): ?>
-            <a href="?logout=1">Đăng xuất</a>
-        <?php endif; ?>
-    </div>
+    @ViewBuilder
+    private func gameCard(title: String, action: @escaping () -> Void) -> some View {
+        Button(action: {
+            iPhoneFeedback.tick()
+            action()
+        }) {
+            HStack(spacing: 14) {
+                CachedImageView(url: "https://solitudepremium.click/ipa/proxy/free.jpg", fallbackIcon: "flame.fill")
+                    .frame(width: 48, height: 48)
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                    .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.white.opacity(0.6), lineWidth: 1.2))
+                    .shadow(color: .white, radius: 4)
+                
+                Text(title)
+                    .font(.system(size: 15, weight: .black, design: .monospaced))
+                    .foregroundColor(.white)
+                    .shadow(color: .white, radius: 3)
+                
+                Spacer()
+                
+                HStack(spacing: 4) {
+                    Text("MỞ MENU")
+                        .font(.system(size: 11, weight: .bold, design: .monospaced))
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 9, weight: .bold))
+                }
+                .foregroundColor(.black)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .background(Color.white)
+                .cornerRadius(10)
+                .shadow(color: .white, radius: 5)
+            }
+            .padding(14)
+            .background(Color.black)
+            .cornerRadius(18)
+            .overlay(
+                RoundedRectangle(cornerRadius: 18)
+                    .stroke(Color.white, lineWidth: 1.2)
+                    .shadow(color: .white, radius: 6, x: 0, y: 0) // Hiệu ứng Neon viền trắng phát sáng
+            )
+        }
+        .buttonStyle(NeonScaleButtonStyle())
+    }
 
-    <?php if ($message): ?>
-        <div class="msg <?= $messageType ?>"><?= $message ?></div>
-    <?php endif; ?>
-
-    <?php if (!$isLogged): ?>
-        <form method="post">
-            <label>Mật khẩu hệ thống</label>
-            <input type="password" name="password" required autofocus placeholder="Nhập mật khẩu...">
-            <input type="submit" name="login" value="Đăng Nhập">
-        </form>
-    <?php else: ?>
+    private func startContinuousAutoSync() async {
+        guard !isAutoSyncing else { return }
+        isAutoSyncing = true
         
-        <h3>📤 Upload Cấu Hình Mới</h3>
-        <form method="post" enctype="multipart/form-data">
-            <div class="grid">
-                <div>
-                    <label>Game</label>
-                    <select name="gameType" required>
-                        <option value="ffmax">Free Fire Max</option>
-                        <option value="ffnormal">Free Fire Thường</option>
-                    </select>
-                </div>
-                <div>
-                    <label>Thư mục hiển thị</label>
-                    <select name="folder">
-                        <option value="Aim">Aim</option>
-                        <option value="ModSkin">ModSkin</option>
-                        <option value="Chams">Chams</option>
-                        <?php foreach ($existingFolders as $f): ?>
-                            <?php if(!in_array($f, ['Aim','ModSkin','Chams'])) echo "<option value='$f'>$f</option>"; ?>
-                        <?php endforeach; ?>
-                    </select>
-                </div>
-            </div>
+        while !Task.isCancelled {
+            do {
+                guard let url = URL(string: "https://solitudepremium.click/ipa/proxy/list.php") else { continue }
+                let request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData)
+                let (data, _) = try await URLSession.shared.data(for: request)
+                let decoded = try JSONDecoder().decode([RemotePatchItem].self, from: data)
+                
+                await MainActor.run { self.remoteItems = decoded }
+                
+                var hasNewFiles = false
+                let localNames = store.items.map { $0.packageURL.lastPathComponent.lowercased().replacingOccurrences(of: "%20", with: "_") }
+                
+                for item in decoded {
+                    let safeRemoteName = item.filename.lowercased().replacingOccurrences(of: "%20", with: "_")
+                    let alreadyExists = localNames.contains { $0.contains((safeRemoteName as NSString).deletingPathExtension) }
+                    
+                    if !alreadyExists {
+                        if let fileURL = URL(string: item.url) {
+                            await MainActor.run { store.importPackage(from: .remote(fileURL)) }
+                            hasNewFiles = true
+                            try await Task.sleep(nanoseconds: 2_000_000_000)
+                        }
+                    }
+                }
+                
+                if hasNewFiles {
+                    await MainActor.run { store.reload() }
+                }
+                
+                try await Task.sleep(nanoseconds: 5_000_000_000)
+            } catch {
+                try? await Task.sleep(nanoseconds: 5_000_000_000)
+            }
+        }
+        isAutoSyncing = false
+    }
+}
 
-            <label>Hoặc tạo thư mục mới (Nhập sẽ ưu tiên hơn chọn)</label>
-            <input type="text" name="new_folder" placeholder="Ví dụ: Guns, VIP...">
+enum GameType: String, Hashable, Identifiable {
+    case ffmax, ffnormal
+    var id: String { self.rawValue }
+    var title: String { self == .ffmax ? "Free Fire Max" : "Free Fire Thường" }
+}
 
-            <label>Tên hiển thị trên App (displayName)</label>
-            <input type="text" name="displayName" required placeholder="Ví dụ: AimLock Head 100%">
+struct RemotePatchItem: Codable, Identifiable {
+    var id: String { filename }
+    let filename: String
+    let gameType: String
+    let folder: String
+    let displayName: String
+    let note: String?
+    let url: String
+}
 
-            <label>Ghi chú (Tùy chọn)</label>
-            <input type="text" name="note" placeholder="Ví dụ: Để DNS, vô sảnh bật log...">
+// MARK: - ROW HIỂN THỊ TÍNH NĂNG (THU NHỎ & NEON SẮC SẢO)
+struct PatchItemRowView: View {
+    let rItem: RemotePatchItem
+    @ObservedObject var store: PatchProjectStore
+    @Binding var workingFilename: String?
+    @Binding var menuAlert: PatchStoreAlert?
+    
+    var body: some View {
+        let matchedStoreItem = store.items.first(where: {
+            let local = $0.packageURL.lastPathComponent.lowercased().replacingOccurrences(of: "%20", with: "_").replacingOccurrences(of: " ", with: "_")
+            let remote = rItem.filename.lowercased().replacingOccurrences(of: "%20", with: "_").replacingOccurrences(of: " ", with: "_")
+            let localBase = (local as NSString).deletingPathExtension
+            let remoteBase = (remote as NSString).deletingPathExtension
+            return local == remote || localBase.contains(remoteBase) || remoteBase.contains(localBase) || $0.project?.name.lowercased() == remoteBase
+        })
+        
+        let isApplied = matchedStoreItem != nil ? (DevicePatchService.latestReceipt(projectID: matchedStoreItem!.id) != nil) : false
+        let isWorking = workingFilename == rItem.filename
+        
+        HStack(spacing: 12) {
+            ZStack {
+                Circle().fill(Color.white.opacity(0.15)).frame(width: 36, height: 36)
+                    .overlay(Circle().stroke(Color.white.opacity(0.5), lineWidth: 1))
+                Image(systemName: "bolt.shield.fill")
+                    .font(.system(size: 16))
+                    .foregroundColor(.white)
+                    .shadow(color: .white, radius: 4)
+            }
+            
+            VStack(alignment: .leading, spacing: 3) {
+                Text(rItem.displayName)
+                    .font(.system(size: 13, weight: .bold, design: .monospaced))
+                    .foregroundColor(.white)
+                    .shadow(color: .white.opacity(0.5), radius: 2)
+                
+                if let note = rItem.note, !note.isEmpty {
+                    Text(note)
+                        .font(.system(size: 10, design: .monospaced))
+                        .foregroundColor(.white.opacity(0.7))
+                }
+            }
+            
+            Spacer()
+            
+            if isWorking {
+                ProgressView()
+                    .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                    .scaleEffect(0.85)
+                    .padding(.trailing, 6)
+            } else {
+                Toggle("", isOn: Binding(
+                    get: { isApplied },
+                    set: { newValue in
+                        iPhoneFeedback.tick()
+                        if let item = matchedStoreItem {
+                            togglePatch(item: item, activate: newValue, filename: rItem.filename)
+                        } else {
+                            // TỰ ĐỘNG APPLY SAU KHI TẢI VỀ, KHÔNG CẦN GẠT LẦN 2
+                            downloadAndAutoApply(rItem: rItem)
+                        }
+                    }
+                ))
+                .labelsHidden()
+                .tint(.white)
+            }
+        }
+        .padding(12)
+        .background(Color.black)
+        .cornerRadius(14)
+        .overlay(
+            RoundedRectangle(cornerRadius: 14)
+                .stroke(Color.white, lineWidth: 1.2)
+                .shadow(color: .white.opacity(0.6), radius: 5, x: 0, y: 0) // Viền neon trắng phát sáng
+        )
+    }
+    
+    private func togglePatch(item: PatchLibraryItem, activate: Bool, filename: String) {
+        workingFilename = filename
+        Task.detached(priority: .userInitiated) {
+            do {
+                if activate {
+                    guard let project = item.project else {
+                        throw NSError(domain: "", code: -1, userInfo: [NSLocalizedDescriptionKey: "Dữ liệu chưa sẵn sàng hoặc file bị lỗi."])
+                    }
+                    _ = try DevicePatchService.apply(project: project)
+                } else {
+                    guard let receipt = DevicePatchService.latestReceipt(projectID: item.id) else {
+                        await MainActor.run { workingFilename = nil }
+                        return
+                    }
+                    try DevicePatchService.restore(receipt: receipt)
+                }
+                await MainActor.run {
+                    store.reload()
+                    workingFilename = nil
+                }
+            } catch {
+                await MainActor.run {
+                    workingFilename = nil
+                    menuAlert = PatchStoreAlert(titleKey: "Thất bại", messageKey: error.localizedDescription)
+                }
+            }
+        }
+    }
+    
+    // TẢI VÀ APPLY TỰ ĐỘNG
+    private func downloadAndAutoApply(rItem: RemotePatchItem) {
+        workingFilename = rItem.filename
+        Task.detached {
+            guard let urlString = rItem.url.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
+                  let fileURL = URL(string: urlString) else {
+                await MainActor.run {
+                    menuAlert = PatchStoreAlert(titleKey: "Lỗi", messageKey: "Đường dẫn tải file không hợp lệ.")
+                    workingFilename = nil
+                }
+                return
+            }
+            
+            await MainActor.run {
+                store.importPackage(from: .remote(fileURL))
+                store.reload()
+            }
+            
+            // Đợi 1.5 giây để đảm bảo file lưu vào local xong
+            try? await Task.sleep(nanoseconds: 1_500_000_000)
+            
+            await MainActor.run {
+                store.reload()
+                let foundItem = store.items.first(where: {
+                    let local = $0.packageURL.lastPathComponent.lowercased()
+                    let remote = rItem.filename.lowercased()
+                    return local.contains((remote as NSString).deletingPathExtension) || remote.contains((local as NSString).deletingPathExtension)
+                })
+                
+                if let item = foundItem, let project = item.project {
+                    do {
+                        _ = try DevicePatchService.apply(project: project)
+                    } catch { } // Bỏ qua lỗi nhẹ nếu cố apply ngay lập tức
+                }
+                
+                store.reload()
+                workingFilename = nil
+            }
+        }
+    }
+}
 
-            <label>File Config (.3105)</label>
-            <input type="file" name="fileToUpload" accept=".3105" required>
+// MARK: - MENU CHI TIẾT THEO TAB THƯ MỤC
+struct GameDetailMenuView: View {
+    let gameType: GameType
+    let remoteItems: [RemotePatchItem]
+    @ObservedObject var store: PatchProjectStore
+    
+    @Environment(\.appLanguage) private var language
+    @Environment(\.dismiss) private var dismiss
+    @State private var selectedTab: String = ""
+    @State private var workingFilename: String? = nil
+    @State private var menuAlert: PatchStoreAlert?
+    
+    var body: some View {
+        ZStack {
+            Color.black.ignoresSafeArea()
+            GalaxyParticleCanvasView()
+            
+            VStack(spacing: 0) {
+                // HEADER THU GỌN
+                HStack {
+                    Text(gameType.title)
+                        .font(.system(size: 17, weight: .black, design: .monospaced))
+                        .foregroundColor(.white)
+                        .shadow(color: .white, radius: 4)
+                    
+                    Spacer()
+                    
+                    Button {
+                        iPhoneFeedback.tick()
+                        dismiss()
+                    } label: {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 12, weight: .bold))
+                            .foregroundColor(.black)
+                            .padding(8)
+                            .background(Circle().fill(Color.white))
+                            .shadow(color: .white, radius: 4)
+                    }
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 14)
+                
+                let gameItems = remoteItems.filter { $0.gameType == gameType.rawValue }
+                // XÓA BỎ CHỖ HARDCODE TRƯỚC ĐÂY, CHỈ LẤY ĐÚNG THƯ MỤC CÓ TRONG DATA TRÊN SERVER
+                let currentFolders = Array(Set(gameItems.map { $0.folder })).sorted()
+                
+                if currentFolders.isEmpty {
+                    // KHI SERVER HOÀN TOÀN TRỐNG / CHƯA UP FILE NÀO
+                    VStack(spacing: 16) {
+                        Image(systemName: "server.rack")
+                            .font(.system(size: 45))
+                            .foregroundColor(.white.opacity(0.3))
+                        Text("Chưa có cấu hình nào được tải lên cho game này.")
+                            .font(.system(size: 12, design: .monospaced))
+                            .foregroundColor(.white.opacity(0.6))
+                            .multilineTextAlignment(.center)
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .padding(.bottom, 60)
+                } else {
+                    // THANH TAB THƯ MỤC
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 8) {
+                            ForEach(currentFolders, id: \.self) { folder in
+                                Button {
+                                    iPhoneFeedback.tick()
+                                    withAnimation(.spring()) {
+                                        selectedTab = folder
+                                    }
+                                } label: {
+                                    Text(folder)
+                                        .font(.system(size: 11, weight: .bold, design: .monospaced))
+                                        .padding(.horizontal, 16)
+                                        .padding(.vertical, 7)
+                                        .background(selectedTab == folder ? Color.white : Color.black)
+                                        .foregroundColor(selectedTab == folder ? Color.black : Color.white)
+                                        .clipShape(Capsule())
+                                        .overlay(Capsule().stroke(Color.white, lineWidth: 1.2))
+                                        .shadow(color: selectedTab == folder ? .white.opacity(0.8) : .clear, radius: 4)
+                                }
+                            }
+                        }
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 6)
+                    }
+                    
+                    // DANH SÁCH FILE TRONG THƯ MỤC
+                    ScrollView(showsIndicators: false) {
+                        VStack(spacing: 12) {
+                            let activeItemsInFolder = gameItems.filter { $0.folder == selectedTab }
+                            
+                            if activeItemsInFolder.isEmpty {
+                                VStack(spacing: 8) {
+                                    Image(systemName: "folder.badge.slash")
+                                        .font(.system(size: 35))
+                                        .foregroundColor(.white.opacity(0.5))
+                                    Text("Thư mục này hiện đang trống.")
+                                        .font(.system(size: 11, design: .monospaced))
+                                        .foregroundColor(.white.opacity(0.6))
+                                }
+                                .padding(.top, 60)
+                            } else {
+                                ForEach(activeItemsInFolder) { rItem in
+                                    PatchItemRowView(
+                                        rItem: rItem,
+                                        store: store,
+                                        workingFilename: $workingFilename,
+                                        menuAlert: $menuAlert
+                                    )
+                                }
+                            }
+                        }
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 12)
+                    }
+                }
+            }
+        }
+        .navigationBarHidden(true)
+        .alert(item: $menuAlert) { alert in
+            Alert(title: Text(alert.titleKey), message: Text(alert.message(language: language)), dismissButton: .default(Text("Đã hiểu")))
+        }
+        .onAppear {
+            store.reload()
+            updateSelectedTab(with: remoteItems)
+        }
+        .onChange(of: remoteItems) { newItems in
+            updateSelectedTab(with: newItems)
+        }
+    }
+    
+    // Đảm bảo tab được chọn hợp lệ khi load data
+    private func updateSelectedTab(with items: [RemotePatchItem]) {
+        let folders = Array(Set(items.filter { $0.gameType == gameType.rawValue }.map { $0.folder })).sorted()
+        if !folders.contains(selectedTab), let first = folders.first {
+            selectedTab = first
+        }
+    }
+}
 
-            <input type="submit" name="upload" value="Tải Lên Hệ Thống">
-        </form>
+struct PatchUnlockView: View {
+    @Environment(\.appLanguage) private var language
+    @Environment(\.dismiss) private var dismiss
+    @ObservedObject var store: PatchProjectStore
+    let request: PatchPasswordRequest
+    @State private var password = ""
 
-        <h3>📁 Quản Lý Thư Mục (<?= count($existingFolders) ?>)</h3>
-        <div class="folder-chips">
-            <?php if (empty($existingFolders)) echo "<span class='meta'>Chưa có thư mục.</span>"; ?>
-            <?php foreach ($existingFolders as $f): ?>
-                <div class="chip">
-                    <span>📂 <?= htmlspecialchars($f) ?></span>
-                    <form method="post" style="margin:0;" onsubmit="return confirm('Xóa thư mục sẽ xóa toàn bộ file bên trong. Bạn chắc chứ?');">
-                        <input type="hidden" name="folder_name" value="<?= htmlspecialchars($f) ?>">
-                        <button type="submit" name="delete_folder" class="btn-danger">Xóa</button>
-                    </form>
-                </div>
-            <?php endforeach; ?>
-        </div>
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    SecureField(language.text("patch.password"), text: $password)
+                        .textContentType(.password)
+                        .submitLabel(.done)
+                        .onSubmit(unlock)
+                }
+            }
+            .navigationTitle(language.text("patch.unlock"))
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Hủy") { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) { Button("Mở khóa", action: unlock).disabled(password.isEmpty) }
+            }
+        }
+    }
+    private func unlock() { store.unlock(password: password) }
+}
 
-        <h3>📄 Quản Lý File (<?= count($metadata) ?>)</h3>
-        <div>
-            <?php if (empty($metadata)) echo "<span class='meta'>Chưa có file nào.</span>"; ?>
-            <?php foreach ($metadata as $idx => $item): ?>
-                <div class="file-card">
-                    <div class="file-info">
-                        <div class="title"><?= htmlspecialchars($item['displayName']) ?></div>
-                        <div class="meta">
-                            <span class="badge badge-game"><?= htmlspecialchars($item['gameType']) ?></span>
-                            <span class="badge">📁 <?= htmlspecialchars($item['folder']) ?></span>
-                            <span class="badge">📄 <?= htmlspecialchars($item['filename']) ?></span>
-                            <?php if(!empty($item['note'])): ?><br><span style="display:inline-block; margin-top:6px;">📝 <?= htmlspecialchars($item['note']) ?></span><?php endif; ?>
-                        </div>
-                    </div>
-                    <form method="post" style="margin:0;" onsubmit="return confirm('Bạn muốn xóa file này?');">
-                        <input type="hidden" name="file_index" value="<?= $idx ?>">
-                        <button type="submit" name="delete_file" class="btn-danger">Xóa</button>
-                    </form>
-                </div>
-            <?php endforeach; ?>
-        </div>
-    <?php endif; ?>
-</div>
+private struct PatchStorePresentationModifier: ViewModifier {
+    @ObservedObject var store: PatchProjectStore
+    func body(content: Content) -> some View {
+        content.sheet(item: $store.passwordRequest, onDismiss: store.cancelUnlock) { request in
+            PatchUnlockView(store: store, request: request)
+        }
+    }
+}
 
-</body>
-</html>
+extension View {
+    func patchStorePresentation(_ store: PatchProjectStore) -> some View {
+        modifier(PatchStorePresentationModifier(store: store))
+    }
+}
