@@ -10,7 +10,7 @@ jobs:
     runs-on: macos-latest
     steps:
       - name: Checkout repository
-        uses: actions/actions/checkout@v4 # hoặc actions/checkout@v4 tùy phiên bản cũ của bạn
+        uses: actions/checkout@v4
 
       - name: Fix PBXProj Encoding and Hidden Characters
         run: |
