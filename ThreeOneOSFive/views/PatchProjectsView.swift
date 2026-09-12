@@ -19,7 +19,7 @@ enum SoundFX {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// MARK: - BACKGROUND (LIGHTER — 24fps, 55 stars, 25 particles)
+// MARK: - BACKGROUND (nhẹ, 24fps)
 // ═══════════════════════════════════════════════════════════════
 struct NeonBackgroundView: View {
     @Environment(\.scenePhase) private var scenePhase
@@ -91,7 +91,6 @@ struct CosmicFieldView: View {
     @State private var particles: [Particle] = []
 
     var body: some View {
-        // 24fps thay vì 45fps → nhẹ hơn ~50%
         TimelineView(.animation(minimumInterval: 1.0 / 24.0, paused: paused)) { timeline in
             Canvas { ctx, size in
                 let t = timeline.date.timeIntervalSinceReferenceDate
@@ -119,7 +118,7 @@ struct CosmicFieldView: View {
     }
     private func initField() {
         if stars.isEmpty {
-            stars = (0..<55).map { _ in    // 55 thay vì 110
+            stars = (0..<55).map { _ in
                 Star(x: CGFloat.random(in: 0...1),
                      y: CGFloat.random(in: 0...1),
                      s: CGFloat.random(in: 0.5...2.0),
@@ -128,7 +127,7 @@ struct CosmicFieldView: View {
             }
         }
         if particles.isEmpty {
-            particles = (0..<25).map { _ in   // 25 thay vì 55
+            particles = (0..<25).map { _ in
                 Particle(x: CGFloat.random(in: 0...1),
                          s: CGFloat.random(in: 1.0...2.8),
                          speed: CGFloat.random(in: 20...45),
@@ -145,13 +144,16 @@ struct CosmicFieldView: View {
 struct GameSelection: Identifiable, Hashable {
     let id = UUID()
     let title: String
-    let prefix: String
+    let prefix: String   // "ffmax" hoặc "ffnormal" (không có underscore)
 }
 
+/// Metadata của patch — keyed by LOCAL filename
 struct PatchMeta: Codable {
-    var remoteName: String
-    var folder: String
-    var tag: String
+    var remoteKey: String       // "ffmax/AIM/Headlock_FREE.3105" — UNIQUE
+    var remoteName: String      // "Headlock_FREE.3105"
+    var gameType: String        // "ffmax" / "ffnormal"
+    var folder: String          // "AIM"
+    var tag: String             // "VIP" / "FREE"
     var displayName: String
     var note: String
     var tagOverride: Bool
@@ -159,7 +161,9 @@ struct PatchMeta: Codable {
     var noteOverride: Bool
     var orphaned: Bool
 
-    init(remoteName: String,
+    init(remoteKey: String,
+         remoteName: String,
+         gameType: String,
          folder: String,
          tag: String,
          displayName: String,
@@ -168,7 +172,9 @@ struct PatchMeta: Codable {
          nameOverride: Bool = false,
          noteOverride: Bool = false,
          orphaned: Bool = false) {
+        self.remoteKey = remoteKey
         self.remoteName = remoteName
+        self.gameType = gameType
         self.folder = folder
         self.tag = tag
         self.displayName = displayName
@@ -179,9 +185,12 @@ struct PatchMeta: Codable {
         self.orphaned = orphaned
     }
 
+    /// Custom decode để tương thích data cũ — không crash nếu thiếu field
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
+        remoteKey    = (try? c.decode(String.self, forKey: .remoteKey)) ?? ""
         remoteName   = (try? c.decode(String.self, forKey: .remoteName)) ?? ""
+        gameType     = (try? c.decode(String.self, forKey: .gameType)) ?? "ffnormal"
         folder       = (try? c.decode(String.self, forKey: .folder)) ?? "Chung"
         tag          = (try? c.decode(String.self, forKey: .tag)) ?? "FREE"
         displayName  = (try? c.decode(String.self, forKey: .displayName)) ?? ""
@@ -193,13 +202,19 @@ struct PatchMeta: Codable {
     }
 }
 
+/// Remote file — luôn có composite key unique
 struct RemoteFileLite {
     let filename: String
+    let gameType: String
     let folder: String
     let tag: String
     let displayName: String
     let note: String
     let url: String
+
+    var compositeKey: String {
+        return "\(gameType)/\(folder)/\(filename)"
+    }
 }
 
 struct ActivationInfo: Identifiable {
@@ -214,7 +229,7 @@ struct ActivationInfo: Identifiable {
 // MARK: - META STORE
 // ═══════════════════════════════════════════════════════════════
 enum PatchMetaStore {
-    private static let key = "patch_meta_v14"
+    private static let key = "patch_meta_v15"
 
     static func all() -> [String: PatchMeta] {
         guard let data = UserDefaults.standard.data(forKey: key),
@@ -621,7 +636,6 @@ struct PatchProjectsView: View {
     @State private var isSyncing = false
     @State private var lastSyncDate: Date = Date()
 
-    // 5s
     private let autoTimer = Timer.publish(every: 5, on: .main, in: .common).autoconnect()
 
     let onOpenSettings: () -> Void
@@ -648,11 +662,9 @@ struct PatchProjectsView: View {
             .onAppear {
                 Task { await syncNow(force: true) }
             }
-            // ⭐️ TIMER 5s — luôn chạy, không bị chặn
             .onReceive(autoTimer) { _ in
                 Task { await syncNow(force: false) }
             }
-            // ⭐️ FOREGROUND → force sync ngay
             .onChange(of: scenePhase) { phase in
                 if phase == .active {
                     Task { await syncNow(force: true) }
@@ -721,8 +733,8 @@ struct PatchProjectsView: View {
     private var content: some View {
         ScrollView(showsIndicators: false) {
             VStack(spacing: 14) {
-                gameCard(title: "Free Fire Max", prefix: "ffmax_")
-                gameCard(title: "Free Fire Thường", prefix: "ffnormal_")
+                gameCard(title: "Free Fire Max", prefix: "ffmax")
+                gameCard(title: "Free Fire Thường", prefix: "ffnormal")
                 Text("By Zenith Solitude")
                     .font(.system(size: 11, weight: .semibold))
                     .tracking(3)
@@ -764,8 +776,6 @@ struct PatchProjectsView: View {
         .buttonStyle(.plain)
     }
 
-    /// force=true: bỏ qua throttle, luôn chạy
-    /// force=false: nếu sync vừa xong <2s trước thì skip
     private func syncNow(force: Bool) async {
         if !force {
             let elapsed = Date().timeIntervalSince(lastSyncDate)
@@ -781,27 +791,37 @@ struct PatchProjectsView: View {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// MARK: - SYNC ENGINE (không blocking — luôn cho phép sync mới)
+// MARK: - SYNC ENGINE (AN TOÀN — không dùng Dictionary(uniqueKeysWithValues))
 // ═══════════════════════════════════════════════════════════════
 final class SyncEngine {
     static let shared = SyncEngine()
-    // Semaphore để tránh ghi metadata đồng thời, không block sync
     private let metaLock = NSLock()
     private init() {}
 
     func run(store: PatchProjectStore) async {
         guard let remotes = await fetchRemotes() else { return }
 
+        // ⭐️ Build dict AN TOÀN bằng composite key (gameType/folder/filename)
+        // Không dùng Dictionary(uniqueKeysWithValues:) — có thể crash khi trùng
+        var remoteByKey: [String: RemoteFileLite] = [:]
+        for r in remotes {
+            remoteByKey[r.compositeKey] = r
+        }
+
         // BƯỚC 1: Update metadata cũ + mark orphan
         metaLock.lock()
         var metaDict = PatchMetaStore.all()
-        let remoteByName: [String: RemoteFileLite] = Dictionary(
-            uniqueKeysWithValues: remotes.map { ($0.filename, $0) }
-        )
 
         for (localName, var meta) in metaDict {
-            if let remote = remoteByName[meta.remoteName] {
+            // Build lookup key cho meta này (ưu tiên remoteKey mới)
+            let key = meta.remoteKey.isEmpty
+                ? "\(meta.gameType)/\(meta.folder)/\(meta.remoteName)"
+                : meta.remoteKey
+
+            if let remote = remoteByKey[key] {
                 meta.orphaned = false
+                meta.remoteKey = remote.compositeKey
+                meta.gameType = remote.gameType
                 meta.folder = remote.folder
                 if !meta.tagOverride  { meta.tag = remote.tag }
                 if !meta.nameOverride { meta.displayName = remote.displayName }
@@ -814,12 +834,18 @@ final class SyncEngine {
         PatchMetaStore.save(metaDict)
         metaLock.unlock()
 
-        // BƯỚC 2: Import file mới
-        let existingNames = Set(
-            metaDict.values.filter { !$0.orphaned }.map { $0.remoteName }
-        )
+        // BƯỚC 2: Import các file mới (composite key chưa có trong meta)
+        var existingKeys = Set<String>()
+        for meta in metaDict.values where !meta.orphaned {
+            if !meta.remoteKey.isEmpty {
+                existingKeys.insert(meta.remoteKey)
+            } else {
+                existingKeys.insert("\(meta.gameType)/\(meta.folder)/\(meta.remoteName)")
+            }
+        }
+
         for remote in remotes {
-            if existingNames.contains(remote.filename) { continue }
+            if existingKeys.contains(remote.compositeKey) { continue }
             guard let url = URL(string: remote.url) else { continue }
             await importAndTag(remote: remote, url: url, store: store)
         }
@@ -828,12 +854,10 @@ final class SyncEngine {
     }
 
     private func fetchRemotes() async -> [RemoteFileLite]? {
-        // ⭐️ CACHE BUSTER — không bao giờ dùng cache
         let ts = Int(Date().timeIntervalSince1970)
         let urlString = "https://solitudepremium.click/ipa/proxy/list.php?t=\(ts)"
         guard let url = URL(string: urlString) else { return nil }
 
-        // Retry 2 lần
         for attempt in 0..<2 {
             do {
                 var req = URLRequest(url: url)
@@ -857,6 +881,7 @@ final class SyncEngine {
                 return wire.map { w in
                     RemoteFileLite(
                         filename:    w.filename,
+                        gameType:    w.gameType,
                         folder:      w.folder ?? "Chung",
                         tag:         w.tag ?? "FREE",
                         displayName: w.displayName ?? "",
@@ -883,7 +908,6 @@ final class SyncEngine {
         await MainActor.run {
             store.importPackage(from: .remote(url))
         }
-        // Poll 200ms × 40 = 8s
         for attempt in 0..<40 {
             try? await Task.sleep(nanoseconds: 200_000_000)
             await MainActor.run { store.reload() }
@@ -892,10 +916,12 @@ final class SyncEngine {
             }
             let diff = after.subtracting(before)
             if let newFile = diff.first {
-                print("✅ \(remote.filename) → \(newFile) @\(attempt)")
+                print("✅ \(remote.compositeKey) → \(newFile) @\(attempt)")
                 metaLock.lock()
                 let meta = PatchMeta(
+                    remoteKey:   remote.compositeKey,
                     remoteName:  remote.filename,
+                    gameType:    remote.gameType,
                     folder:      remote.folder,
                     tag:         remote.tag,
                     displayName: remote.displayName,
@@ -907,7 +933,7 @@ final class SyncEngine {
                 return
             }
         }
-        print("⚠️ Timeout: \(remote.filename)")
+        print("⚠️ Timeout: \(remote.compositeKey)")
     }
 }
 
@@ -960,7 +986,6 @@ struct PatchGameDetailView: View {
             .toolbarBackground(Color.black, for: .navigationBar)
             .toolbarBackground(.visible, for: .navigationBar)
             .toolbarColorScheme(.dark, for: .navigationBar)
-            // ⭐️ FORCE SYNC khi mở
             .onAppear {
                 Task {
                     await SyncEngine.shared.run(store: store)
@@ -1017,24 +1042,38 @@ struct PatchGameDetailView: View {
         didInit = true
     }
 
+    /// Filter theo gameType từ metadata (fallback về prefix filename nếu chưa có meta)
     private var gameItems: [PatchLibraryItem] {
         _ = refreshTick
         return store.items.filter { item in
             let name = item.packageURL.lastPathComponent
+            let meta = PatchMetaStore.get(forLocal: name)
+
+            // Ưu tiên gameType từ metadata (chính xác nhất)
+            if let m = meta, !m.gameType.isEmpty {
+                if m.orphaned { return false }
+                return m.gameType == game.prefix
+            }
+
+            // Fallback: check prefix filename
             let isMax = name.hasPrefix("ffmax_")
             let isNormal = name.hasPrefix("ffnormal_")
             let isPlain = !isMax && !isNormal
-            let correctGame = game.prefix == "ffmax_" ? isMax : (isNormal || isPlain)
-            guard correctGame else { return false }
-            if let meta = PatchMetaStore.get(forLocal: name), meta.orphaned { return false }
-            return true
+            if game.prefix == "ffmax" { return isMax }
+            return isNormal || isPlain
         }
     }
 
     private var folders: [String] {
-        var set = Set(gameItems.map { folderName(for: $0) })
-        set.remove("")
-        return Array(set).sorted()
+        // ⭐️ Array-based unique — tránh hash Set với string lạ
+        let names = gameItems
+            .map { folderName(for: $0) }
+            .filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
+        var unique: [String] = []
+        for n in names {
+            if !unique.contains(n) { unique.append(n) }
+        }
+        return unique.sorted()
     }
 
     private var displayedItems: [PatchLibraryItem] {
@@ -1151,13 +1190,6 @@ struct PatchGameDetailView: View {
         if var m = PatchMetaStore.get(forLocal: key) {
             m.displayName = t; m.nameOverride = true
             PatchMetaStore.set(m, forLocal: key)
-        } else {
-            let newMeta = PatchMeta(
-                remoteName: key, folder: folderName(for: item),
-                tag: currentTag(for: item), displayName: t,
-                note: currentNote(for: item), nameOverride: true
-            )
-            PatchMetaStore.set(newMeta, forLocal: key)
         }
         store.reload()
         renameItem = nil
@@ -1169,13 +1201,6 @@ struct PatchGameDetailView: View {
         if var m = PatchMetaStore.get(forLocal: key) {
             m.tag = tag; m.tagOverride = true
             PatchMetaStore.set(m, forLocal: key)
-        } else {
-            let newMeta = PatchMeta(
-                remoteName: key, folder: folderName(for: item),
-                tag: tag, displayName: displayName(for: item),
-                note: currentNote(for: item), tagOverride: true
-            )
-            PatchMetaStore.set(newMeta, forLocal: key)
         }
         store.reload()
         tagPickerItem = nil
@@ -1188,13 +1213,6 @@ struct PatchGameDetailView: View {
         if var m = PatchMetaStore.get(forLocal: key) {
             m.note = t; m.noteOverride = true
             PatchMetaStore.set(m, forLocal: key)
-        } else {
-            let newMeta = PatchMeta(
-                remoteName: key, folder: folderName(for: item),
-                tag: currentTag(for: item), displayName: displayName(for: item),
-                note: t, noteOverride: true
-            )
-            PatchMetaStore.set(newMeta, forLocal: key)
         }
         store.reload()
         noteItem = nil
