@@ -19,7 +19,7 @@ enum SoundFX {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// MARK: - AURORA BACKGROUND
+// MARK: - BACKGROUND
 // ═══════════════════════════════════════════════════════════════
 struct NeonBackgroundView: View {
     var body: some View {
@@ -33,7 +33,6 @@ struct NeonBackgroundView: View {
     }
 }
 
-/// 3 quầng sáng trắng uốn lượn
 struct AuroraView: View {
     @State private var phase: Double = 0
     var body: some View {
@@ -41,13 +40,13 @@ struct AuroraView: View {
             ZStack {
                 blob(cx: 0.28 + 0.10 * sin(phase),
                      cy: 0.25 + 0.08 * cos(phase * 0.7),
-                     opacity: 0.14, radius: geo.size.width * 0.75)
+                     opacity: 0.13, radius: geo.size.width * 0.75)
                 blob(cx: 0.75 + 0.10 * cos(phase * 0.85),
                      cy: 0.72 + 0.10 * sin(phase * 0.6),
-                     opacity: 0.11, radius: geo.size.width * 0.85)
+                     opacity: 0.10, radius: geo.size.width * 0.85)
                 blob(cx: 0.50 + 0.15 * sin(phase * 1.15),
                      cy: 0.50 + 0.15 * cos(phase * 0.9),
-                     opacity: 0.09, radius: geo.size.width * 0.65)
+                     opacity: 0.08, radius: geo.size.width * 0.65)
             }
             .blur(radius: 95)
         }
@@ -62,26 +61,21 @@ struct AuroraView: View {
         RadialGradient(
             colors: [Color.white.opacity(opacity), .clear],
             center: UnitPoint(x: cx, y: cy),
-            startRadius: 0,
-            endRadius: radius
+            startRadius: 0, endRadius: radius
         )
     }
 }
 
-/// Vignette tối góc
 struct VignetteView: View {
     var body: some View {
         RadialGradient(
             colors: [.clear, .clear, Color.black.opacity(0.78)],
-            center: .center,
-            startRadius: 0,
-            endRadius: 520
+            center: .center, startRadius: 0, endRadius: 520
         )
         .allowsHitTesting(false)
     }
 }
 
-/// 1 Canvas duy nhất: 110 sao twinkle + 55 hạt bay (tối ưu hiệu năng)
 struct CosmicFieldView: View {
     private struct Star {
         let x: CGFloat; let y: CGFloat; let s: CGFloat
@@ -99,7 +93,6 @@ struct CosmicFieldView: View {
         TimelineView(.animation(minimumInterval: 1.0 / 45.0)) { timeline in
             Canvas { ctx, size in
                 let t = timeline.date.timeIntervalSinceReferenceDate
-                // Stars
                 for s in stars {
                     let a = 0.18 + 0.58 * sin(t * s.freq + s.phase)
                     let r = CGRect(x: s.x * size.width, y: s.y * size.height,
@@ -107,7 +100,6 @@ struct CosmicFieldView: View {
                     ctx.fill(Path(ellipseIn: r),
                              with: .color(Color.white.opacity(max(0, a))))
                 }
-                // Particles rising
                 for p in particles {
                     let total = Double(size.height) + 100
                     let traveled = (t * Double(p.speed)).truncatingRemainder(dividingBy: total)
@@ -157,7 +149,7 @@ struct GameSelection: Identifiable, Hashable {
 
 struct PatchMeta: Codable {
     var remoteName: String
-    var matchKey: String
+    var slug: String
     var folder: String
     var tag: String
     var displayName: String
@@ -169,7 +161,7 @@ struct PatchMeta: Codable {
 
 struct RemoteFileLite {
     let filename: String
-    let matchKey: String
+    let slug: String
     let folder: String
     let tag: String
     let displayName: String
@@ -178,10 +170,10 @@ struct RemoteFileLite {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// MARK: - METADATA STORE (keyed by matchKey)
+// MARK: - METADATA STORE — lưu theo LOCAL filename
 // ═══════════════════════════════════════════════════════════════
 enum PatchMetaStore {
-    private static let key = "patch_meta_by_matchkey_v10"
+    private static let key = "patch_meta_v11"
 
     static func all() -> [String: PatchMeta] {
         guard let data = UserDefaults.standard.data(forKey: key),
@@ -194,29 +186,30 @@ enum PatchMetaStore {
             UserDefaults.standard.set(data, forKey: key)
         }
     }
-    static func set(_ meta: PatchMeta, forMatchKey mk: String) {
-        var d = all(); d[mk.lowercased()] = meta; save(d)
+    static func set(_ meta: PatchMeta, forLocal local: String) {
+        var d = all(); d[local] = meta; save(d)
     }
-    static func get(matchKey mk: String) -> PatchMeta? {
-        return all()[mk.lowercased()]
-    }
-    static func update(_ block: (inout PatchMeta) -> Void, matchKey mk: String) {
+    static func get(forLocal local: String) -> PatchMeta? { return all()[local] }
+    static func update(_ block: (inout PatchMeta) -> Void, forLocal local: String) {
         var d = all()
-        guard var m = d[mk.lowercased()] else { return }
+        guard var m = d[local] else { return }
         block(&m)
-        d[mk.lowercased()] = m
+        d[local] = m
         save(d)
     }
-    static func importedRemoteNames() -> Set<String> {
+    static func importedSlugs() -> Set<String> {
+        return Set(all().values.map { $0.slug })
+    }
+    static func allRemoteNames() -> Set<String> {
         return Set(all().values.map { $0.remoteName })
     }
 }
 
 // ═══════════════════════════════════════════════════════════════
-// MARK: - MATCHER
+// MARK: - SLUG
 // ═══════════════════════════════════════════════════════════════
-enum PatchMatcher {
-    static func normalize(_ name: String) -> String {
+enum Slug {
+    static func make(_ name: String) -> String {
         var s = name.lowercased()
         if let dot = s.lastIndex(of: ".") {
             s = String(s[..<dot])
@@ -229,22 +222,9 @@ enum PatchMatcher {
         s = s.replacingOccurrences(of: "zenith_", with: "")
         s = s.replacingOccurrences(of: "ffmax_", with: "")
         s = s.replacingOccurrences(of: "ffnormal_", with: "")
-        s = s.replacingOccurrences(of: #"[^a-z0-9_-]"#, with: "_", options: .regularExpression)
-        s = s.replacingOccurrences(of: #"_+"#, with: "_", options: .regularExpression)
+        s = s.replacingOccurrences(of: #"[^a-z0-9]+"#, with: "_", options: .regularExpression)
         s = s.trimmingCharacters(in: CharacterSet(charactersIn: "_"))
         return s
-    }
-
-    static func findMatch(localName: String, in remotes: [RemoteFileLite]) -> RemoteFileLite? {
-        let localKey = normalize(localName)
-        guard !localKey.isEmpty else { return nil }
-        for r in remotes where r.matchKey.lowercased() == localKey { return r }
-        for r in remotes {
-            let rk = r.matchKey.lowercased()
-            if rk.isEmpty { continue }
-            if localKey.contains(rk) || rk.contains(localKey) { return r }
-        }
-        return nil
     }
 }
 
@@ -304,11 +284,9 @@ private struct AvatarView: View {
 
     var body: some View {
         ZStack {
-            Circle()
-                .fill(Color.white.opacity(0.18))
+            Circle().fill(Color.white.opacity(0.18))
                 .frame(width: pulse ? 116 : 94, height: pulse ? 116 : 94)
                 .blur(radius: 24)
-
             Circle()
                 .stroke(
                     AngularGradient(
@@ -323,15 +301,11 @@ private struct AvatarView: View {
                 .frame(width: 94, height: 94)
                 .rotationEffect(.degrees(rotate ? 360 : 0))
                 .blur(radius: 1)
-
             Circle()
-                .stroke(
-                    Color.white.opacity(0.35),
-                    style: StrokeStyle(lineWidth: 0.8, dash: [2, 6])
-                )
+                .stroke(Color.white.opacity(0.35),
+                        style: StrokeStyle(lineWidth: 0.8, dash: [2, 6]))
                 .frame(width: 104, height: 104)
                 .rotationEffect(.degrees(rotate ? 180 : 0))
-
             avatarImage
                 .frame(width: 76, height: 76)
                 .clipShape(Circle())
@@ -353,8 +327,7 @@ private struct AvatarView: View {
             switch phase {
             case .empty:
                 ZStack { Color.black.opacity(0.6); ProgressView().tint(.white) }
-            case .success(let img):
-                img.resizable().scaledToFill()
+            case .success(let img): img.resizable().scaledToFill()
             case .failure:
                 ZStack {
                     Color.white.opacity(0.1)
@@ -371,15 +344,11 @@ private struct AvatarView: View {
 private struct MenuCapsuleButton: View {
     var body: some View {
         HStack(spacing: 5) {
-            Text("MỞ MENU")
-                .font(.system(size: 11, weight: .heavy))
-                .tracking(0.8)
-            Image(systemName: "chevron.right")
-                .font(.system(size: 9, weight: .heavy))
+            Text("MỞ MENU").font(.system(size: 11, weight: .heavy)).tracking(0.8)
+            Image(systemName: "chevron.right").font(.system(size: 9, weight: .heavy))
         }
         .foregroundStyle(Color.black)
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
+        .padding(.horizontal, 12).padding(.vertical, 8)
         .background(Capsule().fill(Color.white))
         .shadow(color: .white.opacity(0.75), radius: 14)
     }
@@ -388,13 +357,11 @@ private struct MenuCapsuleButton: View {
 private struct TagBadge: View {
     let tag: String
     private var isVIP: Bool { tag == "VIP" }
-
     var body: some View {
         Text(tag)
             .font(.system(size: 8, weight: .heavy))
             .tracking(0.8)
-            .padding(.horizontal, 6)
-            .padding(.vertical, 2)
+            .padding(.horizontal, 6).padding(.vertical, 2)
             .background(Capsule().fill(Color.white.opacity(isVIP ? 0.22 : 0.12)))
             .foregroundStyle(Color.white)
             .overlay(Capsule().stroke(Color.white.opacity(isVIP ? 0.9 : 0.5),
@@ -407,7 +374,6 @@ private struct PatchIconView: View {
     let tag: String
     private var isVIP: Bool { tag == "VIP" }
     private var icon: String { isVIP ? "crown.fill" : "shield.lefthalf.filled" }
-
     var body: some View {
         ZStack {
             RoundedRectangle(cornerRadius: 11).fill(Color.white.opacity(0.06))
@@ -428,14 +394,12 @@ private struct FolderTabButton: View {
     let action: () -> Void
     private var bg: Color { isActive ? Color.white : Color.white.opacity(0.05) }
     private var fg: Color { isActive ? Color.black : Color.white.opacity(0.9) }
-
     var body: some View {
         Button(action: action) {
             Text(title.uppercased())
                 .font(.system(size: 11, weight: .heavy))
                 .tracking(1.2)
-                .padding(.horizontal, 18)
-                .padding(.vertical, 9)
+                .padding(.horizontal, 18).padding(.vertical, 9)
                 .background(Capsule().fill(bg))
                 .foregroundStyle(fg)
                 .overlay(Capsule().stroke(Color.white.opacity(0.65), lineWidth: 1.1))
@@ -450,7 +414,6 @@ private struct NoteBanner: View {
     @State private var pulse = false
     @State private var shimmer = false
     private var hasNote: Bool { !note.trimmingCharacters(in: .whitespaces).isEmpty }
-
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 8) {
@@ -460,7 +423,7 @@ private struct NoteBanner: View {
                     .scaleEffect(pulse ? 1.15 : 1.0)
                     .shadow(color: .white.opacity(0.95), radius: pulse ? 14 : 6)
                 Text("HEADLOCK ZENIS")
-                    .font(.custom("Copperplate-Bold", size: 12))
+                    .font(.system(size: 12, weight: .heavy))
                     .tracking(2)
                     .foregroundStyle(Color.white)
                 Spacer()
@@ -480,8 +443,7 @@ private struct NoteBanner: View {
                 .padding(.top, 1)
             }
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 11)
+        .padding(.horizontal, 12).padding(.vertical, 11)
         .background(RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.06)))
         .overlay(
             RoundedRectangle(cornerRadius: 12)
@@ -504,7 +466,6 @@ private struct NoteBanner: View {
             }
         }
     }
-
     private var shimmerOverlay: some View {
         GeometryReader { geo in
             LinearGradient(
@@ -588,6 +549,7 @@ struct PatchProjectsView: View {
     @State private var isAutoSyncing = false
     @State private var actionAlert: PatchStoreAlert?
     @State private var selectedGame: GameSelection?
+    @State private var syncStatusText: String = ""
 
     private let autoTimer = Timer.publish(every: 10, on: .main, in: .common).autoconnect()
 
@@ -612,8 +574,12 @@ struct PatchProjectsView: View {
                 }
             }
             .navigationBarHidden(true)
-            .onAppear { syncRemotePatches() }
-            .onReceive(autoTimer) { _ in syncRemotePatches() }
+            .onAppear {
+                SyncService.shared.startPolling(store: store)
+            }
+            .onReceive(autoTimer) { _ in
+                Task { await manualSync() }
+            }
             .sheet(item: $selectedGame) { game in
                 PatchGameDetailView(
                     game: game,
@@ -636,7 +602,7 @@ struct PatchProjectsView: View {
         VStack(spacing: 6) {
             AvatarView()
             Text("ZENITH SOLITUDE")
-                .font(.custom("Copperplate-Bold", size: 20))
+                .font(.system(size: 20, weight: .heavy, design: .serif))
                 .tracking(4)
                 .foregroundStyle(Color.white)
                 .shadow(color: .white.opacity(0.8), radius: 18)
@@ -656,7 +622,7 @@ struct PatchProjectsView: View {
                 gameCard(title: "Free Fire Max", prefix: "ffmax_")
                 gameCard(title: "Free Fire Thường", prefix: "ffnormal_")
                 Text("By Zenith Solitude")
-                    .font(.custom("Copperplate", size: 11))
+                    .font(.system(size: 11, weight: .semibold))
                     .tracking(3)
                     .foregroundStyle(Color.white.opacity(0.5))
                     .padding(.top, 12)
@@ -665,10 +631,7 @@ struct PatchProjectsView: View {
             .padding(.horizontal, 14)
             .padding(.bottom, 40)
         }
-        .refreshable {
-            SoundFX.tap()
-            await manualSync()
-        }
+        .refreshable { await manualSync() }
     }
 
     @ViewBuilder
@@ -696,36 +659,95 @@ struct PatchProjectsView: View {
                         MenuCapsuleButton()
                     }
                 }
-                .padding(.horizontal, 14)
-                .padding(.vertical, 12)
+                .padding(.horizontal, 14).padding(.vertical, 12)
             }
         }
         .buttonStyle(.plain)
     }
 
-    // MARK: Sync
-    private func syncRemotePatches() {
-        guard !isAutoSyncing else { return }
-        isAutoSyncing = true
-        Task {
-            await runSync()
-            await MainActor.run { isAutoSyncing = false }
-        }
-    }
-
     private func manualSync() async {
         guard !isAutoSyncing else { return }
         await MainActor.run { isAutoSyncing = true }
-        await runSync()
+        await SyncService.shared.sync(store: store)
         await MainActor.run { isAutoSyncing = false }
     }
+}
 
-    private func runSync() async {
+// ═══════════════════════════════════════════════════════════════
+// MARK: - SYNC SERVICE (một chỗ duy nhất, chắc chắn)
+// ═══════════════════════════════════════════════════════════════
+final class SyncService {
+    static let shared = SyncService()
+    private var isSyncing = false
+    private var pollTask: Task<Void, Never>? = nil
+
+    private init() {}
+
+    func startPolling(store: PatchProjectStore) {
+        pollTask?.cancel()
+        pollTask = Task { [weak self] in
+            guard let self = self else { return }
+            // Sync lần đầu ngay
+            await self.sync(store: store)
+            // Sau đó lặp mỗi 12s
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 12_000_000_000)
+                if Task.isCancelled { break }
+                await self.sync(store: store)
+            }
+        }
+    }
+
+    func sync(store: PatchProjectStore) async {
+        if isSyncing { return }
+        isSyncing = true
+        defer { isSyncing = false }
+
+        // 1. Fetch remote list
+        guard let remotes = await fetchRemotes() else {
+            return
+        }
+
+        // 2. Update metadata cho local items đã có
+        let localItems = await MainActor.run { store.items }
+        await matchLocals(localItems: localItems, remotes: remotes)
+
+        // 3. Import các file chưa có local
+        let existingSlugs = Set(localItems.map { Slug.make($0.packageURL.lastPathComponent) })
+        let needImport = remotes.filter { r in
+            !existingSlugs.contains(r.slug)
+        }
+
+        if !needImport.isEmpty {
+            for r in needImport {
+                guard let url = URL(string: r.url) else { continue }
+                await MainActor.run {
+                    store.importPackage(from: .remote(url))
+                }
+                try? await Task.sleep(nanoseconds: 1_200_000_000)
+            }
+
+            // Đợi store cập nhật
+            await MainActor.run { store.reload() }
+            try? await Task.sleep(nanoseconds: 1_500_000_000)
+
+            // Match lại các file vừa import
+            let updatedItems = await MainActor.run { store.items }
+            await matchLocals(localItems: updatedItems, remotes: remotes)
+        }
+
+        await MainActor.run { store.reload() }
+    }
+
+    // MARK: Fetch
+    private func fetchRemotes() async -> [RemoteFileLite]? {
         do {
-            guard let listUrl = URL(string: "https://solitudepremium.click/ipa/proxy/list.php") else { return }
-            var req = URLRequest(url: listUrl)
+            guard let url = URL(string: "https://solitudepremium.click/ipa/proxy/list.php") else {
+                return nil
+            }
+            var req = URLRequest(url: url)
             req.cachePolicy = .reloadIgnoringLocalCacheData
-            req.timeoutInterval = 15
+            req.timeoutInterval = 20
             let (data, _) = try await URLSession.shared.data(for: req)
 
             struct Wire: Decodable {
@@ -735,67 +757,70 @@ struct PatchProjectsView: View {
                 let displayName: String?
                 let tag: String?
                 let note: String?
-                let matchKey: String?
+                let slug: String?
                 let url: String
             }
             let wire = try JSONDecoder().decode([Wire].self, from: data)
-            let remotes: [RemoteFileLite] = wire.map { w in
-                let mk = w.matchKey ?? PatchMatcher.normalize(w.filename)
-                return RemoteFileLite(
-                    filename: w.filename,
-                    matchKey: mk,
-                    folder: w.folder ?? "",
-                    tag: w.tag ?? "FREE",
+            return wire.map { w in
+                RemoteFileLite(
+                    filename:    w.filename,
+                    slug:        w.slug ?? Slug.make(w.filename),
+                    folder:      w.folder ?? "",
+                    tag:         w.tag ?? "FREE",
                     displayName: w.displayName ?? "",
-                    note: w.note ?? "",
-                    url: w.url
+                    note:        w.note ?? "",
+                    url:         w.url
                 )
             }
+        } catch {
+            print("Sync fetch error: \(error.localizedDescription)")
+            return nil
+        }
+    }
 
-            // BƯỚC 1 — Lưu metadata theo matchKey (tra cứu luôn khớp)
-            for r in remotes {
-                guard !r.matchKey.isEmpty else { continue }
-                if var existing = PatchMetaStore.get(matchKey: r.matchKey) {
-                    existing.folder     = r.folder
-                    existing.remoteName = r.filename
-                    if !existing.tagOverride  { existing.tag = r.tag }
-                    if !existing.nameOverride { existing.displayName = r.displayName }
-                    if !existing.noteOverride { existing.note = r.note }
-                    PatchMetaStore.set(existing, forMatchKey: r.matchKey)
-                } else {
-                    let meta = PatchMeta(
-                        remoteName: r.filename,
-                        matchKey: r.matchKey,
-                        folder: r.folder,
-                        tag: r.tag,
-                        displayName: r.displayName,
-                        note: r.note
-                    )
-                    PatchMetaStore.set(meta, forMatchKey: r.matchKey)
+    // MARK: Match locals ↔ remotes
+    private func matchLocals(localItems: [PatchLibraryItem], remotes: [RemoteFileLite]) async {
+        for item in localItems {
+            let localName = item.packageURL.lastPathComponent
+            let localSlug = Slug.make(localName)
+            guard !localSlug.isEmpty else { continue }
+
+            // Tìm remote match
+            var matched: RemoteFileLite? = nil
+            for r in remotes where r.slug == localSlug {
+                matched = r; break
+            }
+            if matched == nil {
+                for r in remotes {
+                    if r.slug.isEmpty { continue }
+                    if localSlug.contains(r.slug) || r.slug.contains(localSlug) {
+                        matched = r; break
+                    }
                 }
             }
+            guard let remote = matched, !remote.folder.isEmpty else { continue }
 
-            // BƯỚC 2 — Import file chưa có
-            let imported = PatchMetaStore.importedRemoteNames()
-            var didImport = false
-            for r in remotes {
-                if imported.contains(r.filename) { continue }
-                guard let url = URL(string: r.url) else { continue }
-                await MainActor.run { store.importPackage(from: .remote(url)) }
-                didImport = true
-                try? await Task.sleep(nanoseconds: 700_000_000)
+            // Lưu metadata (keyed by LOCAL filename)
+            if var existing = PatchMetaStore.get(forLocal: localName) {
+                existing.folder     = remote.folder
+                existing.remoteName = remote.filename
+                existing.slug       = remote.slug
+                if !existing.tagOverride  { existing.tag = remote.tag }
+                if !existing.nameOverride { existing.displayName = remote.displayName }
+                if !existing.noteOverride { existing.note = remote.note }
+                PatchMetaStore.set(existing, forLocal: localName)
+            } else {
+                let meta = PatchMeta(
+                    remoteName:  remote.filename,
+                    slug:        remote.slug,
+                    folder:      remote.folder,
+                    tag:         remote.tag,
+                    displayName: remote.displayName,
+                    note:        remote.note
+                )
+                PatchMetaStore.set(meta, forLocal: localName)
             }
-
-            if didImport {
-                await MainActor.run { store.reload() }
-                try? await Task.sleep(nanoseconds: 800_000_000)
-                await MainActor.run { store.reload() }
-                try? await Task.sleep(nanoseconds: 400_000_000)
-            }
-        } catch {
-            print("Sync error: \(error.localizedDescription)")
         }
-        await MainActor.run { store.reload() }
     }
 }
 
@@ -819,7 +844,7 @@ struct PatchGameDetailView: View {
     @State private var noteText: String = ""
     @State private var refreshTick: Int = 0
 
-    private let refreshTimer = Timer.publish(every: 4, on: .main, in: .common).autoconnect()
+    private let refreshTimer = Timer.publish(every: 3, on: .main, in: .common).autoconnect()
 
     var body: some View {
         NavigationStack {
@@ -853,7 +878,12 @@ struct PatchGameDetailView: View {
             .toolbarBackground(Color.black, for: .navigationBar)
             .toolbarBackground(.visible, for: .navigationBar)
             .toolbarColorScheme(.dark, for: .navigationBar)
-            .onAppear(perform: initFirstFolder)
+            .onAppear {
+                Task {
+                    await SyncService.shared.sync(store: store)
+                    await MainActor.run { initFirstFolder() }
+                }
+            }
             .onReceive(refreshTimer) { _ in
                 refreshTick &+= 1
                 store.reload()
@@ -885,12 +915,14 @@ struct PatchGameDetailView: View {
     }
 
     private func initFirstFolder() {
-        guard !didInit, let first = folders.first else { return }
+        guard !didInit else { return }
+        let f = folders
+        guard let first = f.first else { return }
         selectedFolder = first
         didInit = true
     }
 
-    /// Tất cả items thuộc game hiện tại (bỏ filter metadata chặt)
+    /// KHÔNG filter metadata — hiển thị TẤT CẢ items thuộc game
     private var gameItems: [PatchLibraryItem] {
         _ = refreshTick
         return store.items.filter { item in
@@ -982,19 +1014,17 @@ struct PatchGameDetailView: View {
         )
     }
 
-    // MARK: Meta lookup
+    // MARK: Helpers
     private func localKey(for item: PatchLibraryItem) -> String {
         return item.packageURL.lastPathComponent
     }
-    private func matchKey(for item: PatchLibraryItem) -> String {
-        return PatchMatcher.normalize(item.packageURL.lastPathComponent)
-    }
-    private func metaFor(_ item: PatchLibraryItem) -> PatchMeta? {
-        return PatchMetaStore.get(matchKey: matchKey(for: item))
+
+    private func meta(for item: PatchLibraryItem) -> PatchMeta? {
+        return PatchMetaStore.get(forLocal: localKey(for: item))
     }
 
     private func displayName(for item: PatchLibraryItem) -> String {
-        if let m = metaFor(item), !m.displayName.isEmpty { return m.displayName }
+        if let m = meta(for: item), !m.displayName.isEmpty { return m.displayName }
         if let n = item.project?.name, !n.isEmpty { return n }
         return item.packageURL
             .deletingPathExtension().lastPathComponent
@@ -1005,24 +1035,31 @@ struct PatchGameDetailView: View {
     }
 
     private func currentTag(for item: PatchLibraryItem) -> String {
-        if let m = metaFor(item), !m.tag.isEmpty { return m.tag }
+        if let m = meta(for: item), !m.tag.isEmpty { return m.tag }
         return item.packageURL.deletingPathExtension().lastPathComponent
             .hasSuffix("_VIP") ? "VIP" : "FREE"
     }
 
     private func currentNote(for item: PatchLibraryItem) -> String {
-        return metaFor(item)?.note ?? ""
+        return meta(for: item)?.note ?? ""
     }
 
+    /// Folder name — nếu chưa có metadata thì thử parse từ path, cuối cùng là "Đang đồng bộ"
     private func folderName(for item: PatchLibraryItem) -> String {
-        if let m = metaFor(item), !m.folder.isEmpty { return m.folder }
+        if let m = meta(for: item), !m.folder.isEmpty { return m.folder }
+
         // Fallback parse path
         let comps = item.packageURL.pathComponents.filter { $0 != "/" }
         if let idx = comps.firstIndex(where: { $0 == "ffmax" || $0 == "ffnormal" }),
            idx + 2 < comps.count {
             return comps[idx + 1]
         }
-        return "Khác"
+        let parent = item.packageURL.deletingLastPathComponent().lastPathComponent
+        let ignore: Set<String> = ["Documents", "tmp", "proxy",
+                                    "PatchProjects", "PatchProjectStore", ""]
+        if !ignore.contains(parent) { return parent }
+
+        return "Đang đồng bộ"
     }
 
     // MARK: Actions
@@ -1030,19 +1067,18 @@ struct PatchGameDetailView: View {
         guard let item = renameItem else { return }
         let t = renameText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !t.isEmpty else { renameItem = nil; return }
-        let mk = matchKey(for: item)
-        if var m = PatchMetaStore.get(matchKey: mk) {
+        let key = localKey(for: item)
+        if var m = PatchMetaStore.get(forLocal: key) {
             m.displayName = t; m.nameOverride = true
-            PatchMetaStore.set(m, forMatchKey: mk)
+            PatchMetaStore.set(m, forLocal: key)
         } else {
-            // Tạo meta tạm nếu chưa có (nhưng hiếm khi)
             let newMeta = PatchMeta(
-                remoteName: localKey(for: item),
-                matchKey: mk, folder: folderName(for: item),
+                remoteName: key, slug: Slug.make(key),
+                folder: folderName(for: item),
                 tag: currentTag(for: item), displayName: t,
                 note: currentNote(for: item), nameOverride: true
             )
-            PatchMetaStore.set(newMeta, forMatchKey: mk)
+            PatchMetaStore.set(newMeta, forLocal: key)
         }
         store.reload()
         renameItem = nil
@@ -1050,18 +1086,18 @@ struct PatchGameDetailView: View {
 
     private func commitTag(_ tag: String) {
         guard let item = tagPickerItem else { return }
-        let mk = matchKey(for: item)
-        if var m = PatchMetaStore.get(matchKey: mk) {
+        let key = localKey(for: item)
+        if var m = PatchMetaStore.get(forLocal: key) {
             m.tag = tag; m.tagOverride = true
-            PatchMetaStore.set(m, forMatchKey: mk)
+            PatchMetaStore.set(m, forLocal: key)
         } else {
             let newMeta = PatchMeta(
-                remoteName: localKey(for: item),
-                matchKey: mk, folder: folderName(for: item),
+                remoteName: key, slug: Slug.make(key),
+                folder: folderName(for: item),
                 tag: tag, displayName: displayName(for: item),
                 note: currentNote(for: item), tagOverride: true
             )
-            PatchMetaStore.set(newMeta, forMatchKey: mk)
+            PatchMetaStore.set(newMeta, forLocal: key)
         }
         store.reload()
         tagPickerItem = nil
@@ -1070,18 +1106,18 @@ struct PatchGameDetailView: View {
     private func commitNote() {
         guard let item = noteItem else { return }
         let t = noteText.trimmingCharacters(in: .whitespacesAndNewlines)
-        let mk = matchKey(for: item)
-        if var m = PatchMetaStore.get(matchKey: mk) {
+        let key = localKey(for: item)
+        if var m = PatchMetaStore.get(forLocal: key) {
             m.note = t; m.noteOverride = true
-            PatchMetaStore.set(m, forMatchKey: mk)
+            PatchMetaStore.set(m, forLocal: key)
         } else {
             let newMeta = PatchMeta(
-                remoteName: localKey(for: item),
-                matchKey: mk, folder: folderName(for: item),
+                remoteName: key, slug: Slug.make(key),
+                folder: folderName(for: item),
                 tag: currentTag(for: item), displayName: displayName(for: item),
                 note: t, noteOverride: true
             )
-            PatchMetaStore.set(newMeta, forMatchKey: mk)
+            PatchMetaStore.set(newMeta, forLocal: key)
         }
         store.reload()
         noteItem = nil
@@ -1147,8 +1183,7 @@ struct PatchUnlockView: View {
                         .onChange(of: password) { _ in store.clearUnlockError() }
                     if let errorKey = store.unlockErrorKey {
                         Text(errorText(errorKey))
-                            .font(.footnote)
-                            .foregroundStyle(.red)
+                            .font(.footnote).foregroundStyle(.red)
                     }
                 }
             }
