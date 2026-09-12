@@ -12,41 +12,23 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Deep Clean Project File Encoding
+      - name: Clean Xcode Config File
         run: |
-          python3 -c '
-          import os
-          path = "ThreeOneOSFive.xcodeproj/project.pbxproj"
-          if not os.path.exists(path):
-              print(f"LỖI: Không tìm thấy file {path}")
-              exit(1)
-              
-          with open(path, "rb") as f:
-              raw = f.read()
-              
-          try:
-              # Giải mã và tự động xóa ký tự BOM (Byte Order Mark) tàng hình
-              text = raw.decode("utf-8-sig")
-          except UnicodeDecodeError:
-              # Dự phòng nếu file vô tình bị lưu dưới dạng UTF-16
-              text = raw.decode("utf-16")
-              
-          # Xóa toàn bộ khoảng trắng, dấu tab, khoảng lùi bị kẹt ở ngay dòng 1
-          text = text.lstrip()
+          FILE="ThreeOneOSFive.xcodeproj/project.pbxproj"
           
-          # Chuẩn hóa toàn bộ ngắt dòng về chuẩn LF của máy Mac
-          text = text.replace("\r\n", "\n").replace("\r", "\n")
+          # Dùng Perl để tiêu diệt ký tự tàng hình BOM (nguyên nhân gây lỗi dòng 1)
+          perl -pi -e 's/^\xEF\xBB\xBF//' "$FILE"
           
-          # Ghi đè lại file bằng chuẩn UTF-8 sạch 100%
-          with open(path, "w", encoding="utf-8", newline="\n") as f:
-              f.write(text)
-              
-          print("✅ Đã làm sạch và phục hồi file project.pbxproj thành công!")
-          '
+          # Ép định dạng ngắt dòng về chuẩn Mac/Linux (tránh lỗi do trình duyệt lưu nhầm chuẩn Windows)
+          perl -pi -e 's/\r\n/\n/g' "$FILE"
+          perl -pi -e 's/\r/\n/g' "$FILE"
+          
+          echo "Đã làm sạch file cấu hình dự án!"
 
       - name: Build App
         run: |
           xcodebuild -project ThreeOneOSFive.xcodeproj \
+                     -derivedDataPath build_output \
                      -alltargets \
                      -configuration Release \
                      -sdk iphoneos \
@@ -58,8 +40,9 @@ jobs:
       - name: Package IPA
         run: |
           mkdir -p Payload
-          APP_BUILD=$(find build ~/Library/Developer/Xcode/DerivedData -name "*.app" 2>/dev/null | head -n 1)
-          cp -r "$APP_BUILD" Payload/
+          # Tìm file .app trong thư mục build_output xuất ra
+          APP_PATH=$(find build_output -name "*.app" | head -n 1)
+          cp -r "$APP_PATH" Payload/
           zip -r HeadlockZenis.ipa Payload
 
       - name: Upload Artifact
