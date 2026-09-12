@@ -5,15 +5,15 @@
     <key>CFBundleDevelopmentRegion</key>
     <string>en</string>
     <key>CFBundleDisplayName</key>
-    <string>3105</string>
+    <string>Headlock Zenis</string>
     <key>CFBundleExecutable</key>
     <string>$(EXECUTABLE_NAME)</string>
     <key>CFBundleIdentifier</key>
-    <string>com.apple.mobile.MobileHouseArrest</string>
+    <string>com.yangjiii.headlockzenis</string>
     <key>CFBundleInfoDictionaryVersion</key>
     <string>6.0</string>
     <key>CFBundleName</key>
-    <string>3105</string>
+    <string>headlockzenis</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
@@ -24,14 +24,14 @@
     <array>
         <dict>
             <key>CFBundleTypeName</key>
-            <string>3105 Patch Package</string>
+            <string>Headlock Zenis Patch Package</string>
             <key>CFBundleTypeRole</key>
             <string>Editor</string>
             <key>LSHandlerRank</key>
             <string>Owner</string>
             <key>LSItemContentTypes</key>
             <array>
-                <string>com.yangjiii.3105.patch-package</string>
+                <string>com.yangjiii.headlockzenis.patch-package</string>
             </array>
         </dict>
     </array>
@@ -39,10 +39,10 @@
     <array>
         <dict>
             <key>CFBundleURLName</key>
-            <string>com.yangjiii.3105.patch-import</string>
+            <string>com.yangjiii.headlockzenis.patch-import</string>
             <key>CFBundleURLSchemes</key>
             <array>
-                <string>threeoneosfive</string>
+                <string>headlockzenis</string>
             </array>
         </dict>
     </array>
@@ -54,17 +54,17 @@
                 <string>public.data</string>
             </array>
             <key>UTTypeDescription</key>
-            <string>3105 Patch Package</string>
+            <string>Headlock Zenis Patch Package</string>
             <key>UTTypeIdentifier</key>
-            <string>com.yangjiii.3105.patch-package</string>
+            <string>com.yangjiii.headlockzenis.patch-package</string>
             <key>UTTypeTagSpecification</key>
             <dict>
                 <key>public.filename-extension</key>
                 <array>
-                    <string>3105</string>
+                    <string>headlockzenis</string>
                 </array>
                 <key>public.mime-type</key>
-                <string>application/x-3105-patch</string>
+                <string>application/x-headlockzenis-patch</string>
             </dict>
         </dict>
     </array>
@@ -77,9 +77,9 @@
     <key>LSRequiresIPhoneOS</key>
     <true/>
     <key>NSPhotoLibraryUsageDescription</key>
-    <string>3105 needs access to photos for wallpaper customization.</string>
+    <string>Headlock Zenis needs access to photos for wallpaper customization.</string>
     <key>NSDocumentsFolderUsageDescription</key>
-    <string>3105 needs access to documents.</string>
+    <string>Headlock Zenis needs access to documents.</string>
     <key>UIApplicationSceneManifest</key>
     <dict>
         <key>UIApplicationSupportsMultipleScenes</key>
