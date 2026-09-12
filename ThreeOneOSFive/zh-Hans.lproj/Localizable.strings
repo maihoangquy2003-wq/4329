@@ -666,4 +666,4 @@
 "settings.developer_mode" = "开发者模式";
 "settings.developer_mode_footer" = "开发者模式会在主导航中添加“文件”。“文件”可以浏览和修改应用容器。";
 "wallpaper.package_details" = "软件包详情";
-"wallpaper.package_files" = "%lld 个文件"
+"wallpaper.package_files" = "%lld 个文件";
