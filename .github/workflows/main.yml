@@ -1,4 +1,4 @@
-name: Build IPA
+name: Headlock Zenis
 
 on:
   push:
@@ -12,8 +12,16 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Show Project Structure & Debug Info
+        run: |
+          echo "=== Kiểm tra danh sách thư mục hiện tại ==="
+          ls -la
+          echo "=== Kiểm tra file .xcodeproj ==="
+          ls -la ThreeOneOSFive.xcodeproj || true
+
       - name: Build App
         run: |
+          set -o pipefail
           xcodebuild -project ThreeOneOSFive.xcodeproj \
                      -alltargets \
                      -configuration Release \
@@ -21,17 +29,32 @@ jobs:
                      CODE_SIGN_IDENTITY="" \
                      CODE_SIGNING_REQUIRED=NO \
                      CODE_SIGNING_ALLOWED=NO \
-                     build
+                     build 2>&1 | tee xcode_build_output.log
 
       - name: Package IPA
         run: |
           mkdir -p Payload
-          APP_BUILD=$(find build ~/Library/Developer/Xcode/DerivedData -name "*.app" 2>/dev/null | head -n 1)
-          cp -r "$APP_BUILD" Payload/
-          zip -r ThreeOneOSFive.ipa Payload
+          echo "=== Tìm kiếm file .app được build ra ==="
+          APP_PATH=$(find build/Release-iphoneos -maxdepth 1 -name "*.app" | head -n 1)
+          
+          if [ -z "$APP_PATH" ]; then
+            echo "LỖI: Không tìm thấy file .app nào trong thư mục build!"
+            exit 1
+          fi
+          
+          echo "Đã tìm thấy app tại: $APP_PATH"
+          cp -r "$APP_PATH" Payload/
+          zip -r HeadlockZenis.ipa Payload
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ThreeOneOSFive-IPA
-          path: ThreeOneOSFive.ipa
+          name: HeadlockZenis-IPA
+          path: HeadlockZenis.ipa
+
+      - name: Upload Build Logs on Failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: xcode-error-logs
+          path: xcode_build_output.log
