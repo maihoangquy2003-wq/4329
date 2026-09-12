@@ -15,9 +15,7 @@ jobs:
       - name: Recreate Clean Project File
         run: |
           PBX_PATH="ThreeOneOSFive.xcodeproj/project.pbxproj"
-          echo "Đang khởi tạo lại file project.pbxproj chuẩn sạch từ đầu..."
-          
-          # Ghi đè trực tiếp toàn bộ nội dung chuẩn bằng Python hoặc lệnh cat để loại bỏ hoàn toàn mọi ký tự ẩn/BOM rác từ git
+          echo "Đang khởi tạo lại file project.pbxproj chuẩn sạch..."
           cat << 'EOF' > "$PBX_PATH"
 // !$*UTF8*$*
 {
@@ -683,7 +681,7 @@ jobs:
 	rootObject = 3105A900;
 }
 EOF
-          echo "Đã tạo lại file pbxproj hoàn toàn mới và sạch chuẩn!"
+          echo "Đã tạo lại file thành công!"
 
       - name: Build App
         run: |
