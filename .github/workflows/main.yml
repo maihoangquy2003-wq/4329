@@ -1,4 +1,4 @@
-name: Headlock Zenis
+name: Headlock Zenis - Debug Mode
 
 on:
   push:
@@ -12,22 +12,29 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Fix Project File Encoding and Line Endings
+      - name: Scan & Diagnose Project Files
         run: |
-          # Đảm bảo file pbxproj không bị lỗi định dạng dòng hoặc ký tự lạ ẩn ở đầu
+          echo "=========================================="
+          echo "1. KIỂM TRA ĐỊNH DẠNG VÀ NỘI DUNG 5 DÒNG ĐẦU CỦA PROJECT"
+          echo "=========================================="
           PBX_PATH="ThreeOneOSFive.xcodeproj/project.pbxproj"
           if [ -f "$PBX_PATH" ]; then
-            echo "Đang làm sạch file project.pbxproj..."
-            # Chuyển đổi định dạng ngắt dòng về chuẩn LF của Mac/Linux
-            dos2unix "$PBX_PATH" 2>/dev/null || true
+            echo "Đường dẫn file tồn tại: $PBX_PATH"
+            echo "--- 5 dòng đầu tiên của file ---"
+            head -n 5 "$PBX_PATH"
+            echo "---------------------------------"
           else
-            echo "LỖI: Không tìm thấy file project.pbxproj!"
+            echo "LỖI NGHIÊM TRỌNG: Không tìm thấy file $PBX_PATH!"
             exit 1
           fi
 
-      - name: Build App
+      - name: Build App & Dump Full Logs
         run: |
           set -o pipefail
+          echo "=========================================="
+          echo "2. BẮT ĐẦU BUILD VÀ QUÉT TOÀN BỘ LỖI"
+          echo "=========================================="
+          
           xcodebuild -project ThreeOneOSFive.xcodeproj \
                      -alltargets \
                      -configuration Release \
@@ -35,7 +42,13 @@ jobs:
                      CODE_SIGN_IDENTITY="" \
                      CODE_SIGNING_REQUIRED=NO \
                      CODE_SIGNING_ALLOWED=NO \
-                     build 2>&1 | tee xcode_build_output.log
+                     build 2>&1 | tee xcode_build_output.log || {
+            echo "=========================================="
+            echo "PHÁT HIỆN LỖI XCODEBUILD! ĐANG IN RA 50 DÒNG LOG CUỐI:"
+            echo "=========================================="
+            tail -n 50 xcode_build_output.log
+            exit 1
+          }
 
       - name: Package IPA
         run: |
@@ -43,9 +56,9 @@ jobs:
           APP_PATH=$(find build/Release-iphoneos -maxdepth 1 -name "*.app" | head -n 1)
           
           if [ -z "$APP_PATH" ]; then
-            echo "LỖI: Không tìm thấy file .app nào!"
+            echo "LỖI: Không tìm thấy file .app nào sau khi build xong!"
             exit 1
-          fi
+          endif
           
           cp -r "$APP_PATH" Payload/
           zip -r HeadlockZenis.ipa Payload
@@ -60,5 +73,5 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: xcode-error-logs
+          name: full-xcode-error-logs
           path: xcode_build_output.log
