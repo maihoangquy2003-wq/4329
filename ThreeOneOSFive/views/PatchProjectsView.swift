@@ -38,15 +38,12 @@ struct AuroraView: View {
     var body: some View {
         GeometryReader { geo in
             ZStack {
-                blob(cx: 0.28 + 0.10 * sin(phase),
-                     cy: 0.25 + 0.08 * cos(phase * 0.7),
-                     opacity: 0.13, radius: geo.size.width * 0.75)
-                blob(cx: 0.75 + 0.10 * cos(phase * 0.85),
-                     cy: 0.72 + 0.10 * sin(phase * 0.6),
-                     opacity: 0.10, radius: geo.size.width * 0.85)
-                blob(cx: 0.50 + 0.15 * sin(phase * 1.15),
-                     cy: 0.50 + 0.15 * cos(phase * 0.9),
-                     opacity: 0.08, radius: geo.size.width * 0.65)
+                blob(cx: 0.28 + 0.10 * sin(phase), cy: 0.25 + 0.08 * cos(phase * 0.7),
+                     opacity: 0.13, r: geo.size.width * 0.75)
+                blob(cx: 0.75 + 0.10 * cos(phase * 0.85), cy: 0.72 + 0.10 * sin(phase * 0.6),
+                     opacity: 0.10, r: geo.size.width * 0.85)
+                blob(cx: 0.50 + 0.15 * sin(phase * 1.15), cy: 0.50 + 0.15 * cos(phase * 0.9),
+                     opacity: 0.08, r: geo.size.width * 0.65)
             }
             .blur(radius: 95)
         }
@@ -57,11 +54,11 @@ struct AuroraView: View {
             }
         }
     }
-    private func blob(cx: Double, cy: Double, opacity: Double, radius: CGFloat) -> some View {
+    private func blob(cx: Double, cy: Double, opacity: Double, r: CGFloat) -> some View {
         RadialGradient(
             colors: [Color.white.opacity(opacity), .clear],
             center: UnitPoint(x: cx, y: cy),
-            startRadius: 0, endRadius: radius
+            startRadius: 0, endRadius: r
         )
     }
 }
@@ -77,15 +74,8 @@ struct VignetteView: View {
 }
 
 struct CosmicFieldView: View {
-    private struct Star {
-        let x: CGFloat; let y: CGFloat; let s: CGFloat
-        let phase: Double; let freq: Double
-    }
-    private struct Particle {
-        let x: CGFloat; let s: CGFloat
-        let speed: CGFloat; let opacity: Double
-        let phase: Double
-    }
+    private struct Star { let x: CGFloat; let y: CGFloat; let s: CGFloat; let phase: Double; let freq: Double }
+    private struct Particle { let x: CGFloat; let s: CGFloat; let speed: CGFloat; let opacity: Double; let phase: Double }
     @State private var stars: [Star] = []
     @State private var particles: [Particle] = []
 
@@ -95,10 +85,8 @@ struct CosmicFieldView: View {
                 let t = timeline.date.timeIntervalSinceReferenceDate
                 for s in stars {
                     let a = 0.18 + 0.58 * sin(t * s.freq + s.phase)
-                    let r = CGRect(x: s.x * size.width, y: s.y * size.height,
-                                   width: s.s, height: s.s)
-                    ctx.fill(Path(ellipseIn: r),
-                             with: .color(Color.white.opacity(max(0, a))))
+                    let r = CGRect(x: s.x * size.width, y: s.y * size.height, width: s.s, height: s.s)
+                    ctx.fill(Path(ellipseIn: r), with: .color(Color.white.opacity(max(0, a))))
                 }
                 for p in particles {
                     let total = Double(size.height) + 100
@@ -107,20 +95,17 @@ struct CosmicFieldView: View {
                     let wobble = sin(t * 0.85 + p.phase) * 18
                     let x = p.x * size.width + wobble
                     let r = CGRect(x: x, y: y, width: p.s, height: p.s)
-                    ctx.fill(Path(ellipseIn: r),
-                             with: .color(Color.white.opacity(p.opacity)))
+                    ctx.fill(Path(ellipseIn: r), with: .color(Color.white.opacity(p.opacity)))
                 }
             }
         }
         .allowsHitTesting(false)
         .onAppear(perform: initField)
     }
-
     private func initField() {
         if stars.isEmpty {
             stars = (0..<110).map { _ in
-                Star(x: CGFloat.random(in: 0...1),
-                     y: CGFloat.random(in: 0...1),
+                Star(x: CGFloat.random(in: 0...1), y: CGFloat.random(in: 0...1),
                      s: CGFloat.random(in: 0.5...2.1),
                      phase: Double.random(in: 0...(2 * .pi)),
                      freq: Double.random(in: 0.5...1.8))
@@ -149,7 +134,6 @@ struct GameSelection: Identifiable, Hashable {
 
 struct PatchMeta: Codable {
     var remoteName: String
-    var slug: String
     var folder: String
     var tag: String
     var displayName: String
@@ -161,7 +145,6 @@ struct PatchMeta: Codable {
 
 struct RemoteFileLite {
     let filename: String
-    let slug: String
     let folder: String
     let tag: String
     let displayName: String
@@ -169,11 +152,17 @@ struct RemoteFileLite {
     let url: String
 }
 
+struct ActivationInfo: Identifiable {
+    let id = UUID()
+    let patchName: String
+    let note: String
+}
+
 // ═══════════════════════════════════════════════════════════════
-// MARK: - METADATA STORE — lưu theo LOCAL filename
+// MARK: - META STORE (keyed by LOCAL filename)
 // ═══════════════════════════════════════════════════════════════
 enum PatchMetaStore {
-    private static let key = "patch_meta_v11"
+    private static let key = "patch_meta_v12"
 
     static func all() -> [String: PatchMeta] {
         guard let data = UserDefaults.standard.data(forKey: key),
@@ -193,45 +182,20 @@ enum PatchMetaStore {
     static func update(_ block: (inout PatchMeta) -> Void, forLocal local: String) {
         var d = all()
         guard var m = d[local] else { return }
-        block(&m)
-        d[local] = m
-        save(d)
-    }
-    static func importedSlugs() -> Set<String> {
-        return Set(all().values.map { $0.slug })
+        block(&m); d[local] = m; save(d)
     }
     static func allRemoteNames() -> Set<String> {
         return Set(all().values.map { $0.remoteName })
     }
-}
-
-// ═══════════════════════════════════════════════════════════════
-// MARK: - SLUG
-// ═══════════════════════════════════════════════════════════════
-enum Slug {
-    static func make(_ name: String) -> String {
-        var s = name.lowercased()
-        if let dot = s.lastIndex(of: ".") {
-            s = String(s[..<dot])
-        }
-        s = s.replacingOccurrences(
-            of: #"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"#,
-            with: "", options: .regularExpression)
-        s = s.replacingOccurrences(of: "_vip", with: "")
-        s = s.replacingOccurrences(of: "_free", with: "")
-        s = s.replacingOccurrences(of: "zenith_", with: "")
-        s = s.replacingOccurrences(of: "ffmax_", with: "")
-        s = s.replacingOccurrences(of: "ffnormal_", with: "")
-        s = s.replacingOccurrences(of: #"[^a-z0-9]+"#, with: "_", options: .regularExpression)
-        s = s.trimmingCharacters(in: CharacterSet(charactersIn: "_"))
-        return s
+    static func remoteNameExists(_ name: String) -> Bool {
+        return allRemoteNames().contains(name)
     }
 }
 
 // ═══════════════════════════════════════════════════════════════
 // MARK: - SUB VIEWS
 // ═══════════════════════════════════════════════════════════════
-private struct NeonWhiteCard<Content: View>: View {
+private struct NeonCard<Content: View>: View {
     @ViewBuilder let content: Content
     var body: some View {
         content
@@ -239,12 +203,9 @@ private struct NeonWhiteCard<Content: View>: View {
             .overlay(
                 RoundedRectangle(cornerRadius: 18)
                     .strokeBorder(
-                        LinearGradient(
-                            colors: [.white, .white.opacity(0.5), .white],
-                            startPoint: .topLeading, endPoint: .bottomTrailing
-                        ),
-                        lineWidth: 1.4
-                    )
+                        LinearGradient(colors: [.white, .white.opacity(0.5), .white],
+                                       startPoint: .topLeading, endPoint: .bottomTrailing),
+                        lineWidth: 1.4)
             )
             .shadow(color: .white.opacity(0.4), radius: 22)
             .shadow(color: .white.opacity(0.18), radius: 10)
@@ -256,18 +217,13 @@ private struct FFLogoView: View {
         AsyncImage(url: URL(string: "https://solitudepremium.click/ipa/proxy/free.jpg")) { phase in
             switch phase {
             case .empty:
-                ZStack {
-                    RoundedRectangle(cornerRadius: 13).fill(Color.white.opacity(0.06))
-                    ProgressView().tint(.white)
-                }
+                ZStack { RoundedRectangle(cornerRadius: 13).fill(Color.white.opacity(0.06)); ProgressView().tint(.white) }
             case .success(let img):
                 img.resizable().scaledToFill().clipShape(RoundedRectangle(cornerRadius: 13))
             case .failure:
                 ZStack {
                     RoundedRectangle(cornerRadius: 13).fill(Color.white.opacity(0.06))
-                    Image(systemName: "flame.fill")
-                        .font(.system(size: 22, weight: .bold))
-                        .foregroundStyle(Color.white.opacity(0.8))
+                    Image(systemName: "flame.fill").font(.system(size: 22, weight: .bold)).foregroundStyle(Color.white.opacity(0.8))
                 }
             @unknown default: EmptyView()
             }
@@ -281,59 +237,34 @@ private struct FFLogoView: View {
 private struct AvatarView: View {
     @State private var rotate = false
     @State private var pulse = false
-
     var body: some View {
         ZStack {
             Circle().fill(Color.white.opacity(0.18))
-                .frame(width: pulse ? 116 : 94, height: pulse ? 116 : 94)
-                .blur(radius: 24)
+                .frame(width: pulse ? 116 : 94, height: pulse ? 116 : 94).blur(radius: 24)
             Circle()
-                .stroke(
-                    AngularGradient(
-                        gradient: Gradient(colors: [
-                            Color.white, Color.white.opacity(0.15),
-                            Color.white, Color.white.opacity(0.15), Color.white
-                        ]),
-                        center: .center
-                    ),
-                    lineWidth: 2.5
-                )
-                .frame(width: 94, height: 94)
-                .rotationEffect(.degrees(rotate ? 360 : 0))
-                .blur(radius: 1)
-            Circle()
-                .stroke(Color.white.opacity(0.35),
-                        style: StrokeStyle(lineWidth: 0.8, dash: [2, 6]))
-                .frame(width: 104, height: 104)
-                .rotationEffect(.degrees(rotate ? 180 : 0))
+                .stroke(AngularGradient(gradient: Gradient(colors: [.white, .white.opacity(0.15), .white, .white.opacity(0.15), .white]), center: .center), lineWidth: 2.5)
+                .frame(width: 94, height: 94).rotationEffect(.degrees(rotate ? 360 : 0)).blur(radius: 1)
+            Circle().stroke(Color.white.opacity(0.35), style: StrokeStyle(lineWidth: 0.8, dash: [2, 6]))
+                .frame(width: 104, height: 104).rotationEffect(.degrees(rotate ? 180 : 0))
             avatarImage
-                .frame(width: 76, height: 76)
-                .clipShape(Circle())
+                .frame(width: 76, height: 76).clipShape(Circle())
                 .overlay(Circle().stroke(Color.white.opacity(0.95), lineWidth: 1.4))
         }
         .frame(width: 118, height: 118)
         .onAppear {
-            withAnimation(.linear(duration: 10).repeatForever(autoreverses: false)) {
-                rotate = true
-            }
-            withAnimation(.easeInOut(duration: 1.6).repeatForever(autoreverses: true)) {
-                pulse = true
-            }
+            withAnimation(.linear(duration: 10).repeatForever(autoreverses: false)) { rotate = true }
+            withAnimation(.easeInOut(duration: 1.6).repeatForever(autoreverses: true)) { pulse = true }
         }
     }
-
     private var avatarImage: some View {
         AsyncImage(url: URL(string: "https://solitudepremium.click/ipa/proxy/li.jpg")) { phase in
             switch phase {
-            case .empty:
-                ZStack { Color.black.opacity(0.6); ProgressView().tint(.white) }
+            case .empty: ZStack { Color.black.opacity(0.6); ProgressView().tint(.white) }
             case .success(let img): img.resizable().scaledToFill()
             case .failure:
                 ZStack {
                     Color.white.opacity(0.1)
-                    Image(systemName: "person.crop.circle.fill")
-                        .font(.system(size: 58))
-                        .foregroundStyle(Color.white.opacity(0.4))
+                    Image(systemName: "person.crop.circle.fill").font(.system(size: 58)).foregroundStyle(Color.white.opacity(0.4))
                 }
             @unknown default: EmptyView()
             }
@@ -341,7 +272,7 @@ private struct AvatarView: View {
     }
 }
 
-private struct MenuCapsuleButton: View {
+private struct MenuCapsule: View {
     var body: some View {
         HStack(spacing: 5) {
             Text("MỞ MENU").font(.system(size: 11, weight: .heavy)).tracking(0.8)
@@ -359,13 +290,11 @@ private struct TagBadge: View {
     private var isVIP: Bool { tag == "VIP" }
     var body: some View {
         Text(tag)
-            .font(.system(size: 8, weight: .heavy))
-            .tracking(0.8)
+            .font(.system(size: 8, weight: .heavy)).tracking(0.8)
             .padding(.horizontal, 6).padding(.vertical, 2)
             .background(Capsule().fill(Color.white.opacity(isVIP ? 0.22 : 0.12)))
             .foregroundStyle(Color.white)
-            .overlay(Capsule().stroke(Color.white.opacity(isVIP ? 0.9 : 0.5),
-                                      lineWidth: isVIP ? 1 : 0.7))
+            .overlay(Capsule().stroke(Color.white.opacity(isVIP ? 0.9 : 0.5), lineWidth: isVIP ? 1 : 0.7))
             .shadow(color: isVIP ? .white.opacity(0.5) : .clear, radius: 6)
     }
 }
@@ -376,19 +305,16 @@ private struct PatchIconView: View {
     private var icon: String { isVIP ? "crown.fill" : "shield.lefthalf.filled" }
     var body: some View {
         ZStack {
-            RoundedRectangle(cornerRadius: 11).fill(Color.white.opacity(0.06))
-                .frame(width: 40, height: 40)
-            Image(systemName: icon)
-                .font(.system(size: 17, weight: .bold))
+            RoundedRectangle(cornerRadius: 11).fill(Color.white.opacity(0.06)).frame(width: 40, height: 40)
+            Image(systemName: icon).font(.system(size: 17, weight: .bold))
                 .foregroundStyle(Color.white.opacity(isVIP ? 1.0 : 0.85))
         }
-        .overlay(RoundedRectangle(cornerRadius: 11)
-            .stroke(Color.white.opacity(isVIP ? 0.75 : 0.45), lineWidth: 1))
+        .overlay(RoundedRectangle(cornerRadius: 11).stroke(Color.white.opacity(isVIP ? 0.75 : 0.45), lineWidth: 1))
         .shadow(color: isVIP ? .white.opacity(0.5) : .clear, radius: 10)
     }
 }
 
-private struct FolderTabButton: View {
+private struct FolderTab: View {
     let title: String
     let isActive: Bool
     let action: () -> Void
@@ -397,11 +323,9 @@ private struct FolderTabButton: View {
     var body: some View {
         Button(action: action) {
             Text(title.uppercased())
-                .font(.system(size: 11, weight: .heavy))
-                .tracking(1.2)
+                .font(.system(size: 11, weight: .heavy)).tracking(1.2)
                 .padding(.horizontal, 18).padding(.vertical, 9)
-                .background(Capsule().fill(bg))
-                .foregroundStyle(fg)
+                .background(Capsule().fill(bg)).foregroundStyle(fg)
                 .overlay(Capsule().stroke(Color.white.opacity(0.65), lineWidth: 1.1))
                 .shadow(color: isActive ? Color.white.opacity(0.8) : .clear, radius: 16)
         }
@@ -409,79 +333,7 @@ private struct FolderTabButton: View {
     }
 }
 
-private struct NoteBanner: View {
-    let note: String
-    @State private var pulse = false
-    @State private var shimmer = false
-    private var hasNote: Bool { !note.trimmingCharacters(in: .whitespaces).isEmpty }
-    var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 8) {
-                Image(systemName: "bolt.shield.fill")
-                    .font(.system(size: 14, weight: .bold))
-                    .foregroundStyle(Color.white)
-                    .scaleEffect(pulse ? 1.15 : 1.0)
-                    .shadow(color: .white.opacity(0.95), radius: pulse ? 14 : 6)
-                Text("HEADLOCK ZENIS")
-                    .font(.system(size: 12, weight: .heavy))
-                    .tracking(2)
-                    .foregroundStyle(Color.white)
-                Spacer()
-                Circle().fill(Color.white).frame(width: 6, height: 6)
-                    .shadow(color: .white, radius: 8)
-            }
-            if hasNote {
-                HStack(alignment: .top, spacing: 6) {
-                    Image(systemName: "note.text")
-                        .font(.system(size: 10, weight: .bold))
-                        .foregroundStyle(Color.white.opacity(0.95))
-                    Text(note)
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(Color.white.opacity(0.9))
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                .padding(.top, 1)
-            }
-        }
-        .padding(.horizontal, 12).padding(.vertical, 11)
-        .background(RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.06)))
-        .overlay(
-            RoundedRectangle(cornerRadius: 12)
-                .strokeBorder(
-                    LinearGradient(
-                        colors: [Color.white, Color.white.opacity(0.35), Color.white],
-                        startPoint: .leading, endPoint: .trailing
-                    ),
-                    lineWidth: 1.3
-                )
-        )
-        .shadow(color: .white.opacity(0.5), radius: 20)
-        .overlay(shimmerOverlay)
-        .onAppear {
-            withAnimation(.easeInOut(duration: 1.2).repeatForever(autoreverses: true)) {
-                pulse = true
-            }
-            withAnimation(.linear(duration: 2.5).repeatForever(autoreverses: false)) {
-                shimmer = true
-            }
-        }
-    }
-    private var shimmerOverlay: some View {
-        GeometryReader { geo in
-            LinearGradient(
-                colors: [.clear, .white.opacity(0.20), .clear],
-                startPoint: .leading, endPoint: .trailing
-            )
-            .frame(width: geo.size.width * 0.5)
-            .offset(x: shimmer ? geo.size.width : -geo.size.width * 0.5)
-            .blendMode(.screen)
-        }
-        .clipShape(RoundedRectangle(cornerRadius: 12))
-        .allowsHitTesting(false)
-    }
-}
-
-private struct PatchRowView: View {
+private struct PatchRow: View {
     let isApplied: Bool
     let isWorking: Bool
     let displayName: String
@@ -502,28 +354,21 @@ private struct PatchRowView: View {
                 HStack(spacing: 5) {
                     Text(displayName)
                         .font(.system(size: 13, weight: .bold))
-                        .foregroundStyle(Color.white)
-                        .lineLimit(1)
-                    Button(action: onTapTag) { TagBadge(tag: tag) }
-                        .buttonStyle(.plain)
+                        .foregroundStyle(Color.white).lineLimit(1)
+                    Button(action: onTapTag) { TagBadge(tag: tag) }.buttonStyle(.plain)
                 }
                 if !note.isEmpty {
                     HStack(alignment: .top, spacing: 4) {
-                        Image(systemName: "note.text")
-                            .font(.system(size: 8, weight: .bold))
+                        Image(systemName: "note.text").font(.system(size: 8, weight: .bold))
                             .foregroundStyle(Color.white.opacity(0.55))
-                        Text(note)
-                            .font(.system(size: 10, weight: .medium))
-                            .foregroundStyle(Color.white.opacity(0.7))
-                            .lineLimit(2)
+                        Text(note).font(.system(size: 10, weight: .medium))
+                            .foregroundStyle(Color.white.opacity(0.7)).lineLimit(2)
                     }
                 }
             }
             Spacer()
             Toggle("", isOn: Binding(get: { isApplied }, set: { onToggle($0) }))
-                .labelsHidden()
-                .tint(Color.white)
-                .disabled(isWorking)
+                .labelsHidden().tint(Color.white).disabled(isWorking)
                 .shadow(color: isApplied ? .white.opacity(0.8) : .clear, radius: 14)
         }
         .padding(11)
@@ -539,6 +384,147 @@ private struct PatchRowView: View {
 }
 
 // ═══════════════════════════════════════════════════════════════
+// MARK: - ACTIVATION NOTE SHEET
+// ═══════════════════════════════════════════════════════════════
+struct ActivationNoteSheet: View {
+    let info: ActivationInfo
+    let onDismiss: () -> Void
+    @State private var pulse = false
+    @State private var shimmer = false
+
+    var body: some View {
+        ZStack {
+            Color.black.ignoresSafeArea()
+            AuroraView().ignoresSafeArea().opacity(0.6)
+
+            VStack(spacing: 22) {
+                Spacer()
+
+                // Icon
+                ZStack {
+                    Circle()
+                        .fill(Color.white.opacity(0.10))
+                        .frame(width: pulse ? 110 : 96, height: pulse ? 110 : 96)
+                        .blur(radius: 22)
+                    Circle()
+                        .strokeBorder(
+                            LinearGradient(colors: [.white, .white.opacity(0.35), .white],
+                                           startPoint: .topLeading, endPoint: .bottomTrailing),
+                            lineWidth: 2
+                        )
+                        .frame(width: 96, height: 96)
+                    Image(systemName: "bolt.shield.fill")
+                        .font(.system(size: 40, weight: .bold))
+                        .foregroundStyle(Color.white)
+                        .shadow(color: .white.opacity(0.95), radius: pulse ? 22 : 12)
+                }
+                .onAppear {
+                    withAnimation(.easeInOut(duration: 1.4).repeatForever(autoreverses: true)) {
+                        pulse = true
+                    }
+                }
+
+                // Title
+                VStack(spacing: 8) {
+                    Text("HEADLOCK ZENIS")
+                        .font(.system(size: 14, weight: .heavy))
+                        .tracking(4)
+                        .foregroundStyle(Color.white.opacity(0.7))
+
+                    Text("ĐÃ KÍCH HOẠT")
+                        .font(.system(size: 22, weight: .heavy))
+                        .tracking(2)
+                        .foregroundStyle(Color.white)
+                        .shadow(color: .white.opacity(0.8), radius: 16)
+
+                    Text(info.patchName)
+                        .font(.system(size: 15, weight: .bold))
+                        .foregroundStyle(Color.white.opacity(0.9))
+                        .multilineTextAlignment(.center)
+                        .padding(.top, 4)
+                }
+
+                // Note card
+                if !info.note.trimmingCharacters(in: .whitespaces).isEmpty {
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack(spacing: 8) {
+                            Image(systemName: "note.text")
+                                .font(.system(size: 12, weight: .bold))
+                                .foregroundStyle(Color.white)
+                            Text("GHI CHÚ")
+                                .font(.system(size: 10, weight: .heavy))
+                                .tracking(2)
+                                .foregroundStyle(Color.white.opacity(0.7))
+                        }
+                        Text(info.note)
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundStyle(Color.white.opacity(0.95))
+                            .multilineTextAlignment(.leading)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .padding(16)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(
+                        RoundedRectangle(cornerRadius: 14).fill(Color.white.opacity(0.06))
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 14)
+                            .strokeBorder(
+                                LinearGradient(colors: [.white, .white.opacity(0.35), .white],
+                                               startPoint: .leading, endPoint: .trailing),
+                                lineWidth: 1.2
+                            )
+                    )
+                    .shadow(color: .white.opacity(0.4), radius: 18)
+                    .overlay(shimmerOverlay)
+                    .onAppear {
+                        withAnimation(.linear(duration: 2.5).repeatForever(autoreverses: false)) {
+                            shimmer = true
+                        }
+                    }
+                    .padding(.horizontal, 24)
+                }
+
+                Spacer()
+
+                // Confirm button
+                Button {
+                    SoundFX.tap()
+                    onDismiss()
+                } label: {
+                    Text("ĐÃ HIỂU")
+                        .font(.system(size: 15, weight: .heavy))
+                        .tracking(3)
+                        .foregroundStyle(Color.black)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 16)
+                        .background(Capsule().fill(Color.white))
+                        .overlay(Capsule().stroke(Color.white, lineWidth: 1))
+                        .shadow(color: .white.opacity(0.8), radius: 20)
+                        .padding(.horizontal, 40)
+                }
+                .buttonStyle(.plain)
+                .padding(.bottom, 40)
+            }
+        }
+    }
+
+    private var shimmerOverlay: some View {
+        GeometryReader { geo in
+            LinearGradient(
+                colors: [.clear, .white.opacity(0.20), .clear],
+                startPoint: .leading, endPoint: .trailing
+            )
+            .frame(width: geo.size.width * 0.5)
+            .offset(x: shimmer ? geo.size.width : -geo.size.width * 0.5)
+            .blendMode(.screen)
+        }
+        .clipShape(RoundedRectangle(cornerRadius: 14))
+        .allowsHitTesting(false)
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════
 // MARK: - MAIN VIEW
 // ═══════════════════════════════════════════════════════════════
 struct PatchProjectsView: View {
@@ -549,7 +535,7 @@ struct PatchProjectsView: View {
     @State private var isAutoSyncing = false
     @State private var actionAlert: PatchStoreAlert?
     @State private var selectedGame: GameSelection?
-    @State private var syncStatusText: String = ""
+    @State private var activationInfo: ActivationInfo?
 
     private let autoTimer = Timer.publish(every: 10, on: .main, in: .common).autoconnect()
 
@@ -575,18 +561,24 @@ struct PatchProjectsView: View {
             }
             .navigationBarHidden(true)
             .onAppear {
-                SyncService.shared.startPolling(store: store)
+                Task { await syncNow() }
             }
             .onReceive(autoTimer) { _ in
-                Task { await manualSync() }
+                Task { await syncNow() }
             }
             .sheet(item: $selectedGame) { game in
                 PatchGameDetailView(
                     game: game,
                     store: store,
                     actionAlert: $actionAlert,
+                    activationInfo: $activationInfo,
                     language: language
                 )
+            }
+            .fullScreenCover(item: $activationInfo) { info in
+                ActivationNoteSheet(info: info) {
+                    activationInfo = nil
+                }
             }
             .alert(item: $actionAlert) { alert in
                 Alert(
@@ -622,8 +614,7 @@ struct PatchProjectsView: View {
                 gameCard(title: "Free Fire Max", prefix: "ffmax_")
                 gameCard(title: "Free Fire Thường", prefix: "ffnormal_")
                 Text("By Zenith Solitude")
-                    .font(.system(size: 11, weight: .semibold))
-                    .tracking(3)
+                    .font(.system(size: 11, weight: .semibold)).tracking(3)
                     .foregroundStyle(Color.white.opacity(0.5))
                     .padding(.top, 12)
                     .shadow(color: .white.opacity(0.4), radius: 12)
@@ -631,7 +622,7 @@ struct PatchProjectsView: View {
             .padding(.horizontal, 14)
             .padding(.bottom, 40)
         }
-        .refreshable { await manualSync() }
+        .refreshable { await syncNow() }
     }
 
     @ViewBuilder
@@ -640,7 +631,7 @@ struct PatchProjectsView: View {
             SoundFX.menu()
             selectedGame = GameSelection(title: title, prefix: prefix)
         } label: {
-            NeonWhiteCard {
+            NeonCard {
                 HStack(spacing: 12) {
                     FFLogoView()
                     VStack(alignment: .leading, spacing: 4) {
@@ -648,15 +639,14 @@ struct PatchProjectsView: View {
                             .font(.system(size: 16, weight: .heavy, design: .rounded))
                             .foregroundStyle(Color.white)
                         Text("Headlock Zenis")
-                            .font(.system(size: 10, weight: .bold))
-                            .tracking(1.2)
+                            .font(.system(size: 10, weight: .bold)).tracking(1.2)
                             .foregroundStyle(Color.white.opacity(0.55))
                     }
                     Spacer()
                     if isAutoSyncing {
                         ProgressView().tint(.white).scaleEffect(0.85)
                     } else {
-                        MenuCapsuleButton()
+                        MenuCapsule()
                     }
                 }
                 .padding(.horizontal, 14).padding(.vertical, 12)
@@ -665,76 +655,44 @@ struct PatchProjectsView: View {
         .buttonStyle(.plain)
     }
 
-    private func manualSync() async {
+    // MARK: Sync
+    private func syncNow() async {
         guard !isAutoSyncing else { return }
         await MainActor.run { isAutoSyncing = true }
-        await SyncService.shared.sync(store: store)
+        await SyncEngine.shared.run(store: store)
         await MainActor.run { isAutoSyncing = false }
     }
 }
 
 // ═══════════════════════════════════════════════════════════════
-// MARK: - SYNC SERVICE (một chỗ duy nhất, chắc chắn)
+// MARK: - SYNC ENGINE
 // ═══════════════════════════════════════════════════════════════
-final class SyncService {
-    static let shared = SyncService()
-    private var isSyncing = false
-    private var pollTask: Task<Void, Never>? = nil
-
+final class SyncEngine {
+    static let shared = SyncEngine()
+    private var isRunning = false
     private init() {}
 
-    func startPolling(store: PatchProjectStore) {
-        pollTask?.cancel()
-        pollTask = Task { [weak self] in
-            guard let self = self else { return }
-            // Sync lần đầu ngay
-            await self.sync(store: store)
-            // Sau đó lặp mỗi 12s
-            while !Task.isCancelled {
-                try? await Task.sleep(nanoseconds: 12_000_000_000)
-                if Task.isCancelled { break }
-                await self.sync(store: store)
-            }
-        }
-    }
-
-    func sync(store: PatchProjectStore) async {
-        if isSyncing { return }
-        isSyncing = true
-        defer { isSyncing = false }
+    func run(store: PatchProjectStore) async {
+        if isRunning { return }
+        isRunning = true
+        defer { isRunning = false }
 
         // 1. Fetch remote list
-        guard let remotes = await fetchRemotes() else {
-            return
+        guard let remotes = await fetchRemotes() else { return }
+
+        // 2. Detect which remotes are already imported
+        let existingRemoteNames = PatchMetaStore.allRemoteNames()
+
+        // 3. Import new files one at a time with polling
+        for remote in remotes {
+            if existingRemoteNames.contains(remote.filename) { continue }
+            guard let url = URL(string: remote.url) else { continue }
+            await importAndTag(remote: remote, url: url, store: store)
         }
 
-        // 2. Update metadata cho local items đã có
-        let localItems = await MainActor.run { store.items }
-        await matchLocals(localItems: localItems, remotes: remotes)
-
-        // 3. Import các file chưa có local
-        let existingSlugs = Set(localItems.map { Slug.make($0.packageURL.lastPathComponent) })
-        let needImport = remotes.filter { r in
-            !existingSlugs.contains(r.slug)
-        }
-
-        if !needImport.isEmpty {
-            for r in needImport {
-                guard let url = URL(string: r.url) else { continue }
-                await MainActor.run {
-                    store.importPackage(from: .remote(url))
-                }
-                try? await Task.sleep(nanoseconds: 1_200_000_000)
-            }
-
-            // Đợi store cập nhật
-            await MainActor.run { store.reload() }
-            try? await Task.sleep(nanoseconds: 1_500_000_000)
-
-            // Match lại các file vừa import
-            let updatedItems = await MainActor.run { store.items }
-            await matchLocals(localItems: updatedItems, remotes: remotes)
-        }
+        // 4. Re-match any orphan locals (files that lost metadata)
+        let items = await MainActor.run { store.items }
+        await reMatchOrphans(items: items, remotes: remotes)
 
         await MainActor.run { store.reload() }
     }
@@ -757,15 +715,13 @@ final class SyncService {
                 let displayName: String?
                 let tag: String?
                 let note: String?
-                let slug: String?
                 let url: String
             }
             let wire = try JSONDecoder().decode([Wire].self, from: data)
             return wire.map { w in
                 RemoteFileLite(
                     filename:    w.filename,
-                    slug:        w.slug ?? Slug.make(w.filename),
-                    folder:      w.folder ?? "",
+                    folder:      w.folder ?? "Chung",
                     tag:         w.tag ?? "FREE",
                     displayName: w.displayName ?? "",
                     note:        w.note ?? "",
@@ -773,54 +729,79 @@ final class SyncService {
                 )
             }
         } catch {
-            print("Sync fetch error: \(error.localizedDescription)")
+            print("Fetch error: \(error.localizedDescription)")
             return nil
         }
     }
 
-    // MARK: Match locals ↔ remotes
-    private func matchLocals(localItems: [PatchLibraryItem], remotes: [RemoteFileLite]) async {
-        for item in localItems {
-            let localName = item.packageURL.lastPathComponent
-            let localSlug = Slug.make(localName)
-            guard !localSlug.isEmpty else { continue }
+    // MARK: Import 1 file + poll for local name
+    private func importAndTag(remote: RemoteFileLite, url: URL, store: PatchProjectStore) async {
+        // Snapshot BEFORE
+        let before = await MainActor.run {
+            Set(store.items.map { $0.packageURL.lastPathComponent })
+        }
 
-            // Tìm remote match
-            var matched: RemoteFileLite? = nil
-            for r in remotes where r.slug == localSlug {
-                matched = r; break
-            }
-            if matched == nil {
-                for r in remotes {
-                    if r.slug.isEmpty { continue }
-                    if localSlug.contains(r.slug) || r.slug.contains(localSlug) {
-                        matched = r; break
-                    }
-                }
-            }
-            guard let remote = matched, !remote.folder.isEmpty else { continue }
+        await MainActor.run {
+            store.importPackage(from: .remote(url))
+        }
 
-            // Lưu metadata (keyed by LOCAL filename)
-            if var existing = PatchMetaStore.get(forLocal: localName) {
-                existing.folder     = remote.folder
-                existing.remoteName = remote.filename
-                existing.slug       = remote.slug
-                if !existing.tagOverride  { existing.tag = remote.tag }
-                if !existing.nameOverride { existing.displayName = remote.displayName }
-                if !existing.noteOverride { existing.note = remote.note }
-                PatchMetaStore.set(existing, forLocal: localName)
-            } else {
+        // Poll for new item (250ms × 60 = 15s)
+        for attempt in 0..<60 {
+            try? await Task.sleep(nanoseconds: 250_000_000)
+            await MainActor.run { store.reload() }
+            let after = await MainActor.run {
+                Set(store.items.map { $0.packageURL.lastPathComponent })
+            }
+            let diff = after.subtracting(before)
+            if let newFile = diff.first {
+                print("✅ Matched remote '\(remote.filename)' → local '\(newFile)' at attempt \(attempt)")
                 let meta = PatchMeta(
                     remoteName:  remote.filename,
-                    slug:        remote.slug,
                     folder:      remote.folder,
                     tag:         remote.tag,
                     displayName: remote.displayName,
                     note:        remote.note
                 )
-                PatchMetaStore.set(meta, forLocal: localName)
+                PatchMetaStore.set(meta, forLocal: newFile)
+                return
             }
         }
+        print("⚠️ Timeout: \(remote.filename) not appeared in store after 15s")
+    }
+
+    // MARK: Re-match orphans
+    private func reMatchOrphans(items: [PatchLibraryItem], remotes: [RemoteFileLite]) async {
+        for item in items {
+            let localName = item.packageURL.lastPathComponent
+            if PatchMetaStore.get(forLocal: localName) != nil { continue }
+
+            // Try match by internal project name
+            let internalName = item.project?.name ?? ""
+            let internalSlug = normalize(internalName)
+            if !internalSlug.isEmpty {
+                for r in remotes {
+                    let rSlug = normalize(r.displayName)
+                    if rSlug.isEmpty { continue }
+                    if rSlug.contains(internalSlug) || internalSlug.contains(rSlug) {
+                        let meta = PatchMeta(
+                            remoteName:  r.filename,
+                            folder:      r.folder,
+                            tag:         r.tag,
+                            displayName: r.displayName,
+                            note:        r.note
+                        )
+                        PatchMetaStore.set(meta, forLocal: localName)
+                        break
+                    }
+                }
+            }
+        }
+    }
+
+    private func normalize(_ s: String) -> String {
+        return s.lowercased()
+            .replacingOccurrences(of: #"[^a-z0-9]+"#, with: "_", options: .regularExpression)
+            .trimmingCharacters(in: CharacterSet(charactersIn: "_"))
     }
 }
 
@@ -831,6 +812,7 @@ struct PatchGameDetailView: View {
     let game: GameSelection
     @ObservedObject var store: PatchProjectStore
     @Binding var actionAlert: PatchStoreAlert?
+    @Binding var activationInfo: ActivationInfo?
     let language: AppLanguage
 
     @Environment(\.dismiss) private var dismiss
@@ -851,13 +833,6 @@ struct PatchGameDetailView: View {
             ZStack {
                 NeonBackgroundView()
                 VStack(spacing: 0) {
-                    if let active = activeItem {
-                        NoteBanner(note: currentNote(for: active))
-                            .padding(.horizontal, 14)
-                            .padding(.top, 10)
-                            .transition(.opacity.combined(with: .move(edge: .top)))
-                            .animation(.spring(response: 0.4), value: active.id)
-                    }
                     if !folders.isEmpty { folderTabs }
                     listContent
                 }
@@ -866,9 +841,7 @@ struct PatchGameDetailView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button {
-                        SoundFX.tap(); dismiss()
-                    } label: {
+                    Button { SoundFX.tap(); dismiss() } label: {
                         Image(systemName: "xmark")
                             .font(.system(size: 13, weight: .bold))
                             .foregroundStyle(Color.white)
@@ -880,7 +853,7 @@ struct PatchGameDetailView: View {
             .toolbarColorScheme(.dark, for: .navigationBar)
             .onAppear {
                 Task {
-                    await SyncService.shared.sync(store: store)
+                    await SyncEngine.shared.run(store: store)
                     await MainActor.run { initFirstFolder() }
                 }
             }
@@ -915,14 +888,11 @@ struct PatchGameDetailView: View {
     }
 
     private func initFirstFolder() {
-        guard !didInit else { return }
-        let f = folders
-        guard let first = f.first else { return }
+        guard !didInit, let first = folders.first else { return }
         selectedFolder = first
         didInit = true
     }
 
-    /// KHÔNG filter metadata — hiển thị TẤT CẢ items thuộc game
     private var gameItems: [PatchLibraryItem] {
         _ = refreshTick
         return store.items.filter { item in
@@ -946,13 +916,6 @@ struct PatchGameDetailView: View {
         return gameItems.filter { folderName(for: $0) == sel }
     }
 
-    private var activeItem: PatchLibraryItem? {
-        for item in gameItems {
-            if DevicePatchService.latestReceipt(projectID: item.id) != nil { return item }
-        }
-        return nil
-    }
-
     private var renameBinding: Binding<Bool> {
         Binding(get: { renameItem != nil }, set: { if !$0 { renameItem = nil } })
     }
@@ -967,7 +930,7 @@ struct PatchGameDetailView: View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
                 ForEach(folders, id: \.self) { f in
-                    FolderTabButton(title: f, isActive: selectedFolder == f) {
+                    FolderTab(title: f, isActive: selectedFolder == f) {
                         SoundFX.tap()
                         withAnimation(.spring(response: 0.35, dampingFraction: 0.75)) {
                             selectedFolder = f
@@ -998,7 +961,7 @@ struct PatchGameDetailView: View {
         let receipt = DevicePatchService.latestReceipt(projectID: item.id)
         let isApplied = (receipt != nil)
         let name = displayName(for: item)
-        PatchRowView(
+        PatchRow(
             isApplied: isApplied,
             isWorking: workingFileID == item.id.uuidString,
             displayName: name,
@@ -1026,8 +989,7 @@ struct PatchGameDetailView: View {
     private func displayName(for item: PatchLibraryItem) -> String {
         if let m = meta(for: item), !m.displayName.isEmpty { return m.displayName }
         if let n = item.project?.name, !n.isEmpty { return n }
-        return item.packageURL
-            .deletingPathExtension().lastPathComponent
+        return item.packageURL.deletingPathExtension().lastPathComponent
             .replacingOccurrences(of: "_VIP", with: "")
             .replacingOccurrences(of: "_FREE", with: "")
             .replacingOccurrences(of: "ffmax_", with: "")
@@ -1036,30 +998,30 @@ struct PatchGameDetailView: View {
 
     private func currentTag(for item: PatchLibraryItem) -> String {
         if let m = meta(for: item), !m.tag.isEmpty { return m.tag }
-        return item.packageURL.deletingPathExtension().lastPathComponent
-            .hasSuffix("_VIP") ? "VIP" : "FREE"
+        return item.packageURL.deletingPathExtension().lastPathComponent.hasSuffix("_VIP") ? "VIP" : "FREE"
     }
 
     private func currentNote(for item: PatchLibraryItem) -> String {
         return meta(for: item)?.note ?? ""
     }
 
-    /// Folder name — nếu chưa có metadata thì thử parse từ path, cuối cùng là "Đang đồng bộ"
     private func folderName(for item: PatchLibraryItem) -> String {
         if let m = meta(for: item), !m.folder.isEmpty { return m.folder }
-
-        // Fallback parse path
+        // Fallback: extract from local filename ZENITH_<folder>_<hash>_<uuid>.3105
+        let fname = item.packageURL.lastPathComponent
+        if let range = fname.range(of: #"^ZENITH_([a-zA-Z0-9]+)_"#, options: .regularExpression) {
+            let matched = String(fname[range])
+                .replacingOccurrences(of: "ZENITH_", with: "")
+                .trimmingCharacters(in: CharacterSet(charactersIn: "_"))
+            if !matched.isEmpty { return matched.uppercased() }
+        }
+        // Path fallback
         let comps = item.packageURL.pathComponents.filter { $0 != "/" }
         if let idx = comps.firstIndex(where: { $0 == "ffmax" || $0 == "ffnormal" }),
            idx + 2 < comps.count {
             return comps[idx + 1]
         }
-        let parent = item.packageURL.deletingLastPathComponent().lastPathComponent
-        let ignore: Set<String> = ["Documents", "tmp", "proxy",
-                                    "PatchProjects", "PatchProjectStore", ""]
-        if !ignore.contains(parent) { return parent }
-
-        return "Đang đồng bộ"
+        return "Chung"
     }
 
     // MARK: Actions
@@ -1073,8 +1035,7 @@ struct PatchGameDetailView: View {
             PatchMetaStore.set(m, forLocal: key)
         } else {
             let newMeta = PatchMeta(
-                remoteName: key, slug: Slug.make(key),
-                folder: folderName(for: item),
+                remoteName: key, folder: folderName(for: item),
                 tag: currentTag(for: item), displayName: t,
                 note: currentNote(for: item), nameOverride: true
             )
@@ -1092,8 +1053,7 @@ struct PatchGameDetailView: View {
             PatchMetaStore.set(m, forLocal: key)
         } else {
             let newMeta = PatchMeta(
-                remoteName: key, slug: Slug.make(key),
-                folder: folderName(for: item),
+                remoteName: key, folder: folderName(for: item),
                 tag: tag, displayName: displayName(for: item),
                 note: currentNote(for: item), tagOverride: true
             )
@@ -1112,8 +1072,7 @@ struct PatchGameDetailView: View {
             PatchMetaStore.set(m, forLocal: key)
         } else {
             let newMeta = PatchMeta(
-                remoteName: key, slug: Slug.make(key),
-                folder: folderName(for: item),
+                remoteName: key, folder: folderName(for: item),
                 tag: currentTag(for: item), displayName: displayName(for: item),
                 note: t, noteOverride: true
             )
@@ -1137,15 +1096,14 @@ struct PatchGameDetailView: View {
                     }
                     try DevicePatchService.restore(receipt: r)
                 }
-                let n = await MainActor.run { displayName(for: item) }
+                let name = await MainActor.run { displayName(for: item) }
+                let note = await MainActor.run { currentNote(for: item) }
                 await MainActor.run {
                     store.reload()
                     workingFileID = nil
                     if activate {
-                        actionAlert = PatchStoreAlert(
-                            titleKey: "Đã kích hoạt",
-                            messageKey: "HeadLock Zenis — \(n)"
-                        )
+                        // Show activation sheet with note
+                        activationInfo = ActivationInfo(patchName: name, note: note)
                     }
                 }
             } catch {
@@ -1177,13 +1135,11 @@ struct PatchUnlockView: View {
             Form {
                 Section {
                     SecureField(language.text("patch.password"), text: $password)
-                        .textContentType(.password)
-                        .submitLabel(.done)
+                        .textContentType(.password).submitLabel(.done)
                         .onSubmit(unlock)
                         .onChange(of: password) { _ in store.clearUnlockError() }
                     if let errorKey = store.unlockErrorKey {
-                        Text(errorText(errorKey))
-                            .font(.footnote).foregroundStyle(.red)
+                        Text(errorText(errorKey)).font(.footnote).foregroundStyle(.red)
                     }
                 }
             }
@@ -1200,7 +1156,6 @@ struct PatchUnlockView: View {
             }
         }
     }
-
     private func errorText(_ key: String) -> String {
         if let a = store.unlockErrorArgument { return language.text(key, a) }
         return language.text(key)
@@ -1212,20 +1167,7 @@ struct PatchUnlockView: View {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// MARK: - PRESENTATION
+// MARK: - PRESENTATION MODIFIER
 // ═══════════════════════════════════════════════════════════════
 private struct PatchStorePresentationModifier: ViewModifier {
     @ObservedObject var store: PatchProjectStore
-    func body(content: Content) -> some View {
-        content
-            .sheet(item: $store.passwordRequest, onDismiss: store.cancelUnlock) { r in
-                PatchUnlockView(store: store, request: r)
-            }
-    }
-}
-
-extension View {
-    func patchStorePresentation(_ store: PatchProjectStore) -> some View {
-        modifier(PatchStorePresentationModifier(store: store))
-    }
-}
