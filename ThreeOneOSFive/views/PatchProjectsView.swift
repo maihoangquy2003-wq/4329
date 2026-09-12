@@ -19,15 +19,17 @@ enum SoundFX {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// MARK: - BACKGROUND
+// MARK: - BACKGROUND (LIGHTER — 24fps, 55 stars, 25 particles)
 // ═══════════════════════════════════════════════════════════════
 struct NeonBackgroundView: View {
+    @Environment(\.scenePhase) private var scenePhase
+
     var body: some View {
         ZStack {
             Color.black
             AuroraView()
             VignetteView()
-            CosmicFieldView()
+            CosmicFieldView(paused: scenePhase != .active)
         }
         .ignoresSafeArea()
     }
@@ -40,19 +42,16 @@ struct AuroraView: View {
             ZStack {
                 blob(cx: 0.28 + 0.10 * sin(phase),
                      cy: 0.25 + 0.08 * cos(phase * 0.7),
-                     opacity: 0.13, r: geo.size.width * 0.75)
+                     opacity: 0.14, r: geo.size.width * 0.7)
                 blob(cx: 0.75 + 0.10 * cos(phase * 0.85),
                      cy: 0.72 + 0.10 * sin(phase * 0.6),
-                     opacity: 0.10, r: geo.size.width * 0.85)
-                blob(cx: 0.50 + 0.15 * sin(phase * 1.15),
-                     cy: 0.50 + 0.15 * cos(phase * 0.9),
-                     opacity: 0.08, r: geo.size.width * 0.65)
+                     opacity: 0.11, r: geo.size.width * 0.8)
             }
-            .blur(radius: 95)
+            .blur(radius: 60)
         }
         .allowsHitTesting(false)
         .onAppear {
-            withAnimation(.linear(duration: 26).repeatForever(autoreverses: true)) {
+            withAnimation(.linear(duration: 24).repeatForever(autoreverses: true)) {
                 phase = .pi * 2
             }
         }
@@ -69,7 +68,7 @@ struct AuroraView: View {
 struct VignetteView: View {
     var body: some View {
         RadialGradient(
-            colors: [.clear, .clear, Color.black.opacity(0.78)],
+            colors: [.clear, .clear, Color.black.opacity(0.72)],
             center: .center, startRadius: 0, endRadius: 520
         )
         .allowsHitTesting(false)
@@ -77,6 +76,8 @@ struct VignetteView: View {
 }
 
 struct CosmicFieldView: View {
+    var paused: Bool = false
+
     private struct Star {
         let x: CGFloat; let y: CGFloat; let s: CGFloat
         let phase: Double; let freq: Double
@@ -90,11 +91,12 @@ struct CosmicFieldView: View {
     @State private var particles: [Particle] = []
 
     var body: some View {
-        TimelineView(.animation(minimumInterval: 1.0 / 45.0)) { timeline in
+        // 24fps thay vì 45fps → nhẹ hơn ~50%
+        TimelineView(.animation(minimumInterval: 1.0 / 24.0, paused: paused)) { timeline in
             Canvas { ctx, size in
                 let t = timeline.date.timeIntervalSinceReferenceDate
                 for s in stars {
-                    let a = 0.18 + 0.58 * sin(t * s.freq + s.phase)
+                    let a = 0.18 + 0.55 * sin(t * s.freq + s.phase)
                     let r = CGRect(x: s.x * size.width, y: s.y * size.height,
                                    width: s.s, height: s.s)
                     ctx.fill(Path(ellipseIn: r),
@@ -117,20 +119,20 @@ struct CosmicFieldView: View {
     }
     private func initField() {
         if stars.isEmpty {
-            stars = (0..<110).map { _ in
+            stars = (0..<55).map { _ in    // 55 thay vì 110
                 Star(x: CGFloat.random(in: 0...1),
                      y: CGFloat.random(in: 0...1),
-                     s: CGFloat.random(in: 0.5...2.1),
+                     s: CGFloat.random(in: 0.5...2.0),
                      phase: Double.random(in: 0...(2 * .pi)),
                      freq: Double.random(in: 0.5...1.8))
             }
         }
         if particles.isEmpty {
-            particles = (0..<55).map { _ in
+            particles = (0..<25).map { _ in   // 25 thay vì 55
                 Particle(x: CGFloat.random(in: 0...1),
-                         s: CGFloat.random(in: 1.0...3.0),
-                         speed: CGFloat.random(in: 18...50),
-                         opacity: Double.random(in: 0.20...0.85),
+                         s: CGFloat.random(in: 1.0...2.8),
+                         speed: CGFloat.random(in: 20...45),
+                         opacity: Double.random(in: 0.22...0.75),
                          phase: Double.random(in: 0...(2 * .pi)))
             }
         }
@@ -155,7 +157,7 @@ struct PatchMeta: Codable {
     var tagOverride: Bool
     var nameOverride: Bool
     var noteOverride: Bool
-    var orphaned: Bool          // ← remote đã bị xóa → ẩn khỏi UI
+    var orphaned: Bool
 
     init(remoteName: String,
          folder: String,
@@ -177,7 +179,6 @@ struct PatchMeta: Codable {
         self.orphaned = orphaned
     }
 
-    // Custom decode để tương thích data cũ (thiếu orphaned / override)
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         remoteName   = (try? c.decode(String.self, forKey: .remoteName)) ?? ""
@@ -213,7 +214,7 @@ struct ActivationInfo: Identifiable {
 // MARK: - META STORE
 // ═══════════════════════════════════════════════════════════════
 enum PatchMetaStore {
-    private static let key = "patch_meta_v13"
+    private static let key = "patch_meta_v14"
 
     static func all() -> [String: PatchMeta] {
         guard let data = UserDefaults.standard.data(forKey: key),
@@ -455,7 +456,6 @@ struct ActivationNoteSheet: View {
     let info: ActivationInfo
     let onDismiss: () -> Void
     @State private var pulse = false
-    @State private var shimmer = false
 
     private var accent: Color {
         info.success ? Color.white : Color(red: 1.0, green: 0.35, blue: 0.35)
@@ -473,7 +473,7 @@ struct ActivationNoteSheet: View {
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
-            AuroraView().ignoresSafeArea().opacity(0.6)
+            AuroraView().ignoresSafeArea().opacity(0.5)
 
             ScrollView(showsIndicators: false) {
                 VStack(spacing: 22) {
@@ -572,12 +572,6 @@ struct ActivationNoteSheet: View {
                                     lineWidth: 1.2)
                         )
                         .shadow(color: .white.opacity(0.4), radius: 18)
-                        .overlay(shimmerOverlay)
-                        .onAppear {
-                            withAnimation(.linear(duration: 2.5).repeatForever(autoreverses: false)) {
-                                shimmer = true
-                            }
-                        }
                         .padding(.horizontal, 24)
                     }
 
@@ -611,18 +605,6 @@ struct ActivationNoteSheet: View {
             }
         }
     }
-
-    private var shimmerOverlay: some View {
-        GeometryReader { geo in
-            LinearGradient(colors: [.clear, .white.opacity(0.20), .clear],
-                           startPoint: .leading, endPoint: .trailing)
-            .frame(width: geo.size.width * 0.5)
-            .offset(x: shimmer ? geo.size.width : -geo.size.width * 0.5)
-            .blendMode(.screen)
-        }
-        .clipShape(RoundedRectangle(cornerRadius: 14))
-        .allowsHitTesting(false)
-    }
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -630,14 +612,16 @@ struct ActivationNoteSheet: View {
 // ═══════════════════════════════════════════════════════════════
 struct PatchProjectsView: View {
     @Environment(\.appLanguage) private var language
+    @Environment(\.scenePhase) private var scenePhase
     @EnvironmentObject private var draftCoordinator: PatchDraftCoordinator
     @EnvironmentObject private var store: PatchProjectStore
 
     @State private var actionAlert: PatchStoreAlert?
     @State private var selectedGame: GameSelection?
     @State private var isSyncing = false
+    @State private var lastSyncDate: Date = Date()
 
-    // ⭐️ 5 GIÂY UPDATE 1 LẦN
+    // 5s
     private let autoTimer = Timer.publish(every: 5, on: .main, in: .common).autoconnect()
 
     let onOpenSettings: () -> Void
@@ -662,10 +646,17 @@ struct PatchProjectsView: View {
             }
             .navigationBarHidden(true)
             .onAppear {
-                Task { await syncNow() }
+                Task { await syncNow(force: true) }
             }
+            // ⭐️ TIMER 5s — luôn chạy, không bị chặn
             .onReceive(autoTimer) { _ in
-                Task { await syncNow() }
+                Task { await syncNow(force: false) }
+            }
+            // ⭐️ FOREGROUND → force sync ngay
+            .onChange(of: scenePhase) { phase in
+                if phase == .active {
+                    Task { await syncNow(force: true) }
+                }
             }
             .sheet(item: $selectedGame) { game in
                 PatchGameDetailView(
@@ -742,7 +733,7 @@ struct PatchProjectsView: View {
             .padding(.horizontal, 14)
             .padding(.bottom, 40)
         }
-        .refreshable { await syncNow() }
+        .refreshable { await syncNow(force: true) }
     }
 
     @ViewBuilder
@@ -773,103 +764,114 @@ struct PatchProjectsView: View {
         .buttonStyle(.plain)
     }
 
-    private func syncNow() async {
-        guard !isSyncing else { return }
+    /// force=true: bỏ qua throttle, luôn chạy
+    /// force=false: nếu sync vừa xong <2s trước thì skip
+    private func syncNow(force: Bool) async {
+        if !force {
+            let elapsed = Date().timeIntervalSince(lastSyncDate)
+            if elapsed < 2.0 { return }
+        }
         await MainActor.run { isSyncing = true }
         await SyncEngine.shared.run(store: store)
-        await MainActor.run { isSyncing = false }
+        await MainActor.run {
+            isSyncing = false
+            lastSyncDate = Date()
+        }
     }
 }
 
 // ═══════════════════════════════════════════════════════════════
-// MARK: - SYNC ENGINE (2-WAY: up hiện / xóa mất)
+// MARK: - SYNC ENGINE (không blocking — luôn cho phép sync mới)
 // ═══════════════════════════════════════════════════════════════
 final class SyncEngine {
     static let shared = SyncEngine()
-    private var isRunning = false
+    // Semaphore để tránh ghi metadata đồng thời, không block sync
+    private let metaLock = NSLock()
     private init() {}
 
     func run(store: PatchProjectStore) async {
-        if isRunning { return }
-        isRunning = true
-        defer { isRunning = false }
-
         guard let remotes = await fetchRemotes() else { return }
+
+        // BƯỚC 1: Update metadata cũ + mark orphan
+        metaLock.lock()
+        var metaDict = PatchMetaStore.all()
         let remoteByName: [String: RemoteFileLite] = Dictionary(
             uniqueKeysWithValues: remotes.map { ($0.filename, $0) }
         )
 
-        // ── BƯỚC 1: Cập nhật metadata cũ (mark orphan + update folder/tag/note)
-        var metaDict = PatchMetaStore.all()
-
         for (localName, var meta) in metaDict {
             if let remote = remoteByName[meta.remoteName] {
-                // Remote CÒN → cập nhật từ server
                 meta.orphaned = false
                 meta.folder = remote.folder
                 if !meta.tagOverride  { meta.tag = remote.tag }
                 if !meta.nameOverride { meta.displayName = remote.displayName }
                 if !meta.noteOverride { meta.note = remote.note }
             } else {
-                // Remote ĐÃ BỊ XÓA → mark orphan (ẩn khỏi UI)
                 meta.orphaned = true
             }
             metaDict[localName] = meta
         }
         PatchMetaStore.save(metaDict)
+        metaLock.unlock()
 
-        // ── BƯỚC 2: Import file mới (remote chưa có local)
-        let existingRemoteNames = Set(
+        // BƯỚC 2: Import file mới
+        let existingNames = Set(
             metaDict.values.filter { !$0.orphaned }.map { $0.remoteName }
         )
-
         for remote in remotes {
-            if existingRemoteNames.contains(remote.filename) { continue }
+            if existingNames.contains(remote.filename) { continue }
             guard let url = URL(string: remote.url) else { continue }
             await importAndTag(remote: remote, url: url, store: store)
         }
-
-        // ── BƯỚC 3: Re-match orphans (nếu remote đã quay lại)
-        let items = await MainActor.run { store.items }
-        await reMatchOrphans(items: items, remotes: remotes)
 
         await MainActor.run { store.reload() }
     }
 
     private func fetchRemotes() async -> [RemoteFileLite]? {
-        do {
-            guard let url = URL(string: "https://solitudepremium.click/ipa/proxy/list.php") else {
-                return nil
-            }
-            var req = URLRequest(url: url)
-            req.cachePolicy = .reloadIgnoringLocalCacheData
-            req.timeoutInterval = 15
-            let (data, _) = try await URLSession.shared.data(for: req)
+        // ⭐️ CACHE BUSTER — không bao giờ dùng cache
+        let ts = Int(Date().timeIntervalSince1970)
+        let urlString = "https://solitudepremium.click/ipa/proxy/list.php?t=\(ts)"
+        guard let url = URL(string: urlString) else { return nil }
 
-            struct Wire: Decodable {
-                let filename: String
-                let gameType: String
-                let folder: String?
-                let displayName: String?
-                let tag: String?
-                let note: String?
-                let url: String
+        // Retry 2 lần
+        for attempt in 0..<2 {
+            do {
+                var req = URLRequest(url: url)
+                req.cachePolicy = .reloadIgnoringLocalAndRemoteCacheData
+                req.timeoutInterval = 12
+                req.setValue("no-cache", forHTTPHeaderField: "Cache-Control")
+                req.setValue("no-cache", forHTTPHeaderField: "Pragma")
+
+                let (data, _) = try await URLSession.shared.data(for: req)
+
+                struct Wire: Decodable {
+                    let filename: String
+                    let gameType: String
+                    let folder: String?
+                    let displayName: String?
+                    let tag: String?
+                    let note: String?
+                    let url: String
+                }
+                let wire = try JSONDecoder().decode([Wire].self, from: data)
+                return wire.map { w in
+                    RemoteFileLite(
+                        filename:    w.filename,
+                        folder:      w.folder ?? "Chung",
+                        tag:         w.tag ?? "FREE",
+                        displayName: w.displayName ?? "",
+                        note:        w.note ?? "",
+                        url:         w.url
+                    )
+                }
+            } catch {
+                print("Fetch attempt \(attempt) failed: \(error.localizedDescription)")
+                if attempt == 0 {
+                    try? await Task.sleep(nanoseconds: 500_000_000)
+                }
             }
-            let wire = try JSONDecoder().decode([Wire].self, from: data)
-            return wire.map { w in
-                RemoteFileLite(
-                    filename:    w.filename,
-                    folder:      w.folder ?? "Chung",
-                    tag:         w.tag ?? "FREE",
-                    displayName: w.displayName ?? "",
-                    note:        w.note ?? "",
-                    url:         w.url
-                )
-            }
-        } catch {
-            print("Fetch error: \(error.localizedDescription)")
-            return nil
         }
+        return nil
     }
 
     private func importAndTag(remote: RemoteFileLite,
@@ -881,8 +883,8 @@ final class SyncEngine {
         await MainActor.run {
             store.importPackage(from: .remote(url))
         }
-        // Poll nhanh 200ms × 50 = 10s
-        for attempt in 0..<50 {
+        // Poll 200ms × 40 = 8s
+        for attempt in 0..<40 {
             try? await Task.sleep(nanoseconds: 200_000_000)
             await MainActor.run { store.reload() }
             let after = await MainActor.run {
@@ -890,7 +892,8 @@ final class SyncEngine {
             }
             let diff = after.subtracting(before)
             if let newFile = diff.first {
-                print("✅ Matched \(remote.filename) → \(newFile) @\(attempt)")
+                print("✅ \(remote.filename) → \(newFile) @\(attempt)")
+                metaLock.lock()
                 let meta = PatchMeta(
                     remoteName:  remote.filename,
                     folder:      remote.folder,
@@ -900,33 +903,11 @@ final class SyncEngine {
                     orphaned:    false
                 )
                 PatchMetaStore.set(meta, forLocal: newFile)
+                metaLock.unlock()
                 return
             }
         }
         print("⚠️ Timeout: \(remote.filename)")
-    }
-
-    /// Nếu file local đã có sẵn nhưng metadata bị đánh dấu orphan
-    /// → thử match lại với remote để un-orphan
-    private func reMatchOrphans(items: [PatchLibraryItem],
-                                remotes: [RemoteFileLite]) async {
-        var dict = PatchMetaStore.all()
-        let remoteNames = Set(remotes.map { $0.filename })
-
-        for (localName, var meta) in dict {
-            guard meta.orphaned else { continue }
-            if remoteNames.contains(meta.remoteName) {
-                meta.orphaned = false
-                if let r = remotes.first(where: { $0.filename == meta.remoteName }) {
-                    meta.folder = r.folder
-                    if !meta.tagOverride  { meta.tag = r.tag }
-                    if !meta.nameOverride { meta.displayName = r.displayName }
-                    if !meta.noteOverride { meta.note = r.note }
-                }
-                dict[localName] = meta
-            }
-        }
-        PatchMetaStore.save(dict)
     }
 }
 
@@ -940,6 +921,7 @@ struct PatchGameDetailView: View {
     let language: AppLanguage
 
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.scenePhase) private var scenePhase
     @State private var activationInfo: ActivationInfo?
     @State private var selectedFolder: String? = nil
     @State private var didInit = false
@@ -978,17 +960,25 @@ struct PatchGameDetailView: View {
             .toolbarBackground(Color.black, for: .navigationBar)
             .toolbarBackground(.visible, for: .navigationBar)
             .toolbarColorScheme(.dark, for: .navigationBar)
+            // ⭐️ FORCE SYNC khi mở
             .onAppear {
                 Task {
                     await SyncEngine.shared.run(store: store)
-                    await MainActor.run { initFirstFolder() }
+                    await MainActor.run {
+                        initFirstFolder()
+                        store.reload()
+                    }
+                }
+            }
+            .onChange(of: scenePhase) { phase in
+                if phase == .active {
+                    Task { await SyncEngine.shared.run(store: store) }
                 }
             }
             .onReceive(refreshTimer) { _ in
                 refreshTick &+= 1
                 store.reload()
                 initFirstFolder()
-                // Tự điều chỉnh nếu folder đang chọn bị xóa
                 if let sel = selectedFolder, !folders.contains(sel) {
                     selectedFolder = folders.first
                 }
@@ -1016,9 +1006,7 @@ struct PatchGameDetailView: View {
                 Button("Huỷ", role: .cancel) { tagPickerItem = nil }
             }
             .fullScreenCover(item: $activationInfo) { info in
-                ActivationNoteSheet(info: info) {
-                    activationInfo = nil
-                }
+                ActivationNoteSheet(info: info) { activationInfo = nil }
             }
         }
     }
@@ -1029,7 +1017,6 @@ struct PatchGameDetailView: View {
         didInit = true
     }
 
-    /// Chỉ hiện items thuộc game + KHÔNG orphaned
     private var gameItems: [PatchLibraryItem] {
         _ = refreshTick
         return store.items.filter { item in
@@ -1039,11 +1026,7 @@ struct PatchGameDetailView: View {
             let isPlain = !isMax && !isNormal
             let correctGame = game.prefix == "ffmax_" ? isMax : (isNormal || isPlain)
             guard correctGame else { return false }
-
-            // ⭐️ Ẩn nếu orphaned (remote đã bị xóa)
-            if let meta = PatchMetaStore.get(forLocal: name), meta.orphaned {
-                return false
-            }
+            if let meta = PatchMetaStore.get(forLocal: name), meta.orphaned { return false }
             return true
         }
     }
@@ -1223,7 +1206,6 @@ struct PatchGameDetailView: View {
         let noteSnap = currentNote(for: item)
 
         Task.detached(priority: .userInitiated) {
-            // Tắt: im lặng
             if !activate {
                 do {
                     if let r = DevicePatchService.latestReceipt(projectID: item.id) {
@@ -1238,8 +1220,7 @@ struct PatchGameDetailView: View {
                         workingFileID = nil
                         SoundFX.error()
                         activationInfo = ActivationInfo(
-                            patchName: nameSnap,
-                            note: noteSnap,
+                            patchName: nameSnap, note: noteSnap,
                             success: false,
                             errorMessage: "Không thể tắt: \(error.localizedDescription)"
                         )
@@ -1248,7 +1229,6 @@ struct PatchGameDetailView: View {
                 return
             }
 
-            // Bật: try apply
             do {
                 guard let p = item.project else {
                     await MainActor.run { workingFileID = nil }
@@ -1259,10 +1239,8 @@ struct PatchGameDetailView: View {
                     store.reload()
                     workingFileID = nil
                     activationInfo = ActivationInfo(
-                        patchName: nameSnap,
-                        note: noteSnap,
-                        success: true,
-                        errorMessage: nil
+                        patchName: nameSnap, note: noteSnap,
+                        success: true, errorMessage: nil
                     )
                 }
             } catch {
@@ -1271,8 +1249,7 @@ struct PatchGameDetailView: View {
                     workingFileID = nil
                     SoundFX.error()
                     activationInfo = ActivationInfo(
-                        patchName: nameSnap,
-                        note: noteSnap,
+                        patchName: nameSnap, note: noteSnap,
                         success: false,
                         errorMessage: error.localizedDescription
                     )
