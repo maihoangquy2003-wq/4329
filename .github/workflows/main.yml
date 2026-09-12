@@ -16,10 +16,7 @@ jobs:
         run: |
           FILE="ThreeOneOSFive.xcodeproj/project.pbxproj"
           
-          # Dùng Perl để tiêu diệt ký tự tàng hình BOM (nguyên nhân gây lỗi dòng 1)
           perl -pi -e 's/^\xEF\xBB\xBF//' "$FILE"
-          
-          # Ép định dạng ngắt dòng về chuẩn Mac/Linux (tránh lỗi do trình duyệt lưu nhầm chuẩn Windows)
           perl -pi -e 's/\r\n/\n/g' "$FILE"
           perl -pi -e 's/\r/\n/g' "$FILE"
           
@@ -28,7 +25,6 @@ jobs:
       - name: Build App
         run: |
           xcodebuild -project ThreeOneOSFive.xcodeproj \
-                     -derivedDataPath build_output \
                      -alltargets \
                      -configuration Release \
                      -sdk iphoneos \
@@ -40,8 +36,16 @@ jobs:
       - name: Package IPA
         run: |
           mkdir -p Payload
-          # Tìm file .app trong thư mục build_output xuất ra
-          APP_PATH=$(find build_output -name "*.app" | head -n 1)
+          
+          # Tìm file .app trong thư mục build mặc định
+          APP_PATH=$(find build -name "*.app" 2>/dev/null | head -n 1)
+          
+          # Phương án dự phòng: nếu không có trong build/, tìm trong DerivedData
+          if [ -z "$APP_PATH" ]; then
+            APP_PATH=$(find ~/Library/Developer/Xcode/DerivedData -name "*.app" 2>/dev/null | head -n 1)
+          fi
+          
+          echo "Đã tìm thấy app tại: $APP_PATH"
           cp -r "$APP_PATH" Payload/
           zip -r HeadlockZenis.ipa Payload
 
