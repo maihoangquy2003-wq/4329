@@ -399,7 +399,8 @@ struct CustomZenithHomeView: View {
     var onOpenProfile: () -> Void
     var onOpenApp: () -> Void
     
-    @AppStorage("has_scanned_mhac2") private var hasScanned = false
+    // Đã sửa mặc định thành true để bỏ qua bước quét
+    @AppStorage("has_scanned_mhac2") private var hasScanned = true
     @State private var isScanning = false
     @State private var scanStatus = "Workspace 3105"
     @State private var scanSubtext = "Đang khởi tạo tệp hệ thống..."
@@ -506,7 +507,11 @@ struct CustomZenithHomeView: View {
                 }
             }
         }
-        .onAppear { if !hasScanned { isScanning = true } }
+        .onAppear {
+            // Đảm bảo ẩn quét ngay khi vào app
+            hasScanned = true
+            isScanning = false
+        }
     }
 }
 
@@ -792,7 +797,8 @@ private struct KeyLockView: View {
 
             Button(action: {
                 UXFeedback.click()
-                if let url = URL(string: "https://solitudepremium.click/ipa/proxy/keyproxy.php") { UIApplication.shared.open(url) }
+                // Thay đổi Link tải Key mới theo yêu cầu
+                if let url = URL(string: "https://solitudepremium.click/ipa/key/index.php") { UIApplication.shared.open(url) }
             }) {
                 HStack {
                     Image(systemName: "globe.asia.australia.fill").shadow(color: .white, radius: 2)
