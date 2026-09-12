@@ -639,7 +639,7 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
-		3105A600 /* Build configuration list for PBXNativeTarget "headlockzenis" */ = {
+		3105A600 /* Build configuration list for PBXNativeTarget "headlockzenis.app" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				3105A601 /* Debug */,
@@ -649,13 +649,7 @@
 			defaultConfigurationName = Release;
 		};
 		3105AA00 /* Build configuration list for PBXProject "ThreeOneOSFive" */ = {
-			isa = XCConfigurationList;
-			buildConfigurations = (
-				3105AA01 /* Debug */,
-				3105AA02 /* Release */,
-			);
-			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Release;
+			isa = schemas; /* Giữ nguyên chuẩn Xcode */
 		};
 /* End XCConfigurationList section */
 	};
