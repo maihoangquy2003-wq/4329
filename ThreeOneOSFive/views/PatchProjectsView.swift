@@ -19,160 +19,75 @@ enum SoundFX {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// MARK: - NEON BACKGROUND (NỀN ĐEN · VIỀN TRẮNG)
+// MARK: - AURORA COSMIC BACKGROUND
 // ═══════════════════════════════════════════════════════════════
 struct NeonBackgroundView: View {
     var body: some View {
         ZStack {
             Color.black
-            NetworkLinesView()
-            PulseRingsView()
-            AuroraWhiteView()
+            AuroraRibbonsView()
+            VignetteView()
             StarfieldView()
-            ShootingStarsView()
-            FloatingParticlesView(particleCount: 95)
+            FloatingParticlesView(particleCount: 70)
         }
         .ignoresSafeArea()
     }
 }
 
-/// Mạng lưới điểm sáng nối nhau (neural network)
-struct NetworkLinesView: View {
-    private struct Node {
-        let x: CGFloat
-        let y: CGFloat
-        let phase: Double
-    }
-    @State private var nodes: [Node] = []
-
-    var body: some View {
-        GeometryReader { _ in
-            TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { timeline in
-                Canvas { ctx, size in
-                    let t = timeline.date.timeIntervalSinceReferenceDate
-
-                    // Vẽ đường nối giữa các node gần nhau
-                    for i in 0..<nodes.count {
-                        for j in (i+1)..<nodes.count {
-                            let p1 = CGPoint(x: nodes[i].x * size.width,
-                                             y: nodes[i].y * size.height)
-                            let p2 = CGPoint(x: nodes[j].x * size.width,
-                                             y: nodes[j].y * size.height)
-                            let dx = p2.x - p1.x
-                            let dy = p2.y - p1.y
-                            let dist = sqrt(dx*dx + dy*dy)
-                            guard dist < 130 else { continue }
-                            let alpha = (1 - dist / 130) * 0.12
-                            var path = Path()
-                            path.move(to: p1)
-                            path.addLine(to: p2)
-                            ctx.stroke(path,
-                                       with: .color(Color.white.opacity(alpha)),
-                                       lineWidth: 0.5)
-                        }
-                    }
-
-                    // Vẽ node sáng
-                    for n in nodes {
-                        let alpha = 0.4 + 0.4 * sin(t * 1.1 + n.phase)
-                        let cx = n.x * size.width
-                        let cy = n.y * size.height
-                        let rect = CGRect(x: cx-2, y: cy-2, width: 4, height: 4)
-                        ctx.fill(Path(ellipseIn: rect),
-                                 with: .color(Color.white.opacity(alpha)))
-                        // Halo
-                        let halo = CGRect(x: cx-5, y: cy-5, width: 10, height: 10)
-                        ctx.fill(Path(ellipseIn: halo),
-                                 with: .color(Color.white.opacity(alpha * 0.15)))
-                    }
-                }
-            }
-            .onAppear {
-                guard nodes.isEmpty else { return }
-                nodes = (0..<22).map { _ in
-                    Node(x: CGFloat.random(in: 0.05...0.95),
-                         y: CGFloat.random(in: 0.05...0.95),
-                         phase: Double.random(in: 0...(2 * .pi)))
-                }
-            }
-        }
-        .allowsHitTesting(false)
-    }
-}
-
-/// Vòng tròn pulse lan ra từ tâm
-struct PulseRingsView: View {
-    @State private var startTime: Date = Date()
-    private let ringCount = 4
-
-    var body: some View {
-        GeometryReader { geo in
-            TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { timeline in
-                Canvas { ctx, size in
-                    let t = timeline.date.timeIntervalSinceReferenceDate
-                    let center = CGPoint(x: size.width / 2, y: size.height * 0.35)
-                    for i in 0..<ringCount {
-                        let offset = Double(i) / Double(ringCount)
-                        let phase = (t * 0.35 + offset).truncatingRemainder(dividingBy: 1.0)
-                        let radius = CGFloat(phase) * max(size.width, size.height) * 0.75
-                        let alpha = (1.0 - phase) * 0.18
-                        let rect = CGRect(x: center.x - radius,
-                                          y: center.y - radius,
-                                          width: radius * 2, height: radius * 2)
-                        ctx.stroke(Path(ellipseIn: rect),
-                                   with: .color(Color.white.opacity(alpha)),
-                                   lineWidth: 1)
-                    }
-                }
-            }
-        }
-        .allowsHitTesting(false)
-    }
-}
-
-/// Ánh sáng trắng cực quang (không màu)
-struct AuroraWhiteView: View {
+/// 4 dải aurora mềm mại uốn lượn — không màu, chỉ trắng mờ
+struct AuroraRibbonsView: View {
     @State private var phase: Double = 0
+
     var body: some View {
         GeometryReader { geo in
             ZStack {
-                RadialGradient(
-                    colors: [Color.white.opacity(0.10), .clear],
-                    center: .init(x: 0.25 + 0.08 * sin(phase),
-                                  y: 0.30 + 0.08 * cos(phase * 0.7)),
-                    startRadius: 0,
-                    endRadius: geo.size.width * 0.75
-                )
-                RadialGradient(
-                    colors: [Color.white.opacity(0.08), .clear],
-                    center: .init(x: 0.75 + 0.08 * cos(phase * 0.8),
-                                  y: 0.70 + 0.08 * sin(phase * 0.6)),
-                    startRadius: 0,
-                    endRadius: geo.size.width * 0.7
-                )
-                RadialGradient(
-                    colors: [Color.white.opacity(0.05), .clear],
-                    center: .init(x: 0.50 + 0.12 * sin(phase * 1.2),
-                                  y: 0.50 + 0.12 * cos(phase * 0.9)),
-                    startRadius: 0,
-                    endRadius: geo.size.width * 0.55
-                )
+                ribbon(offset: 0.0, scale: 1.0, baseOpacity: 0.11, geo: geo)
+                ribbon(offset: 0.9, scale: 0.75, baseOpacity: 0.08, geo: geo)
+                ribbon(offset: 1.7, scale: 1.15, baseOpacity: 0.10, geo: geo)
+                ribbon(offset: 2.5, scale: 0.85, baseOpacity: 0.07, geo: geo)
             }
-            .blur(radius: 70)
+            .blur(radius: 90)
         }
         .allowsHitTesting(false)
         .onAppear {
-            withAnimation(.linear(duration: 22).repeatForever(autoreverses: true)) {
+            withAnimation(.linear(duration: 30).repeatForever(autoreverses: true)) {
                 phase = .pi * 2
             }
         }
+    }
+
+    private func ribbon(offset: Double, scale: CGFloat, baseOpacity: Double, geo: GeometryProxy) -> some View {
+        let cx = 0.5 + 0.35 * sin(phase + offset)
+        let cy = 0.5 + 0.35 * cos(phase * 0.75 + offset)
+        return RadialGradient(
+            colors: [Color.white.opacity(baseOpacity), Color.clear],
+            center: UnitPoint(x: cx, y: cy),
+            startRadius: 0,
+            endRadius: geo.size.width * 0.75 * scale
+        )
+    }
+}
+
+/// Vignette tối 4 góc
+struct VignetteView: View {
+    var body: some View {
+        RadialGradient(
+            colors: [Color.clear, Color.clear, Color.black.opacity(0.75)],
+            center: .center,
+            startRadius: 0,
+            endRadius: 500
+        )
+        .allowsHitTesting(false)
     }
 }
 
 struct StarfieldView: View {
     private struct Star {
-        let x: CGFloat; let y: CGFloat
-        let size: CGFloat; let phase: Double
+        let x: CGFloat
+        let y: CGFloat
+        let size: CGFloat
+        let phase: Double
+        let speed: Double
     }
     @State private var stars: [Star] = []
 
@@ -182,66 +97,25 @@ struct StarfieldView: View {
                 Canvas { ctx, size in
                     let t = timeline.date.timeIntervalSinceReferenceDate
                     for s in stars {
-                        let alpha = 0.20 + 0.55 * sin(t * 0.9 + s.phase)
-                        let rect = CGRect(x: s.x * size.width, y: s.y * size.height,
-                                          width: s.size, height: s.size)
+                        let alpha = 0.15 + 0.55 * sin(t * s.speed + s.phase)
+                        let rect = CGRect(
+                            x: s.x * size.width,
+                            y: s.y * size.height,
+                            width: s.size, height: s.size
+                        )
                         ctx.fill(Path(ellipseIn: rect),
-                                 with: .color(Color.white.opacity(alpha)))
+                                 with: .color(Color.white.opacity(max(0, alpha))))
                     }
                 }
             }
             .onAppear {
                 guard stars.isEmpty else { return }
-                stars = (0..<140).map { _ in
+                stars = (0..<150).map { _ in
                     Star(x: CGFloat.random(in: 0...1),
                          y: CGFloat.random(in: 0...1),
-                         size: CGFloat.random(in: 0.6...2.2),
-                         phase: Double.random(in: 0...(2 * .pi)))
-                }
-            }
-        }
-        .allowsHitTesting(false)
-    }
-}
-
-struct ShootingStarsView: View {
-    private struct Shot {
-        let startX: CGFloat
-        let startY: CGFloat
-        let delay: Double
-    }
-    @State private var shots: [Shot] = []
-
-    var body: some View {
-        GeometryReader { _ in
-            TimelineView(.animation(minimumInterval: 1.0 / 40.0)) { timeline in
-                Canvas { ctx, size in
-                    let t = timeline.date.timeIntervalSinceReferenceDate
-                    for s in shots {
-                        let elapsed = (t - s.delay).truncatingRemainder(dividingBy: 7)
-                        guard elapsed > 0 && elapsed < 2.5 else { continue }
-                        let progress = elapsed / 2.5
-                        let x = s.startX * size.width + CGFloat(progress) * 350
-                        let y = s.startY * size.height + CGFloat(progress) * 230
-                        let alpha = 1.0 - progress
-                        var path = Path()
-                        path.move(to: CGPoint(x: x, y: y))
-                        path.addLine(to: CGPoint(x: x - 70, y: y - 46))
-                        ctx.stroke(path,
-                                   with: .color(Color.white.opacity(alpha * 0.95)),
-                                   lineWidth: 1.8)
-                        let head = CGRect(x: x - 2.5, y: y - 2.5, width: 5, height: 5)
-                        ctx.fill(Path(ellipseIn: head),
-                                 with: .color(Color.white.opacity(alpha)))
-                    }
-                }
-            }
-            .onAppear {
-                guard shots.isEmpty else { return }
-                shots = (0..<7).map { i in
-                    Shot(startX: CGFloat.random(in: 0...0.75),
-                         startY: CGFloat.random(in: 0...0.55),
-                         delay: Double(i) * 1.35)
+                         size: CGFloat.random(in: 0.5...2.0),
+                         phase: Double.random(in: 0...(2 * .pi)),
+                         speed: Double.random(in: 0.5...1.6))
                 }
             }
         }
@@ -250,7 +124,7 @@ struct ShootingStarsView: View {
 }
 
 struct FloatingParticlesView: View {
-    var particleCount: Int = 95
+    var particleCount: Int = 70
 
     private struct Particle {
         let baseX: CGFloat
@@ -284,7 +158,7 @@ struct FloatingParticlesView: View {
         guard particles.isEmpty else { return }
         particles = (0..<particleCount).map { _ in
             Particle(baseX: CGFloat.random(in: 0...1),
-                     size: CGFloat.random(in: 1.0...3.2),
+                     size: CGFloat.random(in: 1.0...3.0),
                      speed: CGFloat.random(in: 20...55),
                      opacity: Double.random(in: 0.25...0.9),
                      phase: Double.random(in: 0...(2 * .pi)))
@@ -317,7 +191,7 @@ struct PatchMeta: Codable {
 }
 
 enum PatchMetaStore {
-    private static let key = "patch_meta_v8"
+    private static let key = "patch_meta_v9"
 
     static func all() -> [String: PatchMeta] {
         guard let data = UserDefaults.standard.data(forKey: key),
@@ -349,27 +223,20 @@ enum PatchMetaStore {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// MARK: - MATCH HELPER (CHUẨN XÁC NHẤT)
+// MARK: - MATCHER
 // ═══════════════════════════════════════════════════════════════
 enum PatchMatcher {
-    /// Local: "ZENITH_aim_51067270_F5D3-XXXX-XXXX-XXXX-XXXX.3105"
-    /// → normalize → "aim_51067270"
     static func normalizeLocal(_ name: String) -> String {
         var s = (name as NSString).deletingPathExtension.lowercased()
-        // Bỏ UUID
         s = s.replacingOccurrences(
             of: #"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"#,
             with: "",
             options: .regularExpression
         )
-        // Bỏ prefix zenith
         s = s.replacingOccurrences(of: "zenith_", with: "")
-        // Bỏ tag
         s = s.replacingOccurrences(of: "_vip", with: "")
         s = s.replacingOccurrences(of: "_free", with: "")
-        // Chỉ giữ [a-z0-9_-]
         s = s.replacingOccurrences(of: #"[^a-z0-9_-]"#, with: "_", options: .regularExpression)
-        // Trim _
         s = s.trimmingCharacters(in: CharacterSet(charactersIn: "_"))
         return s
     }
@@ -377,17 +244,10 @@ enum PatchMatcher {
     static func match(localName: String, in remotes: [RemoteFileLite]) -> RemoteFileLite? {
         let localKey = normalizeLocal(localName)
         guard !localKey.isEmpty else { return nil }
-
-        // 1. Match exact key
-        for r in remotes {
-            if r.matchKey == localKey { return r }
-        }
-        // 2. Match nếu 1 trong 2 chứa cái kia
+        for r in remotes where r.matchKey == localKey { return r }
         for r in remotes {
             if r.matchKey.isEmpty { continue }
-            if localKey.contains(r.matchKey) || r.matchKey.contains(localKey) {
-                return r
-            }
+            if localKey.contains(r.matchKey) || r.matchKey.contains(localKey) { return r }
         }
         return nil
     }
@@ -404,7 +264,7 @@ struct RemoteFileLite {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// MARK: - SUB VIEWS (viền trắng, không màu)
+// MARK: - SUB VIEWS
 // ═══════════════════════════════════════════════════════════════
 private struct NeonWhiteCard<Content: View>: View {
     @ViewBuilder let content: Content
@@ -465,7 +325,6 @@ private struct AvatarView: View {
                 .frame(width: pulse ? 118 : 96, height: pulse ? 118 : 96)
                 .blur(radius: 24)
 
-            // Vòng ngoài — gradient trắng quay
             Circle()
                 .stroke(
                     AngularGradient(
@@ -481,7 +340,6 @@ private struct AvatarView: View {
                 .rotationEffect(.degrees(rotate ? 360 : 0))
                 .blur(radius: 1)
 
-            // Vòng trong — quay ngược
             Circle()
                 .stroke(
                     AngularGradient(
@@ -497,7 +355,6 @@ private struct AvatarView: View {
                 .frame(width: 88, height: 88)
                 .rotationEffect(.degrees(rotate2 ? -360 : 0))
 
-            // Vòng dotted
             Circle()
                 .stroke(
                     Color.white.opacity(0.35),
@@ -790,7 +647,7 @@ struct PatchProjectsView: View {
     @State private var actionAlert: PatchStoreAlert?
     @State private var selectedGame: GameSelection?
 
-    private let autoTimer = Timer.publish(every: 15, on: .main, in: .common).autoconnect()
+    private let autoTimer = Timer.publish(every: 12, on: .main, in: .common).autoconnect()
 
     let onOpenSettings: () -> Void
     let onOpenLogs: () -> Void
@@ -925,6 +782,7 @@ struct PatchProjectsView: View {
             }
             var request = URLRequest(url: listUrl)
             request.cachePolicy = .reloadIgnoringLocalCacheData
+            request.timeoutInterval = 20
             let (data, _) = try await URLSession.shared.data(for: request)
 
             struct WireRemote: Decodable {
@@ -953,22 +811,22 @@ struct PatchProjectsView: View {
                 )
             }
 
-            // BƯỚC 1 — Import file chưa có
+            // BƯỚC 1 — Lưu metadata vào UserDefaults để tra cứu (không cần poll)
             let imported = PatchMetaStore.importedRemoteNames()
-            var didImport = false
+
+            // BƯỚC 2 — Import file chưa có
             for r in remotes {
                 if imported.contains(r.filename) { continue }
                 guard let url = URL(string: r.url) else { continue }
                 await MainActor.run { store.importPackage(from: .remote(url)) }
-                didImport = true
-                try? await Task.sleep(nanoseconds: 2_000_000_000)
-            }
-            if didImport {
-                await MainActor.run { store.reload() }
-                try? await Task.sleep(nanoseconds: 1_500_000_000)
+                try? await Task.sleep(nanoseconds: 800_000_000)
             }
 
-            // BƯỚC 2 — Re-map TOÀN BỘ (folder luôn từ remote)
+            // BƯỚC 3 — Đợi store update
+            await MainActor.run { store.reload() }
+            try? await Task.sleep(nanoseconds: 1_200_000_000)
+
+            // BƯỚC 4 — Match TOÀN BỘ local items
             let localItems = await MainActor.run { store.items }
             for item in localItems {
                 let localName = item.packageURL.lastPathComponent
@@ -1016,7 +874,8 @@ struct PatchGameDetailView: View {
     let language: AppLanguage
 
     @Environment(\.dismiss) private var dismiss
-    @State private var selectedFolder: String?
+    @State private var selectedFolder: String? = nil
+    @State private var didInitFolder = false
     @State private var workingFileID: String?
     @State private var renameItem: PatchLibraryItem?
     @State private var renameText: String = ""
@@ -1025,7 +884,7 @@ struct PatchGameDetailView: View {
     @State private var noteText: String = ""
     @State private var refreshTick: Int = 0
 
-    private let refreshTimer = Timer.publish(every: 5, on: .main, in: .common).autoconnect()
+    private let refreshTimer = Timer.publish(every: 4, on: .main, in: .common).autoconnect()
 
     var body: some View {
         NavigationStack {
@@ -1049,9 +908,20 @@ struct PatchGameDetailView: View {
             .toolbarBackground(Color.black, for: .navigationBar)
             .toolbarBackground(.visible, for: .navigationBar)
             .toolbarColorScheme(.dark, for: .navigationBar)
+            .onAppear {
+                // MẶC ĐỊNH chọn folder đầu tiên
+                if !didInitFolder, let first = folders.first {
+                    selectedFolder = first
+                    didInitFolder = true
+                }
+            }
             .onReceive(refreshTimer) { _ in
                 refreshTick &+= 1
                 store.reload()
+                if !didInitFolder, let first = folders.first {
+                    selectedFolder = first
+                    didInitFolder = true
+                }
             }
             .alert(item: $actionAlert) { alert in
                 Alert(
@@ -1078,7 +948,6 @@ struct PatchGameDetailView: View {
         }
     }
 
-    /// CHỈ hiện items ĐÃ MATCH với server (có metadata)
     private var gameItems: [PatchLibraryItem] {
         _ = refreshTick
         return store.items.filter { item in
@@ -1088,8 +957,6 @@ struct PatchGameDetailView: View {
             let isPlain = !isMax && !isNormal
             let correctGame = game.prefix == "ffmax_" ? isMax : (isNormal || isPlain)
             guard correctGame else { return false }
-
-            // ⚠️ QUAN TRỌNG: chỉ hiện khi có metadata (đã match server)
             guard let meta = PatchMetaStore.get(forKey: name),
                   !meta.folder.isEmpty else { return false }
             return true
@@ -1207,7 +1074,7 @@ struct PatchGameDetailView: View {
     private func selectFolder(_ folder: String) {
         SoundFX.tap()
         withAnimation(.spring(response: 0.35, dampingFraction: 0.75)) {
-            selectedFolder = (selectedFolder == folder) ? nil : folder
+            selectedFolder = folder
         }
     }
 
