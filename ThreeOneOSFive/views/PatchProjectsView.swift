@@ -19,7 +19,7 @@ enum SoundFX {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// MARK: - BACKGROUND (nhẹ, 24fps)
+// MARK: - BACKGROUND
 // ═══════════════════════════════════════════════════════════════
 struct NeonBackgroundView: View {
     @Environment(\.scenePhase) private var scenePhase
@@ -144,16 +144,15 @@ struct CosmicFieldView: View {
 struct GameSelection: Identifiable, Hashable {
     let id = UUID()
     let title: String
-    let prefix: String   // "ffmax" hoặc "ffnormal" (không có underscore)
+    let prefix: String   // "ffmax" / "ffnormal"
 }
 
-/// Metadata của patch — keyed by LOCAL filename
 struct PatchMeta: Codable {
-    var remoteKey: String       // "ffmax/AIM/Headlock_FREE.3105" — UNIQUE
-    var remoteName: String      // "Headlock_FREE.3105"
-    var gameType: String        // "ffmax" / "ffnormal"
-    var folder: String          // "AIM"
-    var tag: String             // "VIP" / "FREE"
+    var remoteKey: String
+    var remoteName: String
+    var gameType: String
+    var folder: String
+    var tag: String
     var displayName: String
     var note: String
     var tagOverride: Bool
@@ -185,7 +184,6 @@ struct PatchMeta: Codable {
         self.orphaned = orphaned
     }
 
-    /// Custom decode để tương thích data cũ — không crash nếu thiếu field
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         remoteKey    = (try? c.decode(String.self, forKey: .remoteKey)) ?? ""
@@ -202,7 +200,6 @@ struct PatchMeta: Codable {
     }
 }
 
-/// Remote file — luôn có composite key unique
 struct RemoteFileLite {
     let filename: String
     let gameType: String
@@ -461,6 +458,24 @@ private struct PatchRow: View {
             Button(action: onTapTag) { Label("Đổi VIP/FREE", systemImage: "crown") }
             Button(action: onEditNote) { Label("Sửa ghi chú", systemImage: "note.text") }
         }
+    }
+}
+
+private struct EmptyStateView: View {
+    let message: String
+    var body: some View {
+        VStack(spacing: 12) {
+            Image(systemName: "tray")
+                .font(.system(size: 44, weight: .light))
+                .foregroundStyle(Color.white.opacity(0.3))
+            Text(message)
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(Color.white.opacity(0.5))
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 40)
+        }
+        .padding(.top, 60)
+        .frame(maxWidth: .infinity)
     }
 }
 
@@ -791,7 +806,7 @@ struct PatchProjectsView: View {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// MARK: - SYNC ENGINE (AN TOÀN — không dùng Dictionary(uniqueKeysWithValues))
+// MARK: - SYNC ENGINE (AN TOÀN)
 // ═══════════════════════════════════════════════════════════════
 final class SyncEngine {
     static let shared = SyncEngine()
@@ -801,8 +816,7 @@ final class SyncEngine {
     func run(store: PatchProjectStore) async {
         guard let remotes = await fetchRemotes() else { return }
 
-        // ⭐️ Build dict AN TOÀN bằng composite key (gameType/folder/filename)
-        // Không dùng Dictionary(uniqueKeysWithValues:) — có thể crash khi trùng
+        // Build dict AN TOÀN bằng composite key
         var remoteByKey: [String: RemoteFileLite] = [:]
         for r in remotes {
             remoteByKey[r.compositeKey] = r
@@ -813,7 +827,6 @@ final class SyncEngine {
         var metaDict = PatchMetaStore.all()
 
         for (localName, var meta) in metaDict {
-            // Build lookup key cho meta này (ưu tiên remoteKey mới)
             let key = meta.remoteKey.isEmpty
                 ? "\(meta.gameType)/\(meta.folder)/\(meta.remoteName)"
                 : meta.remoteKey
@@ -834,7 +847,7 @@ final class SyncEngine {
         PatchMetaStore.save(metaDict)
         metaLock.unlock()
 
-        // BƯỚC 2: Import các file mới (composite key chưa có trong meta)
+        // BƯỚC 2: Import file mới
         var existingKeys = Set<String>()
         for meta in metaDict.values where !meta.orphaned {
             if !meta.remoteKey.isEmpty {
@@ -950,7 +963,6 @@ struct PatchGameDetailView: View {
     @Environment(\.scenePhase) private var scenePhase
     @State private var activationInfo: ActivationInfo?
     @State private var selectedFolder: String? = nil
-    @State private var didInit = false
     @State private var workingFileID: String?
     @State private var renameItem: PatchLibraryItem?
     @State private var renameText: String = ""
@@ -990,8 +1002,8 @@ struct PatchGameDetailView: View {
                 Task {
                     await SyncEngine.shared.run(store: store)
                     await MainActor.run {
-                        initFirstFolder()
                         store.reload()
+                        syncFolders()
                     }
                 }
             }
@@ -1003,10 +1015,7 @@ struct PatchGameDetailView: View {
             .onReceive(refreshTimer) { _ in
                 refreshTick &+= 1
                 store.reload()
-                initFirstFolder()
-                if let sel = selectedFolder, !folders.contains(sel) {
-                    selectedFolder = folders.first
-                }
+                syncFolders()
             }
             .alert(item: $actionAlert) { alert in
                 Alert(
@@ -1036,26 +1045,34 @@ struct PatchGameDetailView: View {
         }
     }
 
-    private func initFirstFolder() {
-        guard !didInit, let first = folders.first else { return }
-        selectedFolder = first
-        didInit = true
+    // ⭐️ TỰ ĐỘNG CHỌN FOLDER ĐẦU TIÊN
+    private func syncFolders() {
+        let currentFolders = folders
+
+        if currentFolders.isEmpty {
+            selectedFolder = nil
+            return
+        }
+
+        if let sel = selectedFolder, currentFolders.contains(sel) {
+            return  // Folder hiện tại vẫn valid
+        }
+
+        // Chưa chọn OR folder bị xóa → chọn folder đầu tiên
+        selectedFolder = currentFolders.first
     }
 
-    /// Filter theo gameType từ metadata (fallback về prefix filename nếu chưa có meta)
     private var gameItems: [PatchLibraryItem] {
         _ = refreshTick
         return store.items.filter { item in
             let name = item.packageURL.lastPathComponent
             let meta = PatchMetaStore.get(forLocal: name)
 
-            // Ưu tiên gameType từ metadata (chính xác nhất)
             if let m = meta, !m.gameType.isEmpty {
                 if m.orphaned { return false }
                 return m.gameType == game.prefix
             }
 
-            // Fallback: check prefix filename
             let isMax = name.hasPrefix("ffmax_")
             let isNormal = name.hasPrefix("ffnormal_")
             let isPlain = !isMax && !isNormal
@@ -1065,7 +1082,6 @@ struct PatchGameDetailView: View {
     }
 
     private var folders: [String] {
-        // ⭐️ Array-based unique — tránh hash Set với string lạ
         let names = gameItems
             .map { folderName(for: $0) }
             .filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
@@ -1076,8 +1092,9 @@ struct PatchGameDetailView: View {
         return unique.sorted()
     }
 
+    // ⭐️ NẾU CHƯA CHỌN FOLDER → TRẢ RỖNG (không hiện "tất cả")
     private var displayedItems: [PatchLibraryItem] {
-        guard let sel = selectedFolder else { return gameItems }
+        guard let sel = selectedFolder else { return [] }
         return gameItems.filter { folderName(for: $0) == sel }
     }
 
@@ -1110,14 +1127,20 @@ struct PatchGameDetailView: View {
 
     private var listContent: some View {
         ScrollView(showsIndicators: false) {
-            LazyVStack(spacing: 10) {
-                ForEach(displayedItems) { item in
-                    patchRow(item: item)
+            if displayedItems.isEmpty {
+                EmptyStateView(message: folders.isEmpty
+                    ? "Chưa có folder nào.\nĐang đồng bộ dữ liệu từ server..."
+                    : "Folder này chưa có patch nào.")
+            } else {
+                LazyVStack(spacing: 10) {
+                    ForEach(displayedItems) { item in
+                        patchRow(item: item)
+                    }
                 }
+                .padding(.horizontal, 14)
+                .padding(.top, 6)
+                .padding(.bottom, 36)
             }
-            .padding(.horizontal, 14)
-            .padding(.top, 6)
-            .padding(.bottom, 36)
         }
     }
 
