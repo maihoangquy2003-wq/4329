@@ -166,17 +166,14 @@ struct RemoteFileLite {
     let url: String
 }
 
-/// Kết quả kích hoạt: thành công hay thất bại (đều hiện sheet)
 struct ActivationInfo: Identifiable {
     let id = UUID()
     let patchName: String
     let note: String
-    let success: Bool
-    let errorMessage: String?
 }
 
 // ═══════════════════════════════════════════════════════════════
-// MARK: - META STORE
+// MARK: - META STORE (keyed by LOCAL filename)
 // ═══════════════════════════════════════════════════════════════
 enum PatchMetaStore {
     private static let key = "patch_meta_v12"
@@ -418,7 +415,7 @@ private struct PatchRow: View {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// MARK: - ACTIVATION SHEET (Smart: success / fail)
+// MARK: - ACTIVATION SHEET
 // ═══════════════════════════════════════════════════════════════
 struct ActivationNoteSheet: View {
     let info: ActivationInfo
@@ -426,156 +423,104 @@ struct ActivationNoteSheet: View {
     @State private var pulse = false
     @State private var shimmer = false
 
-    private var accent: Color { info.success ? Color.white : Color(red: 1.0, green: 0.35, blue: 0.35) }
-    private var titleText: String { info.success ? "ĐÃ KÍCH HOẠT" : "KHÔNG KÍCH HOẠT ĐƯỢC" }
-    private var iconName: String { info.success ? "bolt.shield.fill" : "exclamationmark.triangle.fill" }
-    private var hasNote: Bool { !info.note.trimmingCharacters(in: .whitespaces).isEmpty }
-
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
             AuroraView().ignoresSafeArea().opacity(0.6)
 
-            ScrollView(showsIndicators: false) {
-                VStack(spacing: 22) {
-                    Spacer(minLength: 40)
+            VStack(spacing: 22) {
+                Spacer()
 
-                    // ICON
-                    ZStack {
-                        Circle()
-                            .fill(accent.opacity(0.12))
-                            .frame(width: pulse ? 110 : 96, height: pulse ? 110 : 96)
-                            .blur(radius: 22)
-                        Circle()
-                            .strokeBorder(
-                                LinearGradient(colors: [accent, accent.opacity(0.35), accent],
-                                               startPoint: .topLeading, endPoint: .bottomTrailing),
-                                lineWidth: 2)
-                            .frame(width: 96, height: 96)
-                        Image(systemName: iconName)
-                            .font(.system(size: 38, weight: .bold))
-                            .foregroundStyle(accent)
-                            .shadow(color: accent.opacity(0.95), radius: pulse ? 22 : 12)
-                    }
-                    .onAppear {
-                        withAnimation(.easeInOut(duration: 1.4).repeatForever(autoreverses: true)) {
-                            pulse = true
-                        }
-                    }
-
-                    // TITLE
-                    VStack(spacing: 8) {
-                        Text("HEADLOCK ZENIS")
-                            .font(.system(size: 14, weight: .heavy)).tracking(4)
-                            .foregroundStyle(Color.white.opacity(0.7))
-                        Text(titleText)
-                            .font(.system(size: 20, weight: .heavy)).tracking(2)
-                            .foregroundStyle(accent)
-                            .shadow(color: accent.opacity(0.8), radius: 16)
-                            .multilineTextAlignment(.center)
-                            .padding(.horizontal, 20)
-                        Text(info.patchName)
-                            .font(.system(size: 15, weight: .bold))
-                            .foregroundStyle(Color.white.opacity(0.9))
-                            .multilineTextAlignment(.center)
-                            .padding(.top, 4)
-                            .padding(.horizontal, 20)
-                    }
-
-                    // ERROR MESSAGE (nếu có)
-                    if let errMsg = info.errorMessage, !errMsg.isEmpty, !info.success {
-                        VStack(alignment: .leading, spacing: 8) {
-                            HStack(spacing: 8) {
-                                Image(systemName: "exclamationmark.circle.fill")
-                                    .font(.system(size: 12, weight: .bold))
-                                    .foregroundStyle(accent)
-                                Text("LÝ DO")
-                                    .font(.system(size: 10, weight: .heavy)).tracking(2)
-                                    .foregroundStyle(Color.white.opacity(0.7))
-                            }
-                            Text(errMsg)
-                                .font(.system(size: 12, weight: .medium))
-                                .foregroundStyle(Color.white.opacity(0.9))
-                                .multilineTextAlignment(.leading)
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
-                        .padding(16)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(RoundedRectangle(cornerRadius: 14).fill(accent.opacity(0.06)))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 14)
-                                .strokeBorder(accent.opacity(0.45), lineWidth: 1.1)
-                        )
-                        .shadow(color: accent.opacity(0.3), radius: 16)
-                        .padding(.horizontal, 24)
-                    }
-
-                    // NOTE CARD (luôn hiện nếu có)
-                    if hasNote {
-                        VStack(alignment: .leading, spacing: 8) {
-                            HStack(spacing: 8) {
-                                Image(systemName: "note.text")
-                                    .font(.system(size: 12, weight: .bold))
-                                    .foregroundStyle(Color.white)
-                                Text("GHI CHÚ")
-                                    .font(.system(size: 10, weight: .heavy)).tracking(2)
-                                    .foregroundStyle(Color.white.opacity(0.7))
-                            }
-                            Text(info.note)
-                                .font(.system(size: 13, weight: .medium))
-                                .foregroundStyle(Color.white.opacity(0.95))
-                                .multilineTextAlignment(.leading)
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
-                        .padding(16)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(RoundedRectangle(cornerRadius: 14).fill(Color.white.opacity(0.06)))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 14)
-                                .strokeBorder(
-                                    LinearGradient(colors: [.white, .white.opacity(0.35), .white],
-                                                   startPoint: .leading, endPoint: .trailing),
-                                    lineWidth: 1.2)
-                        )
-                        .shadow(color: .white.opacity(0.4), radius: 18)
-                        .overlay(shimmerOverlay)
-                        .onAppear {
-                            withAnimation(.linear(duration: 2.5).repeatForever(autoreverses: false)) {
-                                shimmer = true
-                            }
-                        }
-                        .padding(.horizontal, 24)
-                    }
-
-                    // HINT (nếu fail)
-                    if !info.success {
-                        Text("💡 Hãy chắc chắn game đã được cài đặt trên thiết bị, sau đó thử lại.")
-                            .font(.system(size: 11, weight: .medium))
-                            .foregroundStyle(Color.white.opacity(0.55))
-                            .multilineTextAlignment(.center)
-                            .padding(.horizontal, 32)
-                    }
-
-                    Spacer(minLength: 20)
-
-                    // CONFIRM BUTTON
-                    Button {
-                        SoundFX.tap()
-                        onDismiss()
-                    } label: {
-                        Text("ĐÃ HIỂU")
-                            .font(.system(size: 15, weight: .heavy)).tracking(3)
-                            .foregroundStyle(Color.black)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 16)
-                            .background(Capsule().fill(accent))
-                            .overlay(Capsule().stroke(accent, lineWidth: 1))
-                            .shadow(color: accent.opacity(0.7), radius: 20)
-                            .padding(.horizontal, 40)
-                    }
-                    .buttonStyle(.plain)
-                    .padding(.bottom, 40)
+                ZStack {
+                    Circle().fill(Color.white.opacity(0.10))
+                        .frame(width: pulse ? 110 : 96, height: pulse ? 110 : 96)
+                        .blur(radius: 22)
+                    Circle()
+                        .strokeBorder(
+                            LinearGradient(colors: [.white, .white.opacity(0.35), .white],
+                                           startPoint: .topLeading, endPoint: .bottomTrailing),
+                            lineWidth: 2)
+                        .frame(width: 96, height: 96)
+                    Image(systemName: "bolt.shield.fill")
+                        .font(.system(size: 40, weight: .bold))
+                        .foregroundStyle(Color.white)
+                        .shadow(color: .white.opacity(0.95), radius: pulse ? 22 : 12)
                 }
+                .onAppear {
+                    withAnimation(.easeInOut(duration: 1.4).repeatForever(autoreverses: true)) {
+                        pulse = true
+                    }
+                }
+
+                VStack(spacing: 8) {
+                    Text("HEADLOCK ZENIS")
+                        .font(.system(size: 14, weight: .heavy)).tracking(4)
+                        .foregroundStyle(Color.white.opacity(0.7))
+                    Text("ĐÃ KÍCH HOẠT")
+                        .font(.system(size: 22, weight: .heavy)).tracking(2)
+                        .foregroundStyle(Color.white)
+                        .shadow(color: .white.opacity(0.8), radius: 16)
+                    Text(info.patchName)
+                        .font(.system(size: 15, weight: .bold))
+                        .foregroundStyle(Color.white.opacity(0.9))
+                        .multilineTextAlignment(.center)
+                        .padding(.top, 4)
+                }
+
+                if !info.note.trimmingCharacters(in: .whitespaces).isEmpty {
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack(spacing: 8) {
+                            Image(systemName: "note.text")
+                                .font(.system(size: 12, weight: .bold))
+                                .foregroundStyle(Color.white)
+                            Text("GHI CHÚ")
+                                .font(.system(size: 10, weight: .heavy)).tracking(2)
+                                .foregroundStyle(Color.white.opacity(0.7))
+                        }
+                        Text(info.note)
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundStyle(Color.white.opacity(0.95))
+                            .multilineTextAlignment(.leading)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .padding(16)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(RoundedRectangle(cornerRadius: 14).fill(Color.white.opacity(0.06)))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 14)
+                            .strokeBorder(
+                                LinearGradient(colors: [.white, .white.opacity(0.35), .white],
+                                               startPoint: .leading, endPoint: .trailing),
+                                lineWidth: 1.2)
+                    )
+                    .shadow(color: .white.opacity(0.4), radius: 18)
+                    .overlay(shimmerOverlay)
+                    .onAppear {
+                        withAnimation(.linear(duration: 2.5).repeatForever(autoreverses: false)) {
+                            shimmer = true
+                        }
+                    }
+                    .padding(.horizontal, 24)
+                }
+
+                Spacer()
+
+                Button {
+                    SoundFX.tap()
+                    onDismiss()
+                } label: {
+                    Text("ĐÃ HIỂU")
+                        .font(.system(size: 15, weight: .heavy)).tracking(3)
+                        .foregroundStyle(Color.black)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 16)
+                        .background(Capsule().fill(Color.white))
+                        .overlay(Capsule().stroke(Color.white, lineWidth: 1))
+                        .shadow(color: .white.opacity(0.8), radius: 20)
+                        .padding(.horizontal, 40)
+                }
+                .buttonStyle(.plain)
+                .padding(.bottom, 40)
             }
         }
     }
@@ -857,7 +802,7 @@ final class SyncEngine {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// MARK: - DETAIL VIEW
+// MARK: - DETAIL VIEW (⭐ activationInfo LOCAL + cover ngay tại đây)
 // ═══════════════════════════════════════════════════════════════
 struct PatchGameDetailView: View {
     let game: GameSelection
@@ -937,7 +882,7 @@ struct PatchGameDetailView: View {
                 Button("FREE 🛡") { commitTag("FREE") }
                 Button("Huỷ", role: .cancel) { tagPickerItem = nil }
             }
-            // Sheet kích hoạt — hiện NGAY trong detail view
+            // ⭐️ HIỆN NGAY TRONG DETAIL VIEW, KHÔNG CẦN OUT RA
             .fullScreenCover(item: $activationInfo) { info in
                 ActivationNoteSheet(info: info) {
                     activationInfo = nil
@@ -1138,69 +1083,37 @@ struct PatchGameDetailView: View {
         noteItem = nil
     }
 
-    // ⭐️ TOGGLE: Bắt mọi lỗi và show sheet với status tương ứng
     private func togglePatch(item: PatchLibraryItem, activate: Bool) {
         workingFileID = item.id.uuidString
-        let nameSnapshot = displayName(for: item)
-        let noteSnapshot = currentNote(for: item)
-
         Task.detached(priority: .userInitiated) {
-            // Nếu TẮT: chỉ gọi restore, không hiện sheet
-            if !activate {
-                do {
-                    if let r = DevicePatchService.latestReceipt(projectID: item.id) {
-                        try DevicePatchService.restore(receipt: r)
-                    }
-                    await MainActor.run {
-                        store.reload()
-                        workingFileID = nil
-                    }
-                } catch {
-                    await MainActor.run {
-                        workingFileID = nil
-                        SoundFX.error()
-                        // Nếu restore fail, thông báo qua sheet với success=false
-                        activationInfo = ActivationInfo(
-                            patchName: nameSnapshot,
-                            note: noteSnapshot,
-                            success: false,
-                            errorMessage: "Không thể tắt patch: \(error.localizedDescription)"
-                        )
-                    }
-                }
-                return
-            }
-
-            // Nếu BẬT: gọi apply, bắt lỗi
             do {
-                guard let p = item.project else {
-                    await MainActor.run { workingFileID = nil }
-                    return
+                if activate {
+                    guard let p = item.project else { return }
+                    _ = try DevicePatchService.apply(project: p)
+                } else {
+                    guard let r = DevicePatchService.latestReceipt(projectID: item.id) else {
+                        await MainActor.run { workingFileID = nil }
+                        return
+                    }
+                    try DevicePatchService.restore(receipt: r)
                 }
-                _ = try DevicePatchService.apply(project: p)
-
-                // Thành công → sheet xanh
+                let name = await MainActor.run { displayName(for: item) }
+                let note = await MainActor.run { currentNote(for: item) }
                 await MainActor.run {
                     store.reload()
                     workingFileID = nil
-                    activationInfo = ActivationInfo(
-                        patchName: nameSnapshot,
-                        note: noteSnapshot,
-                        success: true,
-                        errorMessage: nil
-                    )
+                    if activate {
+                        // ⭐️ Hiện NGAY trong Detail View
+                        activationInfo = ActivationInfo(patchName: name, note: note)
+                    }
                 }
             } catch {
-                // ⭐️ THẤT BẠI → sheet đỏ với lý do + note
                 await MainActor.run {
-                    store.reload()
                     workingFileID = nil
                     SoundFX.error()
-                    activationInfo = ActivationInfo(
-                        patchName: nameSnapshot,
-                        note: noteSnapshot,
-                        success: false,
-                        errorMessage: error.localizedDescription
+                    actionAlert = PatchStoreAlert(
+                        titleKey: "Lỗi",
+                        messageKey: "Thất bại: \(error.localizedDescription)"
                     )
                 }
             }
