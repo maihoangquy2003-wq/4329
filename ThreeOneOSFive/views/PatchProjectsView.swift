@@ -38,11 +38,14 @@ struct AuroraView: View {
     var body: some View {
         GeometryReader { geo in
             ZStack {
-                blob(cx: 0.28 + 0.10 * sin(phase), cy: 0.25 + 0.08 * cos(phase * 0.7),
+                blob(cx: 0.28 + 0.10 * sin(phase),
+                     cy: 0.25 + 0.08 * cos(phase * 0.7),
                      opacity: 0.13, r: geo.size.width * 0.75)
-                blob(cx: 0.75 + 0.10 * cos(phase * 0.85), cy: 0.72 + 0.10 * sin(phase * 0.6),
+                blob(cx: 0.75 + 0.10 * cos(phase * 0.85),
+                     cy: 0.72 + 0.10 * sin(phase * 0.6),
                      opacity: 0.10, r: geo.size.width * 0.85)
-                blob(cx: 0.50 + 0.15 * sin(phase * 1.15), cy: 0.50 + 0.15 * cos(phase * 0.9),
+                blob(cx: 0.50 + 0.15 * sin(phase * 1.15),
+                     cy: 0.50 + 0.15 * cos(phase * 0.9),
                      opacity: 0.08, r: geo.size.width * 0.65)
             }
             .blur(radius: 95)
@@ -112,7 +115,6 @@ struct CosmicFieldView: View {
         .allowsHitTesting(false)
         .onAppear(perform: initField)
     }
-
     private func initField() {
         if stars.isEmpty {
             stars = (0..<110).map { _ in
@@ -171,7 +173,7 @@ struct ActivationInfo: Identifiable {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// MARK: - META STORE
+// MARK: - META STORE (keyed by LOCAL filename)
 // ═══════════════════════════════════════════════════════════════
 enum PatchMetaStore {
     private static let key = "patch_meta_v12"
@@ -191,16 +193,8 @@ enum PatchMetaStore {
         var d = all(); d[local] = meta; save(d)
     }
     static func get(forLocal local: String) -> PatchMeta? { return all()[local] }
-    static func update(_ block: (inout PatchMeta) -> Void, forLocal local: String) {
-        var d = all()
-        guard var m = d[local] else { return }
-        block(&m); d[local] = m; save(d)
-    }
     static func allRemoteNames() -> Set<String> {
         return Set(all().values.map { $0.remoteName })
-    }
-    static func remoteNameExists(_ name: String) -> Bool {
-        return allRemoteNames().contains(name)
     }
 }
 
@@ -555,7 +549,6 @@ struct PatchProjectsView: View {
     @State private var isAutoSyncing = false
     @State private var actionAlert: PatchStoreAlert?
     @State private var selectedGame: GameSelection?
-    @State private var activationInfo: ActivationInfo?
 
     private let autoTimer = Timer.publish(every: 10, on: .main, in: .common).autoconnect()
 
@@ -591,14 +584,8 @@ struct PatchProjectsView: View {
                     game: game,
                     store: store,
                     actionAlert: $actionAlert,
-                    activationInfo: $activationInfo,
                     language: language
                 )
-            }
-            .fullScreenCover(item: $activationInfo) { info in
-                ActivationNoteSheet(info: info) {
-                    activationInfo = nil
-                }
             }
             .alert(item: $actionAlert) { alert in
                 Alert(
@@ -815,16 +802,16 @@ final class SyncEngine {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// MARK: - DETAIL VIEW
+// MARK: - DETAIL VIEW (⭐ activationInfo LOCAL + cover ngay tại đây)
 // ═══════════════════════════════════════════════════════════════
 struct PatchGameDetailView: View {
     let game: GameSelection
     @ObservedObject var store: PatchProjectStore
     @Binding var actionAlert: PatchStoreAlert?
-    @Binding var activationInfo: ActivationInfo?
     let language: AppLanguage
 
     @Environment(\.dismiss) private var dismiss
+    @State private var activationInfo: ActivationInfo?
     @State private var selectedFolder: String? = nil
     @State private var didInit = false
     @State private var workingFileID: String?
@@ -894,6 +881,12 @@ struct PatchGameDetailView: View {
                 Button("VIP 👑") { commitTag("VIP") }
                 Button("FREE 🛡") { commitTag("FREE") }
                 Button("Huỷ", role: .cancel) { tagPickerItem = nil }
+            }
+            // ⭐️ HIỆN NGAY TRONG DETAIL VIEW, KHÔNG CẦN OUT RA
+            .fullScreenCover(item: $activationInfo) { info in
+                ActivationNoteSheet(info: info) {
+                    activationInfo = nil
+                }
             }
         }
     }
@@ -1110,6 +1103,7 @@ struct PatchGameDetailView: View {
                     store.reload()
                     workingFileID = nil
                     if activate {
+                        // ⭐️ Hiện NGAY trong Detail View
                         activationInfo = ActivationInfo(patchName: name, note: note)
                     }
                 }
