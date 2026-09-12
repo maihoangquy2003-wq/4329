@@ -346,7 +346,6 @@
 			hasScannedForEncodings = 0;
 			knownRegions = (
 				en,
-				vi,
 				Base,
 			);
 			mainGroup = 3105A400;
