@@ -1,994 +1,647 @@
-import SwiftUI
-import UIKit
-import AudioToolbox
-import MachO
-import Security
-import Combine
+// !$*UTF8*$*
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 56;
+	objects = {
 
-// MARK: - CUSTOM IMAGE LOADER
-class ImageLoader: ObservableObject {
-    @Published var image: UIImage?
-    @Published var isLoading = true
-    
-    func load(urlStr: String) {
-        guard let url = URL(string: urlStr) else { isLoading = false; return }
-        var request = URLRequest(url: url)
-        request.setValue("Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15", forHTTPHeaderField: "User-Agent")
-        
-        URLSession.shared.dataTask(with: request) { data, response, error in
-            DispatchQueue.main.async {
-                self.isLoading = false
-                if let data = data, let uiImage = UIImage(data: data) {
-                    self.image = uiImage
-                }
-            }
-        }.resume()
-    }
-}
+/* Begin PBXBuildFile section */
+		3105A200 /* App.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3105A020; };
+		3105A201 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3105A021; };
+		3105A203 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3105A023; };
+		3105A204 /* LogView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3105A024; };
+		3105A205 /* Utils.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3105A025; };
+		3105A206 /* SBX.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3105A026; };
+		3105A207 /* MG.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3105A027; };
+		3105A209 /* bad_query.c in Sources */ = {isa = PBXBuildFile; fileRef = 3105A029; };
+		3105A210 /* mcm_bridge.m in Sources */ = {isa = PBXBuildFile; fileRef = 3105A030; };
+		3105A220 /* kexploit_opa334.m in Sources */ = {isa = PBXBuildFile; fileRef = 3105A080; };
+		3105A221 /* offsets.m in Sources */ = {isa = PBXBuildFile; fileRef = 3105A081; };
+		3105A222 /* krw.m in Sources */ = {isa = PBXBuildFile; fileRef = 3105A082; };
+		3105A223 /* kutils.m in Sources */ = {isa = PBXBuildFile; fileRef = 3105A083; };
+		3105A224 /* vnode.m in Sources */ = {isa = PBXBuildFile; fileRef = 3105A084; };
+		3105A225 /* sandbox_escape.m in Sources */ = {isa = PBXBuildFile; fileRef = 3105A085; };
+		3105A226 /* DesignSystem.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3105A098; };
+		3105A227 /* Localization.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3105A099; };
+		3105A235 /* AppIconHelper.m in Sources */ = {isa = PBXBuildFile; fileRef = 3105A106; };
+		3105A208 /* KernelExploit.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3105A202; };
+		3105J200 /* AntiDetection.m in Sources */ = {isa = PBXBuildFile; fileRef = 3105J201; };
+		3105J204 /* DisplayIdentity.m in Sources */ = {isa = PBXBuildFile; fileRef = 3105J203; };
+		3105J206 /* DisplayIdentityAttribution.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3105J205; };
+		3105A236 /* ContainerIdentityResolver.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3105A108; };
+		3105A237 /* ContainerBrowserLogic.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3105A109; };
+		3105A238 /* FileReplacementService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3105A110; };
+		3105A239 /* FileManagerService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3105A111; };
+		3105A240 /* FileBrowserView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3105A112; };
+		3105A241 /* SupportPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3105A113; };
+		3105B214 /* PatchProjectModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3105B114; };
+		3105B215 /* PatchPackageCodec.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3105B115; };
+		3105B216 /* PatchKeyStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3105B116; };
+		3105B217 /* PatchTransaction.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3105B117; };
+		3105B218 /* DevicePatchService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3105B118; };
+		3105B219 /* PatchProjectLibrary.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3105B119; };
+		3105B220 /* PatchProjectStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3105B120; };
+		3105B221 /* PatchProjectsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3105B121; };
+		3105B222 /* PatchProjectEditorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3105B122; };
+		3105C200 /* PatchDraftService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3105C100; };
+		3105C201 /* PatchDraftCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3105C101; };
+		3105C202 /* FolderPatchSelectionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3105C102; };
+		3105E200 /* LimitedCleanerService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3105E100; };
+		3105E201 /* CleanerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3105E101; };
+		3105E202 /* CleanerCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3105E102; };
+		3105F200 /* wallpaper_zip.c in Sources */ = {isa = PBXBuildFile; fileRef = 3105F100; };
+		3105F201 /* WallpaperLabModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3105F102; };
+		3105F202 /* SecureZIPArchive.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3105F103; };
+		3105F203 /* WallpaperInstaller.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3105F104; };
+		3105F204 /* WallpaperLabService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3105F105; };
+		3105F205 /* WallpaperLabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3105F106; };
+		3105F206 /* OnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3105F108; };
+		3105G200 /* ZIPArchiveWriter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3105G100; };
+		3105G201 /* FileOperationCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3105G101; };
+		3105G202 /* ZIPArchiveExtractor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3105G102; };
+		3105G203 /* PatchWorkspaceService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3105G103; };
+		3105H200 /* AppTabNavigationState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3105H100; };
+		3105I200 /* FilesTabControls.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3105I100; };
+		3105I201 /* FilesTabSwitcherView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3105I101; };
+		3105K200 /* FileBrowserMetadata.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3105K100; };
+		3105L200 /* PackageRepositoryModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3105L100; };
+		3105L201 /* PackageRepositoryStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3105L101; };
+		3105L202 /* RepositoryMarketplaceView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3105L102; };
+		3105L203 /* RepositoryHomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3105L103; };
+		3105L204 /* RepositorySourcesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3105L104; };
+		3105L205 /* RepositoryPresentationSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3105L105; };
+		3105A233 /* ContainerStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3105A104; };
+		3105A234 /* AppDataBrowserView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3105A105; };
+		3105A211 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 3105A031; };
+/* End PBXBuildFile section */
 
-struct CachedImageView: View {
-    @StateObject private var loader = ImageLoader()
-    let url: String
-    let fallbackIcon: String
-    
-    var body: some View {
-        ZStack {
-            if let img = loader.image {
-                Image(uiImage: img).resizable().scaledToFill()
-            } else if loader.isLoading {
-                ProgressView().tint(.white).scaleEffect(0.8)
-            } else {
-                Image(systemName: fallbackIcon).font(.title).foregroundColor(.white.opacity(0.5))
-            }
-        }
-        .onAppear { loader.load(urlStr: url) }
-    }
-}
+/* Begin PBXFileReference section */
+		3105A010 /* headlockzenis.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "headlockzenis.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		3105A020 /* App.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = App.swift; sourceTree = "<group>"; };
+		3105A021 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		3105A023 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		3105A024 /* LogView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LogView.swift; sourceTree = "<group>"; };
+		3105A025 /* Utils.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Utils.swift; sourceTree = "<group>"; };
+		3105A026 /* SBX.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SBX.swift; sourceTree = "<group>"; };
+		3105A027 /* MG.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MG.swift; sourceTree = "<group>"; };
+		3105A029 /* bad_query.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = bad_query.c; sourceTree = "<group>"; };
+		3105A030 /* mcm_bridge.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = mcm_bridge.m; sourceTree = "<group>"; };
+		3105A031 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		3105A040 /* bad_query.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = bad_query.h; sourceTree = "<group>"; };
+		3105A041 /* mcm_bridge.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = mcm_bridge.h; sourceTree = "<group>"; };
+		3105A050 /* ThreeOneOSFive-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "ThreeOneOSFive-Bridging-Header.h"; sourceTree = "<group>"; };
+		3105A060 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		3105A080 /* kexploit_opa334.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = kexploit_opa334.m; sourceTree = "<group>"; };
+		3105A081 /* offsets.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = offsets.m; sourceTree = "<group>"; };
+		3105A082 /* krw.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = krw.m; sourceTree = "<group>"; };
+		3105A083 /* kutils.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = kutils.m; sourceTree = "<group>"; };
+		3105A084 /* vnode.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = vnode.m; sourceTree = "<group>"; };
+		3105A085 /* sandbox_escape.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = sandbox_escape.m; sourceTree = "<group>"; };
+		3105A090 /* kexploit_opa334.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = kexploit_opa334.h; sourceTree = "<group>"; };
+		3105A091 /* offsets.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = offsets.h; sourceTree = "<group>"; };
+		3105A092 /* krw.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = krw.h; sourceTree = "<group>"; };
+		3105A093 /* kutils.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = kutils.h; sourceTree = "<group>"; };
+		3105A094 /* vnode.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = vnode.h; sourceTree = "<group>"; };
+		3105A095 /* sandbox_escape.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = sandbox_escape.h; sourceTree = "<group>"; };
+		3105A096 /* machine_info.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = machine_info.h; sourceTree = "<group>"; };
+		3105A097 /* xpaci.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = xpaci.h; sourceTree = "<group>"; };
+		3105A098 /* DesignSystem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesignSystem.swift; sourceTree = "<group>"; };
+		3105A099 /* Localization.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Localization.swift; sourceTree = "<group>"; };
+		3105A104 /* ContainerStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContainerStore.swift; sourceTree = "<group>"; };
+		3105A105 /* AppDataBrowserView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDataBrowserView.swift; sourceTree = "<group>"; };
+		3105A106 /* AppIconHelper.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = AppIconHelper.m; sourceTree = "<group>"; };
+		3105A107 /* AppIconHelper.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = AppIconHelper.h; sourceTree = "<group>"; };
+		3105A202 /* KernelExploit.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KernelExploit.swift; sourceTree = "<group>"; };
+		3105J201 /* AntiDetection.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = AntiDetection.m; sourceTree = "<group>"; };
+		3105J202 /* DisplayIdentity.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = DisplayIdentity.h; sourceTree = "<group>"; };
+		3105J203 /* DisplayIdentity.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = DisplayIdentity.m; sourceTree = "<group>"; };
+		3105J205 /* DisplayIdentityAttribution.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DisplayIdentityAttribution.swift; sourceTree = "<group>"; };
+		3105A108 /* ContainerIdentityResolver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContainerIdentityResolver.swift; sourceTree = "<group>"; };
+		3105A109 /* ContainerBrowserLogic.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContainerBrowserLogic.swift; sourceTree = "<group>"; };
+		3105A110 /* FileReplacementService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileReplacementService.swift; sourceTree = "<group>"; };
+		3105A111 /* FileManagerService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileManagerService.swift; sourceTree = "<group>"; };
+		3105A112 /* FileBrowserView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileBrowserView.swift; sourceTree = "<group>"; };
+		3105A113 /* SupportPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupportPolicy.swift; sourceTree = "<group>"; };
+		3105B114 /* PatchProjectModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PatchProjectModels.swift; sourceTree = "<group>"; };
+		3105B115 /* PatchPackageCodec.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PatchPackageCodec.swift; sourceTree = "<group>"; };
+		3105B116 /* PatchKeyStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PatchKeyStore.swift; sourceTree = "<group>"; };
+		3105B117 /* PatchTransaction.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PatchTransaction.swift; sourceTree = "<group>"; };
+		3105B118 /* DevicePatchService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DevicePatchService.swift; sourceTree = "<group>"; };
+		3105B119 /* PatchProjectLibrary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PatchProjectLibrary.swift; sourceTree = "<group>"; };
+		3105B120 /* PatchProjectStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PatchProjectStore.swift; sourceTree = "<group>"; };
+		3105B121 /* PatchProjectsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PatchProjectsView.swift; sourceTree = "<group>"; };
+		3105B122 /* PatchProjectEditorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PatchProjectEditorView.swift; sourceTree = "<group>"; };
+		3105C100 /* PatchDraftService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PatchDraftService.swift; sourceTree = "<group>"; };
+		3105C101 /* PatchDraftCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PatchDraftCoordinator.swift; sourceTree = "<group>"; };
+		3105C102 /* FolderPatchSelectionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FolderPatchSelectionView.swift; sourceTree = "<group>"; };
+		3105E100 /* LimitedCleanerService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LimitedCleanerService.swift; sourceTree = "<group>"; };
+		3105E101 /* CleanerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CleanerView.swift; sourceTree = "<group>"; };
+		3105E102 /* CleanerCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CleanerCatalog.swift; sourceTree = "<group>"; };
+		3105F100 /* wallpaper_zip.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = wallpaper_zip.c; sourceTree = "<group>"; };
+		3105F101 /* wallpaper_zip.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = wallpaper_zip.h; sourceTree = "<group>"; };
+		3105F102 /* WallpaperLabModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WallpaperLabModels.swift; sourceTree = "<group>"; };
+		3105F103 /* SecureZIPArchive.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SecureZIPArchive.swift; sourceTree = "<group>"; };
+		3105F104 /* WallpaperInstaller.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WallpaperInstaller.swift; sourceTree = "<group>"; };
+		3105F105 /* WallpaperLabService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WallpaperLabService.swift; sourceTree = "<group>"; };
+		3105F106 /* WallpaperLabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WallpaperLabView.swift; sourceTree = "<group>"; };
+		3105F108 /* OnboardingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingView.swift; sourceTree = "<group>"; };
+		3105G100 /* ZIPArchiveWriter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ZIPArchiveWriter.swift; sourceTree = "<group>"; };
+		3105G101 /* FileOperationCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileOperationCoordinator.swift; sourceTree = "<group>"; };
+		3105G102 /* ZIPArchiveExtractor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ZIPArchiveExtractor.swift; sourceTree = "<group>"; };
+		3105G103 /* PatchWorkspaceService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PatchWorkspaceService.swift; sourceTree = "<group>"; };
+		3105H100 /* AppTabNavigationState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppTabNavigationState.swift; sourceTree = "<group>"; };
+		3105I100 /* FilesTabControls.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FilesTabControls.swift; sourceTree = "<group>"; };
+		3105I101 /* FilesTabSwitcherView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FilesTabSwitcherView.swift; sourceTree = "<group>"; };
+		3105K100 /* FileBrowserMetadata.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileBrowserMetadata.swift; sourceTree = "<group>"; };
+		3105L100 /* PackageRepositoryModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PackageRepositoryModels.swift; sourceTree = "<group>"; };
+		3105L101 /* PackageRepositoryStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PackageRepositoryStore.swift; sourceTree = "<group>"; };
+		3105L102 /* RepositoryMarketplaceView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RepositoryMarketplaceView.swift; sourceTree = "<group>"; };
+		3105L103 /* RepositoryHomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RepositoryHomeView.swift; sourceTree = "<group>"; };
+		3105L104 /* RepositorySourcesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RepositorySourcesView.swift; sourceTree = "<group>"; };
+		3105L105 /* RepositoryPresentationSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RepositoryPresentationSupport.swift; sourceTree = "<group>"; };
+/* End PBXFileReference section */
 
-// MARK: - HAPTIC & SCALE BUTTON STYLE
-struct NeonScaleButtonStyle: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .scaleEffect(configuration.isPressed ? 0.94 : 1.0)
-            .animation(.spring(response: 0.3, dampingFraction: 0.6), value: configuration.isPressed)
-    }
-}
+/* Begin PBXFrameworksBuildPhase section */
+		3105A300 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
 
-// MARK: - KEYCHAIN DEVICE ID MANAGER
-struct DeviceIDManager {
-    static let shared = DeviceIDManager()
-    private let account = "solitude_secure_hwid"
-    
-    func getID() -> String {
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrAccount as String: account,
-            kSecReturnData as String: true,
-            kSecMatchLimit as String: kSecMatchLimitOne
-        ]
-        
-        var item: CFTypeRef?
-        if SecItemCopyMatching(query as CFDictionary, &item) == errSecSuccess,
-           let data = item as? Data,
-           let id = String(data: data, encoding: .utf8) {
-            return id
-        }
-        
-        let newID = "APEX-ZENITH-SOLITUDE-\(UUID().uuidString.prefix(8).uppercased())"
-        let addQuery: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrAccount as String: account,
-            kSecValueData as String: newID.data(using: .utf8)!
-        ]
-        SecItemAdd(addQuery as CFDictionary, nil)
-        return newID
-    }
-}
+/* Begin PBXGroup section */
+		3105A400 = {
+			isa = PBXGroup;
+			children = (
+				3105A401 /* ThreeOneOSFive */,
+				3105A402 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		3105A401 /* ThreeOneOSFive */ = {
+			isa = PBXGroup;
+			children = (
+				3105A050 /* ThreeOneOSFive-Bridging-Header.h */,
+				3105A060 /* Info.plist */,
+				3105A020 /* App.swift */,
+				3105A021 /* ContentView.swift */,
+				3105A403 /* exploit */,
+				3105A404 /* views */,
+				3105A405 /* helpers */,
+				3105A406 /* kexploit */,
+				3105A031 /* Assets.xcassets */,
+			);
+			path = ThreeOneOSFive;
+			sourceTree = "<group>";
+		};
+		3105A402 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				3105A010 /* headlockzenis.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		3105A403 /* exploit */ = {
+			isa = PBXGroup;
+			children = (
+				3105A029 /* bad_query.c */,
+				3105A040 /* bad_query.h */,
+				3105A030 /* mcm_bridge.m */,
+				3105A041 /* mcm_bridge.h */,
+				3105F100 /* wallpaper_zip.c */,
+				3105F101 /* wallpaper_zip.h */,
+			);
+			path = exploit;
+			sourceTree = "<group>";
+		};
+		3105A404 /* views */ = {
+			isa = PBXGroup;
+			children = (
+				3105A098 /* DesignSystem.swift */,
+				3105A023 /* SettingsView.swift */,
+				3105A024 /* LogView.swift */,
+				3105A105 /* AppDataBrowserView.swift */,
+				3105A112 /* FileBrowserView.swift */,
+				3105I100 /* FilesTabControls.swift */,
+				3105I101 /* FilesTabSwitcherView.swift */,
+				3105B121 /* PatchProjectsView.swift */,
+				3105B122 /* PatchProjectEditorView.swift */,
+				3105C102 /* FolderPatchSelectionView.swift */,
+				3105E101 /* CleanerView.swift */,
+				3105F106 /* WallpaperLabView.swift */,
+				3105F108 /* OnboardingView.swift */,
+				3105L102 /* RepositoryMarketplaceView.swift */,
+				3105L103 /* RepositoryHomeView.swift */,
+				3105L104 /* RepositorySourcesView.swift */,
+			);
+			path = views;
+			sourceTree = "<group>";
+		};
+		3105A405 /* helpers */ = {
+			isa = PBXGroup;
+			children = (
+				3105A099 /* Localization.swift */,
+				3105A104 /* ContainerStore.swift */,
+				3105A108 /* ContainerIdentityResolver.swift */,
+				3105A109 /* ContainerBrowserLogic.swift */,
+				3105A110 /* FileReplacementService.swift */,
+				3105A111 /* FileManagerService.swift */,
+				3105G100 /* ZIPArchiveWriter.swift */,
+				3105G102 /* ZIPArchiveExtractor.swift */,
+				3105G101 /* FileOperationCoordinator.swift */,
+				3105K100 /* FileBrowserMetadata.swift */,
+				3105L100 /* PackageRepositoryModels.swift */,
+				3105L101 /* PackageRepositoryStore.swift */,
+				3105L105 /* RepositoryPresentationSupport.swift */,
+				3105A113 /* SupportPolicy.swift */,
+				3105B114 /* PatchProjectModels.swift */,
+				3105B115 /* PatchPackageCodec.swift */,
+				3105B116 /* PatchKeyStore.swift */,
+				3105B117 /* PatchTransaction.swift */,
+				3105B118 /* DevicePatchService.swift */,
+				3105B119 /* PatchProjectLibrary.swift */,
+				3105B120 /* PatchProjectStore.swift */,
+				3105G103 /* PatchWorkspaceService.swift */,
+				3105H100 /* AppTabNavigationState.swift */,
+				3105C100 /* PatchDraftService.swift */,
+				3105C101 /* PatchDraftCoordinator.swift */,
+				3105E100 /* LimitedCleanerService.swift */,
+				3105E102 /* CleanerCatalog.swift */,
+				3105F102 /* WallpaperLabModels.swift */,
+				3105F103 /* SecureZIPArchive.swift */,
+				3105F104 /* WallpaperInstaller.swift */,
+				3105F105 /* WallpaperLabService.swift */,
+				3105A106 /* AppIconHelper.m */,
+				3105A107 /* AppIconHelper.h */,
+				3105A202 /* KernelExploit.swift */,
+				3105J201 /* AntiDetection.m */,
+				3105J202 /* DisplayIdentity.h */,
+				3105J203 /* DisplayIdentity.m */,
+				3105J205 /* DisplayIdentityAttribution.swift */,
+				3105A025 /* Utils.swift */,
+				3105A026 /* SBX.swift */,
+				3105A027 /* MG.swift */,
+			);
+			path = helpers;
+			sourceTree = "<group>";
+		};
+		3105A406 /* kexploit */ = {
+			isa = PBXGroup;
+			children = (
+				3105A080 /* kexploit_opa334.m */,
+				3105A090 /* kexploit_opa334.h */,
+				3105A081 /* offsets.m */,
+				3105A091 /* offsets.h */,
+				3105A082 /* krw.m */,
+				3105A092 /* krw.h */,
+				3105A083 /* kutils.m */,
+				3105A093 /* kutils.h */,
+				3105A084 /* vnode.m */,
+				3105A094 /* vnode.h */,
+				3105A085 /* sandbox_escape.m */,
+				3105A095 /* sandbox_escape.h */,
+				3105A096 /* machine_info.h */,
+				3105A097 /* xpaci.h */,
+			);
+			path = kexploit;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
 
-// MARK: - SYSTEM SECURITY GUARD
-struct SecurityGuard {
-    static var isCompromised: Bool {
-        #if targetEnvironment(simulator)
-        return false
-        #else
-        return checkDebugger() || checkJailbreak() || checkInjectedDylibs()
-        #endif
-    }
-    private static func checkDebugger() -> Bool {
-        var info = kinfo_proc()
-        var mib: [Int32] = [CTL_KERN, KERN_PROC, KERN_PROC_PID, getpid()]
-        var size = MemoryLayout<kinfo_proc>.stride
-        let junk = sysctl(&mib, UInt32(mib.count), &info, &size, nil, 0)
-        return (junk == 0 && (info.kp_proc.p_flag & P_TRACED) != 0)
-    }
-    private static func checkJailbreak() -> Bool {
-        let paths = ["/Applications/Cydia.app", "/Library/MobileSubstrate/MobileSubstrate.dylib", "/bin/bash"]
-        for path in paths { if FileManager.default.fileExists(atPath: path) { return true } }
-        return false
-    }
-    private static func checkInjectedDylibs() -> Bool {
-        let suspicious = ["frida", "cydia", "mobilesubstrate", "cycript"]
-        let count = _dyld_image_count()
-        for i in 0..<count {
-            if let name = _dyld_get_image_name(i) {
-                let dylibName = String(cString: name).lowercased()
-                for sus in suspicious { if dylibName.contains(sus) { return true } }
-            }
-        }
-        return false
-    }
-}
+/* Begin PBXNativeTarget section */
+		3105A500 /* headlockzenis */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 3105A600;
+			buildPhases = (
+				3105A700 /* Sources */,
+				3105A300 /* Frameworks */,
+				3105A800 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = headlockzenis;
+			productName = headlockzenis;
+			productReference = 3105A010;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
 
-// MARK: - SOUND & HAPTIC MANAGER
-struct UXFeedback {
-    static func click() { AudioServicesPlaySystemSound(1306); UIImpactFeedbackGenerator(style: .medium).impactOccurred() }
-    static func success() { AudioServicesPlaySystemSound(1407); UINotificationFeedbackGenerator().notificationOccurred(.success) }
-    static func error() { AudioServicesPlaySystemSound(1053); UINotificationFeedbackGenerator().notificationOccurred(.error) }
-    static func typing() { AudioServicesPlaySystemSound(1057); UIImpactFeedbackGenerator(style: .soft).impactOccurred() }
-}
+/* Begin PBXProject section */
+		3105A900 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 1600;
+				LastUpgradeCheck = 1600;
+			};
+			buildConfigurationList = 3105AA00;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = 3105A400;
+			productRefGroup = 3105A402;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				3105A500,
+			);
+		};
+/* End PBXProject section */
 
-// MARK: - MAIN CONTENT VIEW
-struct ContentView: View {
-    @Environment(\.appLanguage) private var language
-    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
-    @EnvironmentObject private var patchDraftCoordinator: PatchDraftCoordinator
-    @EnvironmentObject private var patchStore: PatchProjectStore
-    @EnvironmentObject private var repositoryStore: PackageRepositoryStore
-    @AppStorage(FeatureVisibility.developerModeStorageKey) private var developerModeEnabled = false
-     
-    @AppStorage("solitude_is_unlocked") private var isUnlocked = false
-    @AppStorage("solitude_key_expiry") private var keyExpiryDate: String = ""
-    @AppStorage("solitude_active_key") private var activeKey: String = ""
-    @AppStorage("mini_app_enabled") private var miniAppEnabled = false
-    
-    @State private var deviceID: String = DeviceIDManager.shared.getID()
-    @State private var tabNavigation: AppTabNavigationState
-    @State private var showSettings = false
-    @State private var showLogs = false
-    @State private var securityBreach = false
-    
-    @State private var isMaintenance = false
-    @State private var maintenanceMessage = ""
-    @State private var timer: AnyCancellable?
+/* Begin PBXResourcesBuildPhase section */
+		3105A800 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				3105A211,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
 
-    init() {
-#if targetEnvironment(simulator)
-        let arguments = ProcessInfo.processInfo.arguments
-        let initialTab: Int = arguments.contains("--simulate-new-tab") ? 1 : 0
-        _tabNavigation = State(initialValue: AppTabNavigationState(selectedTab: initialTab))
-        if arguments.contains("--bypass-lock") { _isUnlocked = AppStorage(wrappedValue: true, "solitude_is_unlocked") }
-#else
-        _tabNavigation = State(initialValue: AppTabNavigationState())
-#endif
-    }
+/* Begin PBXSourcesBuildPhase section */
+		3105A700 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				3105A200, 3105A201, 3105A203, 3105A204,
+				3105A205, 3105A206, 3105A207, 3105A209,
+				3105A210, 3105A220, 3105A221, 3105A222, 3105A223,
+				3105A224, 3105A225,
+				3105A226,
+				3105A227,
+				3105A233,
+				3105A234,
+				3105A235,
+				3105A236,
+				3105A237,
+				3105A238,
+				3105A239,
+				3105A208,
+				3105J200,
+				3105J204,
+				3105J206,
+				3105A240,
+				3105A241,
+				3105B214,
+				3105B215,
+				3105B216,
+				3105B217,
+				3105B218,
+				3105B219,
+				3105B220,
+				3105B221,
+				3105B222,
+				3105C200,
+				3105C201,
+				3105C202,
+				3105E200,
+				3105E201,
+				3105E202,
+				3105F200,
+				3105F201,
+				3105F202,
+				3105F203,
+				3105F204,
+				3105F205,
+				3105F206,
+				3105G200,
+				3105G201,
+				3105G202,
+				3105G203,
+				3105H200,
+				3105I200,
+				3105I201,
+				3105K200,
+				3105L200,
+				3105L201,
+				3105L202,
+				3105L203,
+				3105L204,
+				3105L205,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
 
-    var body: some View {
-        ZStack {
-            Group {
-                if securityBreach {
-                    SecurityLockdownView()
-                } else if isMaintenance {
-                    MaintenanceLockdownView(message: maintenanceMessage)
-                } else if isUnlocked && !isKeyExpiredLocally() {
-                    mainAppContent
-                        .overlay(KeyTimerFloatingWidget(expiryDate: keyExpiryDate), alignment: .bottom)
-                } else {
-                    KeyLockView(isUnlocked: $isUnlocked, savedExpiry: $keyExpiryDate, activeKey: $activeKey, deviceID: deviceID)
-                }
-            }
-            
-            // Nút nổi Mini App toàn cục
-            if miniAppEnabled && isUnlocked && !isMaintenance && !securityBreach {
-                FloatingHeadlockOverlayView(onOpenSettings: openSettings, onOpenLogs: openLogs)
-            }
-        }
-        .onAppear {
-            if SecurityGuard.isCompromised { securityBreach = true }
-            checkServerStatusAndKey()
-            startContinuousValidation()
-        }
-        .onDisappear {
-            timer?.cancel()
-        }
-    }
+/* Begin XCBuildConfiguration section */
+		3105A601 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CODE_SIGN_ENTITLEMENTS = "";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 8;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = ThreeOneOSFive/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = Headlock Zenis;
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 2.0;
+				OTHER_LDFLAGS = "-lz";
+				PRODUCT_BUNDLE_IDENTIFIER = "com.apple.mobile.MobileHouseArrest";
+				PRODUCT_NAME = headlockzenis;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_OBJC_BRIDGING_HEADER = "ThreeOneOSFive/ThreeOneOSFive-Bridging-Header.h";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		3105A602 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CODE_SIGN_ENTITLEMENTS = "";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 8;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = ThreeOneOSFive/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = Headlock Zenis;
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 2.0;
+				OTHER_LDFLAGS = "-lz";
+				PRODUCT_BUNDLE_IDENTIFIER = "com.apple.mobile.MobileHouseArrest";
+				PRODUCT_NAME = headlockzenis;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_OBJC_BRIDGING_HEADER = "ThreeOneOSFive/ThreeOneOSFive-Bridging-Header.h";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		3105AA01 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		3105AA02 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
 
-    private func forceLogoutClean() {
-        isUnlocked = false
-        keyExpiryDate = ""
-        activeKey = ""
-    }
-
-    private func checkServerStatusAndKey() {
-        if keyExpiryDate.isEmpty || activeKey.isEmpty || isKeyExpiredLocally() {
-            forceLogoutClean()
-            return
-        }
-        checkMaintenanceAndKeyAPI()
-    }
-
-    private func startContinuousValidation() {
-        timer?.cancel()
-        timer = Timer.publish(every: 4.0, on: .main, in: .common)
-            .autoconnect()
-            .sink { _ in
-                checkMaintenanceAndKeyAPI()
-            }
-    }
-
-    private func checkMaintenanceAndKeyAPI() {
-        let group = DispatchGroup()
-        
-        group.enter()
-        let maintURL = URL(string: "https://solitudepremium.click/ipa/proxy/apibaotri.php")!
-        URLSession.shared.dataTask(with: maintURL) { data, _, _ in
-            defer { group.leave() }
-            if let data = data, let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
-                DispatchQueue.main.async {
-                    if let maint = json["maintenance"] as? Bool, maint {
-                        isMaintenance = true
-                        maintenanceMessage = json["message"] as? String ?? "Hệ thống đang bảo trì."
-                    } else {
-                        isMaintenance = false
-                    }
-                }
-            }
-        }.resume()
-        
-        if isUnlocked && !activeKey.isEmpty {
-            group.enter()
-            let endpoint = URL(string: "https://solitudepremium.click/ipa/proxy/api.php")!
-            var request = URLRequest(url: endpoint)
-            request.httpMethod = "POST"
-            request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
-            request.httpBody = "action=verify_app_key&key=\(activeKey)&device_id=\(deviceID)".data(using: .utf8)
-
-            URLSession.shared.dataTask(with: request) { data, _, _ in
-                defer { group.leave() }
-                guard let data = data else { return }
-                if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                   let status = json["status"] as? String {
-                    DispatchQueue.main.async {
-                        if status != "success" {
-                            forceLogoutClean()
-                        } else if let newExpiry = json["expires_at"] as? String {
-                            keyExpiryDate = newExpiry
-                        }
-                    }
-                }
-            }.resume()
-        }
-    }
-
-    private var mainAppContent: some View {
-        Group { if horizontalSizeClass == .regular { regularLayout } else { compactLayout } }
-            .tint(.white)
-            .imageScale(.small)
-            .sheet(isPresented: $showSettings) { SettingsView() }
-            .sheet(isPresented: $showLogs) { LogView() }
-            .patchStorePresentation(patchStore)
-            .repositoryStorePresentation(repositoryStore, patchStore: patchStore)
-    }
-
-    private var compactLayout: some View {
-        TabView(selection: tabSelection) {
-            ForEach(featureVisibility.visibleSections.filter { $0 == .home || $0 == .installed }) { section in
-                sectionContent(section).tabItem { CompactTabLabel(title: section == .installed ? "HEADLOCK" : language.text(section.titleKey), systemImage: section.systemImage) }.tag(section.rawValue)
-            }
-        }
-    }
-
-    private var regularLayout: some View {
-        NavigationSplitView {
-            List {
-                ForEach(featureVisibility.visibleSections.filter { $0 == .home || $0 == .installed }) { section in
-                    Button { withAnimation(.easeInOut(duration: 0.18)) { tabNavigation.select(section.rawValue) } } label: {
-                        Label(section == .installed ? "HEADLOCK" : language.text(section.titleKey), systemImage: section.systemImage)
-                            .fontWeight(section.rawValue == tabNavigation.selectedTab ? .semibold : .regular)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .contentShape(Rectangle())
-                    }.buttonStyle(.plain)
-                }
-            }.navigationTitle("HEADLOCK")
-        } detail: { sectionContent(selectedVisibleSection) }
-    }
-
-    @ViewBuilder
-    private func sectionContent(_ section: AppSection) -> some View {
-        switch section {
-        case .home: CustomZenithHomeView(onOpenSettings: openSettings, onOpenProfile: openLogs, onOpenApp: {
-            tabNavigation.select(AppSection.installed.rawValue)
-        })
-        case .installed: PatchProjectsView(onOpenSettings: openSettings, onOpenLogs: openLogs)
-        case .files: AppDataBrowserView(tabSession: filesTabSession, onOpenSettings: openSettings, onOpenLogs: openLogs)
-        default: EmptyView()
-        }
-    }
-
-    private var tabSelection: Binding<Int> { Binding(get: { tabNavigation.selectedTab }, set: { tabNavigation.select($0) }) }
-    private var filesTabSession: Binding<FilesTabSession> { Binding(get: { tabNavigation.filesTabs }, set: { tabNavigation.setFilesTabs($0) }) }
-    private var featureVisibility: FeatureVisibility { FeatureVisibility(developerModeEnabled: developerModeEnabled) }
-    private var selectedVisibleSection: AppSection { AppSection(rawValue: tabNavigation.selectedTab) ?? .home }
-    private func openSettings() { showSettings = true }
-    private func openLogs() { showLogs = true }
-    
-    private func isKeyExpiredLocally() -> Bool {
-        guard !keyExpiryDate.isEmpty else { return true }
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
-        formatter.timeZone = TimeZone(identifier: "Asia/Ho_Chi_Minh")
-        if let expDate = formatter.date(from: keyExpiryDate) { return Date() > expDate }
-        return true
-    }
-}
-
-// MARK: - FLOATING MINI APP
-struct FloatingHeadlockOverlayView: View {
-    var onOpenSettings: () -> Void
-    var onOpenLogs: () -> Void
-    
-    @State private var showMenu = false
-    @State private var offset = CGSize(width: 120, height: 220)
-    @State private var rotationAngle: Double = 0.0
-
-    var body: some View {
-        ZStack {
-            if showMenu {
-                Color.black.opacity(0.7).ignoresSafeArea()
-                    .onTapGesture { withAnimation(.easeInOut) { showMenu = false } }
-                
-                VStack(spacing: 0) {
-                    HStack {
-                        Label("HEADLOCK CONTROL", systemImage: "lock.shield.fill")
-                            .font(.system(size: 13, weight: .black, design: .monospaced))
-                            .foregroundColor(.white)
-                            .shadow(color: .white, radius: 5)
-                        Spacer()
-                        Button(action: { withAnimation { showMenu = false } }) {
-                            Image(systemName: "xmark.circle.fill").foregroundColor(.white).font(.system(size: 18))
-                        }
-                    }
-                    .padding(14)
-                    .background(Color.black.opacity(0.9))
-                    
-                    Divider().background(Color.white.opacity(0.3))
-                    
-                    PatchProjectsView(onOpenSettings: onOpenSettings, onOpenLogs: onOpenLogs)
-                        .frame(height: 340)
-                }
-                .frame(width: 330)
-                .background(Color.black.opacity(0.95))
-                .cornerRadius(20)
-                .overlay(RoundedRectangle(cornerRadius: 20).stroke(Color.white.opacity(0.5), lineWidth: 1.5).shadow(color: .white, radius: 10))
-                .shadow(color: .white.opacity(0.2), radius: 20)
-                .zIndex(100)
-            }
-
-            Button(action: {
-                UXFeedback.click()
-                withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) { showMenu.toggle() }
-            }) {
-                ZStack {
-                    Circle()
-                        .stroke(AngularGradient(gradient: Gradient(colors: [.clear, .white, .clear]), center: .center), lineWidth: 2.5)
-                        .frame(width: 62, height: 62)
-                        .rotationEffect(.degrees(rotationAngle))
-                        .onAppear { withAnimation(.linear(duration: 3).repeatForever(autoreverses: false)) { rotationAngle = 360 } }
-                        .shadow(color: .white, radius: 8)
-                    
-                    CachedImageView(url: "https://solitudepremium.click/ipa/proxy/li.jpg", fallbackIcon: "person.circle.fill")
-                        .frame(width: 52, height: 52)
-                        .clipShape(Circle())
-                        .shadow(color: .white.opacity(0.8), radius: 6)
-                }
-            }
-            .offset(offset)
-            .gesture(
-                DragGesture()
-                    .onChanged { value in offset = value.translation }
-            )
-            .animation(.interactiveSpring(), value: offset)
-        }
-        .ignoresSafeArea()
-    }
-}
-
-// MARK: - GIAO DIỆN TRANG CHỦ CUSTOM
-struct CustomZenithHomeView: View {
-    var onOpenSettings: () -> Void
-    var onOpenProfile: () -> Void
-    var onOpenApp: () -> Void
-    
-    @AppStorage("has_scanned_mhac2") private var hasScanned = true
-    @State private var isScanning = false
-    @State private var scanStatus = "Workspace 3105"
-    @State private var scanSubtext = "Đang khởi tạo tệp hệ thống..."
-    @State private var avatarRotationAngle: Double = 0.0
-    
-    var body: some View {
-        ZStack {
-            Color.black.ignoresSafeArea()
-            ParticleCanvasView()
-            
-            if isScanning {
-                VStack(spacing: 25) {
-                    ProgressView().tint(.white).scaleEffect(1.5).shadow(color: .white, radius: 5)
-                    VStack(spacing: 8) {
-                        Text(scanStatus).font(.system(size: 16, weight: .black, design: .monospaced)).foregroundColor(.white).shadow(color: .white, radius: 5)
-                        Text(scanSubtext).font(.system(size: 12, weight: .medium, design: .monospaced)).foregroundColor(.white.opacity(0.8))
-                    }
-                }
-                .onAppear {
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { scanStatus = "Đang quét hệ thống..."; scanSubtext = "Tối ưu hóa dữ liệu ứng dụng..." }
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { scanStatus = "Hoàn tất!"; scanSubtext = "Sẵn sàng hoạt động" }
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 3.5) {
-                        withAnimation(.easeInOut(duration: 0.5)) {
-                            hasScanned = true
-                            isScanning = false
-                        }
-                    }
-                }
-            } else {
-                ScrollView(showsIndicators: false) {
-                    VStack(spacing: 30) {
-                        Spacer().frame(height: 10)
-                        
-                        VStack(spacing: 12) {
-                            ZStack {
-                                Circle()
-                                    .stroke(AngularGradient(gradient: Gradient(colors: [.clear, .white, .clear]), center: .center), lineWidth: 3)
-                                    .frame(width: 102, height: 102)
-                                    .rotationEffect(.degrees(avatarRotationAngle))
-                                    .onAppear { withAnimation(.linear(duration: 3).repeatForever(autoreverses: false)) { avatarRotationAngle = 360 } }
-                                    .shadow(color: .white, radius: 10)
-                                
-                                CachedImageView(url: "https://solitudepremium.click/ipa/proxy/li.jpg", fallbackIcon: "person.circle.fill")
-                                    .frame(width: 90, height: 90)
-                                    .clipShape(Circle())
-                            }
-                            
-                            Text("ZENITH SOLITUDE")
-                                .font(.system(size: 20, weight: .black, design: .monospaced))
-                                .foregroundColor(.white)
-                                .shadow(color: .white.opacity(0.8), radius: 8)
-                            
-                            HStack {
-                                Circle().frame(width: 3, height: 3).foregroundColor(.white).shadow(color: .white, radius: 2)
-                                Text("HEADLOCK ZENIS")
-                                    .font(.system(size: 10, weight: .bold, design: .monospaced))
-                                    .foregroundColor(.white.opacity(0.8))
-                                Circle().frame(width: 3, height: 3).foregroundColor(.white).shadow(color: .white, radius: 2)
-                            }
-                        }
-                        
-                        VStack(spacing: 15) {
-                            AppListItemView(
-                                title: "Free Fire",
-                                subtitle: "Trạng thái: Hoạt động ổn định",
-                                imageUrl: "https://solitudepremium.click/ipa/proxy/free.jpg",
-                                onOpen: onOpenApp
-                            )
-                            
-                            Divider().background(Color.white.opacity(0.3)).padding(.horizontal, 20)
-                            
-                            LinkBoxView(
-                                icon: "network.badge.shield.half.filled",
-                                title: "Tải DNS ANTIBAN",
-                                subtitle: "Cài đặt cấu hình vượt tường lửa",
-                                url: "https://solitudepremium.click/ipa/proxy/dns.mobileconfig"
-                            )
-                            
-                            LinkBoxView(
-                                icon: "paperplane.fill",
-                                title: "Cộng Đồng Telegram",
-                                subtitle: "Tham gia nhóm hỗ trợ Solitude",
-                                url: "https://t.me/solitudeversion"
-                            )
-                            
-                            LinkBoxView(
-                                icon: "bubble.left.and.exclamationmark.bubble.right.fill",
-                                title: "Cộng Đồng Discord",
-                                subtitle: "Trao đổi & Nhận thông báo mới",
-                                url: "https://discord.gg/SzSaFasQDk"
-                            )
-                        }
-                        .padding(.horizontal, 16)
-                        
-                        Text("Headlock Center by Zenith Solitude")
-                            .font(.system(size: 10, weight: .bold, design: .monospaced))
-                            .foregroundColor(.white.opacity(0.5))
-                            .shadow(color: .white.opacity(0.5), radius: 2)
-                            .padding(.top, 15)
-                    }
-                    .padding(.bottom, 100)
-                }
-            }
-        }
-        .onAppear {
-            hasScanned = true
-            isScanning = false
-        }
-    }
-}
-
-// MARK: - COMPONENT BOX LIÊN KẾT NGOÀI
-struct LinkBoxView: View {
-    let icon: String
-    let title: String
-    let subtitle: String
-    let url: String
-    
-    var body: some View {
-        Button(action: {
-            UXFeedback.click()
-            if let targetURL = URL(string: url) {
-                UIApplication.shared.open(targetURL)
-            }
-        }) {
-            HStack(spacing: 15) {
-                ZStack {
-                    RoundedRectangle(cornerRadius: 12)
-                        .fill(Color.white.opacity(0.1))
-                        .frame(width: 48, height: 48)
-                        .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.white.opacity(0.5), lineWidth: 1))
-                    Image(systemName: icon)
-                        .foregroundColor(.white)
-                        .font(.system(size: 20))
-                        .shadow(color: .white, radius: 5)
-                }
-                
-                VStack(alignment: .leading, spacing: 5) {
-                    Text(title)
-                        .font(.system(size: 15, weight: .bold))
-                        .foregroundColor(.white)
-                        .shadow(color: .white.opacity(0.6), radius: 2)
-                    Text(subtitle)
-                        .font(.system(size: 11, design: .monospaced))
-                        .foregroundColor(.white.opacity(0.6))
-                }
-                Spacer()
-                Image(systemName: "arrow.up.right.square")
-                    .foregroundColor(.white.opacity(0.8))
-                    .font(.system(size: 16))
-            }
-            .padding(16)
-            .background(Color.black.opacity(0.6))
-            .cornerRadius(20)
-            .overlay(RoundedRectangle(cornerRadius: 20).stroke(Color.white.opacity(0.3), lineWidth: 1.5).shadow(color: .white.opacity(0.3), radius: 5))
-        }
-        .buttonStyle(NeonScaleButtonStyle())
-    }
-}
-
-// MARK: - APP ITEM VIEW
-struct AppListItemView: View {
-    let title: String
-    let subtitle: String
-    let imageUrl: String
-    let onOpen: () -> Void
-    
-    var body: some View {
-        Button(action: {
-            UXFeedback.click()
-            onOpen()
-        }) {
-            HStack(spacing: 15) {
-                CachedImageView(url: imageUrl, fallbackIcon: "flame.fill")
-                    .frame(width: 50, height: 50)
-                    .clipShape(RoundedRectangle(cornerRadius: 12))
-                    .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.white.opacity(0.6), lineWidth: 1.5).shadow(color: .white, radius: 3))
-                
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(title).font(.system(size: 16, weight: .bold)).foregroundColor(.white).shadow(color: .white.opacity(0.8), radius: 3)
-                    Text(subtitle).font(.system(size: 11, design: .monospaced)).foregroundColor(.white.opacity(0.8))
-                }
-                
-                Spacer()
-                
-                HStack(spacing: 4) {
-                    Text("OPEN").font(.system(size: 12, weight: .bold, design: .monospaced))
-                    Image(systemName: "chevron.right").font(.system(size: 10, weight: .bold))
-                }
-                .foregroundColor(.black)
-                .padding(.horizontal, 14)
-                .padding(.vertical, 8)
-                .background(Color.white)
-                .cornerRadius(20)
-                .shadow(color: .white.opacity(0.6), radius: 5)
-            }
-            .padding(16)
-            .background(Color.black.opacity(0.6))
-            .cornerRadius(20)
-            .overlay(RoundedRectangle(cornerRadius: 20).stroke(Color.white.opacity(0.5), lineWidth: 1.5).shadow(color: .white.opacity(0.3), radius: 5))
-        }
-        .buttonStyle(NeonScaleButtonStyle())
-    }
-}
-
-// MARK: - MÀN HÌNH KHÓA KEY
-private struct KeyLockView: View {
-    @Binding var isUnlocked: Bool
-    @Binding var savedExpiry: String
-    @Binding var activeKey: String
-    var deviceID: String
-    
-    @State private var keyCode: String = ""
-    @State private var isKeyVisible: Bool = false
-    @State private var isLoading: Bool = false
-    @State private var isFinding: Bool = false
-    @State private var inlineErrorMsg: String? = nil
-    @State private var isSuccessMsg: Bool = false
-    @State private var shakeOffset: CGFloat = 0
-    @State private var rotationAngle: Double = 0.0
-
-    var body: some View {
-        ZStack {
-            Color.black.ignoresSafeArea()
-            ParticleCanvasView()
-            
-            ScrollView(showsIndicators: false) {
-                VStack(spacing: 25) {
-                    headerSection
-                    controlPanelSection
-                    footerSection
-                }
-                .padding(.bottom, 40)
-            }
-        }
-        .onAppear {
-            isUnlocked = false
-            savedExpiry = ""
-            activeKey = ""
-        }
-    }
-
-    private var headerSection: some View {
-        VStack(spacing: 12) {
-            ZStack {
-                Circle()
-                    .stroke(AngularGradient(gradient: Gradient(colors: [.clear, .white, .clear]), center: .center), lineWidth: 3)
-                    .frame(width: 110, height: 110)
-                    .rotationEffect(.degrees(rotationAngle))
-                    .onAppear { withAnimation(.linear(duration: 3).repeatForever(autoreverses: false)) { rotationAngle = 360 } }
-                    .shadow(color: .white, radius: 10)
-                
-                CachedImageView(url: "https://solitudepremium.click/ipa/proxy/li.jpg", fallbackIcon: "person.circle.fill")
-                    .frame(width: 94, height: 94)
-                    .clipShape(Circle())
-                    .overlay(Circle().stroke(Color.white, lineWidth: 2).shadow(color: .white, radius: 5))
-            }
-            .padding(.top, 40)
-            
-            Text("ZENITH SOLITUDE")
-                .font(.system(size: 26, weight: .black, design: .monospaced))
-                .tracking(6)
-                .foregroundColor(.white)
-                .shadow(color: .white.opacity(0.8), radius: 15)
-        }
-    }
-    
-    private var controlPanelSection: some View {
-        VStack(spacing: 18) {
-            hwidSection
-            
-            Text("Headlock Version 4.3.29")
-                .font(.system(size: 13, weight: .black, design: .monospaced))
-                .foregroundColor(.white)
-                .shadow(color: .white.opacity(0.6), radius: 8)
-            
-            inputFormSection
-            actionButtonsSection
-        }
-        .padding(20)
-        .background(Color.black.opacity(0.8))
-        .cornerRadius(28)
-        .overlay(RoundedRectangle(cornerRadius: 28).stroke(Color.white.opacity(0.6), lineWidth: 1.5).shadow(color: .white.opacity(0.4), radius: 10))
-        .shadow(color: .white.opacity(0.15), radius: 30, x: 0, y: 10)
-        .padding(.horizontal, 16)
-    }
-    
-    private var hwidSection: some View {
-        HStack {
-            Image(systemName: "cpu").foregroundColor(.white).font(.system(size: 11)).shadow(color: .white, radius: 5)
-            Text("HWID: \(deviceID)")
-                .font(.system(size: 9, weight: .bold, design: .monospaced))
-                .foregroundColor(.white)
-                .shadow(color: .white.opacity(0.5), radius: 2)
-                .lineLimit(1)
-            
-            Spacer()
-            
-            if isFinding || isLoading {
-                ProgressView().scaleEffect(0.7).tint(.white)
-            } else {
-                Button(action: {
-                    UXFeedback.click()
-                    findKeyByDeviceID()
-                }) {
-                    Text("TÌM KEY")
-                        .font(.system(size: 8, weight: .bold, design: .monospaced))
-                        .foregroundColor(.black)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
-                        .background(Color.white)
-                        .cornerRadius(4)
-                        .shadow(color: .white.opacity(0.6), radius: 4)
-                }
-            }
-        }
-        .padding(.horizontal, 16)
-    }
-    
-    private var inputFormSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 12) {
-                ZStack {
-                    RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.1)).frame(width: 42, height: 42)
-                        .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.white.opacity(0.5), lineWidth: 1))
-                    Image(systemName: "key.horizontal.fill").font(.system(size: 16)).foregroundColor(.white).rotationEffect(.degrees(-45)).shadow(color: .white, radius: 5)
-                }
-                
-                VStack(alignment: .leading, spacing: 4) {
-                    HStack {
-                        Text("Key:").font(.system(size: 14, weight: .bold, design: .monospaced)).foregroundColor(.white).shadow(color: .white, radius: 2)
-                        Group {
-                            if isKeyVisible { TextField("Nhập Key...", text: $keyCode) }
-                            else { SecureField("••••••••••••", text: $keyCode) }
-                        }
-                        .font(.system(size: 14, weight: .black, design: .monospaced))
-                        .foregroundColor(.white)
-                        .accentColor(.white)
-                        .autocapitalization(.allCharacters)
-                        .disableAutocorrection(true)
-                        .onChange(of: keyCode) { _ in UXFeedback.typing() } 
-                        
-                        Button(action: { UXFeedback.click(); isKeyVisible.toggle() }) {
-                            Image(systemName: isKeyVisible ? "eye.slash.fill" : "eye.fill").foregroundColor(.white).font(.system(size: 13)).shadow(color: .white, radius: 3)
-                        }
-                    }
-                    .padding(.vertical, 8).padding(.horizontal, 12).background(Color.black.opacity(0.5)).cornerRadius(8)
-                    .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.white.opacity(0.6), lineWidth: 1.5).shadow(color: .white.opacity(0.3), radius: 5))
-                    
-                    if let error = inlineErrorMsg {
-                        Text(error)
-                            .font(.system(size: 10, weight: .bold, design: .monospaced))
-                            .foregroundColor(isSuccessMsg ? .green : .red)
-                            .shadow(color: isSuccessMsg ? .green : .red, radius: 5)
-                    } else {
-                        Text("Trạng thái: Chờ xác thực mã...").font(.system(size: 10, weight: .medium, design: .monospaced)).foregroundColor(.white.opacity(0.6))
-                    }
-                }
-                
-                Button(action: {
-                    UXFeedback.click()
-                    if let pasted = UIPasteboard.general.string { keyCode = pasted.trimmingCharacters(in: .whitespacesAndNewlines) }
-                }) {
-                    ZStack {
-                        RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.1)).frame(width: 42, height: 42)
-                            .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.white.opacity(0.5), lineWidth: 1))
-                        Image(systemName: "doc.on.clipboard").font(.system(size: 15)).foregroundColor(.white).shadow(color: .white, radius: 5)
-                    }
-                }
-            }
-        }
-        .padding(14)
-        .background(Color.black.opacity(0.4))
-        .cornerRadius(20)
-        .overlay(RoundedRectangle(cornerRadius: 20).stroke(Color.white.opacity(0.3), lineWidth: 1.5).shadow(color: .white.opacity(0.3), radius: 8))
-        .offset(x: shakeOffset)
-    }
-    
-    private var actionButtonsSection: some View {
-        VStack(spacing: 12) {
-            Button(action: { UXFeedback.click(); verifyKeyWithServer() }) {
-                Text("KÍCH HOẠT HỆ THỐNG")
-                    .font(.system(size: 14, weight: .black, design: .monospaced))
-                    .tracking(2).foregroundColor(.black).frame(maxWidth: .infinity).padding(.vertical, 16)
-                    .background(Color.white)
-                    .cornerRadius(14)
-                    .shadow(color: .white.opacity(0.7), radius: 10)
-            }
-            .buttonStyle(NeonScaleButtonStyle())
-            .disabled(isLoading || isFinding)
-
-            Button(action: {
-                UXFeedback.click()
-                if let url = URL(string: "https://solitudepremium.click/ipa/key/index.php") { UIApplication.shared.open(url) }
-            }) {
-                HStack {
-                    Image(systemName: "globe.asia.australia.fill").foregroundColor(.white).shadow(color: .white, radius: 2)
-                    Text("LẤY KEY BẢN QUYỀN MỚI").shadow(color: .white, radius: 2)
-                }
-                .font(.system(size: 11, weight: .bold, design: .monospaced)).foregroundColor(.white).frame(maxWidth: .infinity)
-                .padding(.vertical, 14).background(Color.black.opacity(0.6))
-                .cornerRadius(12)
-                .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.white.opacity(0.8), lineWidth: 1.5).shadow(color: .white.opacity(0.5), radius: 5))
-            }
-            .buttonStyle(NeonScaleButtonStyle())
-        }
-    }
-    
-    private var footerSection: some View {
-        Text("Headlock Center By Zenith Solitude")
-            .font(.system(size: 10, weight: .black, design: .monospaced))
-            .foregroundColor(.white.opacity(0.8))
-            .shadow(color: .white.opacity(0.5), radius: 3)
-            .padding(.top, 10)
-    }
-
-    private func findKeyByDeviceID() {
-        isFinding = true; inlineErrorMsg = nil; isSuccessMsg = false
-        
-        let endpoint = URL(string: "https://solitudepremium.click/ipa/proxy/api.php")!
-        var request = URLRequest(url: endpoint)
-        request.httpMethod = "POST"
-        request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
-        request.httpBody = "action=find_key&device_id=\(deviceID)".data(using: .utf8)
-
-        URLSession.shared.dataTask(with: request) { data, _, error in
-            DispatchQueue.main.async {
-                isFinding = false
-                guard let data = data, error == nil else { triggerError(msg: "⚠️ Lỗi mạng!"); return }
-                do {
-                    if let json = try JSONSerialization.jsonObject(with: data, options: []) as? [String: Any],
-                       let status = json["status"] as? String {
-                        if status == "success" {
-                            let foundKey = json["key"] as? String ?? ""
-                            self.keyCode = foundKey
-                            UXFeedback.success()
-                            self.isSuccessMsg = true
-                            self.inlineErrorMsg = "✅ Đã tìm thấy Key gắn với máy này!"
-                        } else { triggerError(msg: "❌ " + (json["message"] as? String ?? "Không tìm thấy!")) }
-                    } else { triggerError(msg: "⚠️ Phản hồi bất thường!") }
-                } catch { triggerError(msg: "⚠️ Lỗi phân tích dữ liệu!") }
-            }
-        }.resume()
-    }
-
-    private func verifyKeyWithServer() {
-        let trimmedKey = keyCode.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmedKey.isEmpty else { triggerError(msg: "⚠️ Vui lòng nhập mã Key!"); return }
-        isLoading = true; inlineErrorMsg = nil; isSuccessMsg = false
-
-        let endpoint = URL(string: "https://solitudepremium.click/ipa/proxy/api.php")!
-        var request = URLRequest(url: endpoint)
-        request.httpMethod = "POST"
-        request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
-        request.httpBody = "action=verify_app_key&key=\(trimmedKey)&device_id=\(deviceID)".data(using: .utf8)
-
-        URLSession.shared.dataTask(with: request) { data, _, error in
-            DispatchQueue.main.async {
-                isLoading = false
-                guard let data = data, error == nil else { triggerError(msg: "⚠️ Lỗi kết nối máy chủ!"); return }
-                do {
-                    if let json = try JSONSerialization.jsonObject(with: data, options: []) as? [String: Any],
-                       let status = json["status"] as? String {
-                        if status == "success" {
-                            triggerSuccess(expiry: json["expires_at"] as? String ?? "", key: trimmedKey)
-                        } else { triggerError(msg: "❌ " + (json["message"] as? String ?? "Key sai!")) }
-                    } else { triggerError(msg: "⚠️ Phản hồi bất thường!") }
-                } catch { triggerError(msg: "⚠️ Lỗi hệ thống mã hóa!") }
-            }
-        }.resume()
-    }
-    
-    private func triggerError(msg: String) {
-        UXFeedback.error(); isSuccessMsg = false; inlineErrorMsg = msg
-        withAnimation(.spring(response: 0.2, dampingFraction: 0.2)) { shakeOffset = 10 }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { shakeOffset = -10 }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { shakeOffset = 0 }
-    }
-    
-    private func triggerSuccess(expiry: String, key: String) {
-        UXFeedback.success(); isSuccessMsg = true; inlineErrorMsg = "✅ Xác thực thành công!"
-        savedExpiry = expiry
-        activeKey = key
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
-            withAnimation(.easeInOut(duration: 0.6)) { isUnlocked = true }
-        }
-    }
-}
-
-// MARK: - WIDGET THỜI GIAN THU GỌN
-private struct KeyTimerFloatingWidget: View {
-    let expiryDate: String
-    var body: some View {
-        TimelineView(.periodic(from: .now, by: 1.0)) { context in
-            let remaining = calculateRemaining(from: expiryDate, currentDate: context.date)
-            HStack(spacing: 8) {
-                Image(systemName: "key.radiowaves.forward").font(.system(size: 11)).foregroundColor(.white).shadow(color: .white, radius: 2)
-                Text("Hạn: \(remaining)")
-                    .font(.system(size: 10, weight: .bold, design: .monospaced))
-                    .foregroundColor(.white)
-            }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 6)
-            .background(Color.black.opacity(0.85))
-            .cornerRadius(16)
-            .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.white.opacity(0.8), lineWidth: 1.5))
-            .shadow(color: .white.opacity(0.5), radius: 8)
-            .padding(.bottom, 50)
-        }
-    }
-    private func calculateRemaining(from dateStr: String, currentDate: Date) -> String {
-        let formatter = DateFormatter(); formatter.dateFormat = "yyyy-MM-dd HH:mm:ss"; formatter.timeZone = TimeZone(identifier: "Asia/Ho_Chi_Minh")
-        guard let expDate = formatter.date(from: dateStr) else { return "Lỗi" }
-        let diff = Int(expDate.timeIntervalSince(currentDate))
-        if diff <= 0 { return "Hết Hạn" }
-        let days = diff / 86400, hrs = (diff % 86400) / 3600, mins = (diff % 3600) / 60
-        if days > 0 { return "\(days)N \(hrs)h\(mins)p" }
-        return String(format: "%02d:%02d:%02d", hrs, mins, diff % 60)
-    }
-}
-
-// MARK: - MÀN HÌNH BẢO TRÌ NHẬN TỪ SERVER
-private struct MaintenanceLockdownView: View {
-    var message: String
-    var body: some View {
-        ZStack {
-            Color.black.ignoresSafeArea()
-            VStack(spacing: 20) {
-                Image(systemName: "exclamationmark.triangle.fill").font(.system(size: 70)).foregroundColor(.white).shadow(color: .white, radius: 15)
-                Text("HỆ THỐNG BẢO TRÌ").font(.system(size: 18, weight: .black, design: .monospaced)).foregroundColor(.white)
-                Text(message).font(.system(size: 12, design: .monospaced)).multilineTextAlignment(.center).foregroundColor(.white.opacity(0.8)).padding(.horizontal, 30)
-            }
-        }
-    }
-}
-
-// MARK: - MÀN HÌNH KHÓA KHẨN CẤP
-private struct SecurityLockdownView: View {
-    var body: some View {
-        ZStack {
-            Color.black.ignoresSafeArea()
-            VStack(spacing: 20) {
-                Image(systemName: "shield.slash.fill").font(.system(size: 80)).foregroundColor(.white).shadow(color: .white, radius: 20)
-                Text("SECURITY BREACH").font(.system(size: 20, weight: .black, design: .monospaced)).foregroundColor(.white).shadow(color: .white, radius: 10)
-                Text("Phát hiện phần mềm can thiệp.\nỨng dụng đã bị khóa an toàn.").font(.system(size: 12, design: .monospaced)).multilineTextAlignment(.center).foregroundColor(.white)
-            }
-        }
-    }
-}
-
-// MARK: - HIỆU ỨNG HẠT BỤI
-private struct ParticleCanvasView: View {
-    var body: some View {
-        TimelineView(.animation) { context in
-            Canvas { graphicsContext, size in
-                let time = context.date.timeIntervalSinceReferenceDate
-                for i in 0..<120 {
-                    let seed = Double(i) * 99.0
-                    let x = (sin(time * 0.2 + seed) * 0.5 + 0.5) * size.width
-                    let speed = 150.0 + fmod(seed, 100.0) 
-                    let y = size.height - fmod(time * speed + seed, size.height + 100)
-                    let particleSize = CGFloat(fmod(seed, 3.0) + 2.5) 
-                    let opacity = Double(fmod(seed, 0.7) + 0.3) 
-                    
-                    let rect = CGRect(x: x, y: y, width: particleSize, height: particleSize)
-                    graphicsContext.fill(Path(ellipseIn: rect), with: .color(Color.white.opacity(opacity)))
-                }
-            }
-        }
-        .allowsHitTesting(false)
-    }
-}
-
-private struct CompactTabLabel: View {
-    let title: String; let systemImage: String
-    var body: some View { Image(systemName: systemImage); Text(title) }
-}
-private extension AppSection {
-    var titleKey: String {
-        switch self {
-        case .home: return "tab.home"; case .new: return "tab.new"; case .sources: return "tab.sources"
-        case .installed: return "tab.installed"; case .files: return "tab.files"; case .search: return "tab.search"
-        }
-    }
-    var systemImage: String {
-        switch self {
-        case .home: return "house.circle.fill" // Icon Trang chủ mới
-        case .new: return "clock.fill"; case .sources: return "shippingbox.fill"
-        case .installed: return "lock.shield.fill" // Icon Headlock mới
-        case .files: return "folder.fill"; case .search: return "magnifyingglass"
-        }
-    }
+/* Begin XCConfigurationList section */
+		3105A600 /* Build configuration list for PBXNativeTarget "headlockzenis" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				3105A601 /* Debug */,
+				3105A602 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		3105AA00 /* Build configuration list for PBXProject "ThreeOneOSFive" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				3105AA01 /* Debug */,
+				3105AA02 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = 3105A900;
 }
