@@ -110,7 +110,6 @@ struct GameSelection: Identifiable, Hashable {
     let prefix: String
 }
 
-// (PatchMeta, RemoteFileLite, ActivationInfo, PatchMetaStore giữ nguyên logic gốc để không phá vỡ liên kết dữ liệu)
 struct PatchMeta: Codable {
     var remoteKey: String; var remoteName: String; var gameType: String; var folder: String; var tag: String
     var displayName: String; var note: String; var tagOverride: Bool; var nameOverride: Bool; var noteOverride: Bool; var orphaned: Bool
@@ -403,6 +402,17 @@ struct PatchProjectsView: View {
     @State private var isSyncing = false
     @State private var lastSyncDate: Date = Date()
     private let autoTimer = Timer.publish(every: 5, on: .main, in: .common).autoconnect()
+
+    let onOpenSettings: () -> Void
+    let onOpenLogs: () -> Void
+
+    init(
+        onOpenSettings: @escaping () -> Void = {},
+        onOpenLogs: @escaping () -> Void = {}
+    ) {
+        self.onOpenSettings = onOpenSettings
+        self.onOpenLogs = onOpenLogs
+    }
 
     var body: some View {
         NavigationStack {
