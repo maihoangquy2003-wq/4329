@@ -4,7 +4,7 @@ import UniformTypeIdentifiers
 import AudioToolbox
 
 // ═══════════════════════════════════════════════════════════════
-// MARK: - SOUND (GIỮ NGUYÊN)
+// MARK: - SOUND
 // ═══════════════════════════════════════════════════════════════
 enum SoundFX {
     static func tap() { AudioServicesPlaySystemSound(1104) }
@@ -99,7 +99,7 @@ struct CosmicFieldView: View {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// MARK: - MODELS & META STORE (GIỮ NGUYÊN HOÀN TOÀN)
+// MARK: - MODELS & META STORE
 // ═══════════════════════════════════════════════════════════════
 struct GameSelection: Identifiable, Hashable {
     let id = UUID()
@@ -142,7 +142,7 @@ enum PatchMetaStore {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// MARK: - SUB VIEWS (THIẾT KẾ MỚI SIÊU ĐẸP)
+// MARK: - SUB VIEWS
 // ═══════════════════════════════════════════════════════════════
 private struct NeonCard<Content: View>: View {
     @ViewBuilder let content: Content
@@ -211,7 +211,7 @@ private struct TagBadge: View {
     private var isVIP: Bool { tag == "VIP" }
     var body: some View {
         Text(tag)
-            .font(.system(size: 9, weight: .black, design: .monospaced)) // Font monospaced ngầu hơn
+            .font(.system(size: 9, weight: .black, design: .monospaced))
             .tracking(1)
             .padding(.horizontal, 8).padding(.vertical, 3)
             .background(isVIP ? Color.white : Color.clear)
@@ -274,12 +274,13 @@ private struct PatchRow: View {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// MARK: - ACTIVATION SHEET (BỐ CỤC ĐEN TRẮNG MỚI)
+// MARK: - ACTIVATION SHEET (ĐÃ FIX LỖI TƯƠNG THÍCH IOS DƯỚI 17)
 // ═══════════════════════════════════════════════════════════════
 struct ActivationNoteSheet: View {
     let info: ActivationInfo
     let onDismiss: () -> Void
     @State private var copied = false
+    @State private var animateIcon = false // Hiệu ứng nảy tương thích cũ
 
     var body: some View {
         ZStack {
@@ -289,11 +290,17 @@ struct ActivationNoteSheet: View {
             VStack(spacing: 24) {
                 Spacer()
                 
-                // Icon
+                // Icon - Fix bounce effect
                 Image(systemName: info.success ? "checkmark.seal.fill" : "xmark.octagon.fill")
                     .font(.system(size: 60))
                     .foregroundStyle(.white)
-                    .symbolEffect(.bounce, options: .nonRepeating)
+                    .scaleEffect(animateIcon ? 1.0 : 0.4)
+                    .opacity(animateIcon ? 1.0 : 0.0)
+                    .onAppear {
+                        withAnimation(.spring(response: 0.4, dampingFraction: 0.5, blendDuration: 0)) {
+                            animateIcon = true
+                        }
+                    }
                 
                 VStack(spacing: 8) {
                     Text("HEADLOCK ZENIS")
@@ -375,7 +382,7 @@ struct ActivationNoteSheet: View {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// MARK: - MAIN VIEW (THAY ĐỔI BỐ CỤC)
+// MARK: - MAIN VIEW
 // ═══════════════════════════════════════════════════════════════
 struct PatchProjectsView: View {
     @Environment(\.appLanguage) private var language
@@ -566,7 +573,7 @@ final class SyncEngine {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// MARK: - DETAIL VIEW (SỬA LỖI THƯ MỤC ĐẦU TIÊN TỰ ĐỘNG CẬP NHẬT)
+// MARK: - DETAIL VIEW
 // ═══════════════════════════════════════════════════════════════
 struct PatchGameDetailView: View {
     let game: GameSelection
@@ -673,7 +680,7 @@ struct PatchGameDetailView: View {
         let names = gameItems.map { folderName(for: $0) }.filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
         var unique: [String] = []
         for n in names { if !unique.contains(n) { unique.append(n) } }
-        return unique // Không dùng .sorted() nữa để giữ nguyên thứ tự ưu tiên từ JSON
+        return unique
     }
 
     private var displayedItems: [PatchLibraryItem] {
@@ -726,7 +733,7 @@ struct PatchGameDetailView: View {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// MARK: - UNLOCK VIEW & PRESENTATION (GIỮ NGUYÊN)
+// MARK: - UNLOCK VIEW & PRESENTATION
 // ═══════════════════════════════════════════════════════════════
 struct PatchUnlockView: View {
     @Environment(\.appLanguage) private var language
@@ -762,6 +769,7 @@ private struct PatchStorePresentationModifier: ViewModifier {
         content.sheet(item: $store.passwordRequest, onDismiss: store.cancelUnlock) { req in PatchUnlockView(store: store, request: req) }
     }
 }
+
 extension View {
     func patchStorePresentation(_ store: PatchProjectStore) -> some View { modifier(PatchStorePresentationModifier(store: store)) }
 }
