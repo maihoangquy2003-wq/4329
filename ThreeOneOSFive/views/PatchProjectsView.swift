@@ -480,13 +480,13 @@ private struct EmptyStateView: View {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// MARK: - ACTIVATION SHEET (⭐ CHỈ THÊM NÚT COPY Ở ĐÂY)
+// MARK: - ACTIVATION SHEET
 // ═══════════════════════════════════════════════════════════════
 struct ActivationNoteSheet: View {
     let info: ActivationInfo
     let onDismiss: () -> Void
     @State private var pulse = false
-    @State private var copied = false   // ⭐️ THÊM DÒNG NÀY
+    @State private var copied = false
 
     private var accent: Color {
         info.success ? Color.white : Color(red: 1.0, green: 0.35, blue: 0.35)
@@ -576,7 +576,6 @@ struct ActivationNoteSheet: View {
                         .padding(.horizontal, 24)
                     }
 
-                    // ⭐️ NOTE + NÚT COPY
                     if hasNote {
                         VStack(alignment: .leading, spacing: 12) {
                             HStack(spacing: 8) {
@@ -595,7 +594,6 @@ struct ActivationNoteSheet: View {
                                 .fixedSize(horizontal: false, vertical: true)
                                 .frame(maxWidth: .infinity, alignment: .leading)
 
-                            // ⭐️ NÚT COPY GHI CHÚ
                             Button {
                                 SoundFX.tap()
                                 UIPasteboard.general.string = info.note
@@ -844,7 +842,7 @@ struct PatchProjectsView: View {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// MARK: - SYNC ENGINE (AN TOÀN)
+// MARK: - SYNC ENGINE (ĐÃ TỐI ƯU SIÊU TỐC - KHÔNG LAG, TẢI NGẦM)
 // ═══════════════════════════════════════════════════════════════
 final class SyncEngine {
     static let shared = SyncEngine()
@@ -854,21 +852,14 @@ final class SyncEngine {
     func run(store: PatchProjectStore) async {
         guard let remotes = await fetchRemotes() else { return }
 
-        // Build dict AN TOÀN bằng composite key
+        // 1. Lưu metadata trước để UI HIỆN RA NGAY LẬP TỨC
         var remoteByKey: [String: RemoteFileLite] = [:]
-        for r in remotes {
-            remoteByKey[r.compositeKey] = r
-        }
+        for r in remotes { remoteByKey[r.compositeKey] = r }
 
-        // BƯỚC 1: Update metadata cũ + mark orphan
         metaLock.lock()
         var metaDict = PatchMetaStore.all()
-
         for (localName, var meta) in metaDict {
-            let key = meta.remoteKey.isEmpty
-                ? "\(meta.gameType)/\(meta.folder)/\(meta.remoteName)"
-                : meta.remoteKey
-
+            let key = meta.remoteKey.isEmpty ? "\(meta.gameType)/\(meta.folder)/\(meta.remoteName)" : meta.remoteKey
             if let remote = remoteByKey[key] {
                 meta.orphaned = false
                 meta.remoteKey = remote.compositeKey
@@ -885,22 +876,25 @@ final class SyncEngine {
         PatchMetaStore.save(metaDict)
         metaLock.unlock()
 
-        // BƯỚC 2: Import file mới
+        // 2. Tìm các file chưa có để tải
         var existingKeys = Set<String>()
         for meta in metaDict.values where !meta.orphaned {
-            if !meta.remoteKey.isEmpty {
-                existingKeys.insert(meta.remoteKey)
-            } else {
-                existingKeys.insert("\(meta.gameType)/\(meta.folder)/\(meta.remoteName)")
+            existingKeys.insert(meta.remoteKey.isEmpty ? "\(meta.gameType)/\(meta.folder)/\(meta.remoteName)" : meta.remoteKey)
+        }
+
+        // 3. TẢI FILE SONG SONG (KHÔNG LÀM ĐƠ APP - THAY THẾ VÒNG LẶP 40 LẦN)
+        await withTaskGroup(of: Void.self) { group in
+            for remote in remotes {
+                if existingKeys.contains(remote.compositeKey) { continue }
+                guard let url = URL(string: remote.url) else { continue }
+                
+                group.addTask {
+                    await self.importAndTag(remote: remote, url: url, store: store)
+                }
             }
         }
 
-        for remote in remotes {
-            if existingKeys.contains(remote.compositeKey) { continue }
-            guard let url = URL(string: remote.url) else { continue }
-            await importAndTag(remote: remote, url: url, store: store)
-        }
-
+        // 4. Reload lại UI 1 lần duy nhất khi tất cả hoàn tất
         await MainActor.run { store.reload() }
     }
 
@@ -909,82 +903,46 @@ final class SyncEngine {
         let urlString = "https://solitudepremium.click/ipa/proxy/list.php?t=\(ts)"
         guard let url = URL(string: urlString) else { return nil }
 
-        for attempt in 0..<2 {
-            do {
-                var req = URLRequest(url: url)
-                req.cachePolicy = .reloadIgnoringLocalAndRemoteCacheData
-                req.timeoutInterval = 12
-                req.setValue("no-cache", forHTTPHeaderField: "Cache-Control")
-                req.setValue("no-cache", forHTTPHeaderField: "Pragma")
+        do {
+            var req = URLRequest(url: url)
+            req.cachePolicy = .reloadIgnoringLocalAndRemoteCacheData
+            req.timeoutInterval = 5 // Giảm timeout xuống để load nhanh hơn
+            let (data, _) = try await URLSession.shared.data(for: req)
 
-                let (data, _) = try await URLSession.shared.data(for: req)
-
-                struct Wire: Decodable {
-                    let filename: String
-                    let gameType: String
-                    let folder: String?
-                    let displayName: String?
-                    let tag: String?
-                    let note: String?
-                    let url: String
-                }
-                let wire = try JSONDecoder().decode([Wire].self, from: data)
-                return wire.map { w in
-                    RemoteFileLite(
-                        filename:    w.filename,
-                        gameType:    w.gameType,
-                        folder:      w.folder ?? "Chung",
-                        tag:         w.tag ?? "FREE",
-                        displayName: w.displayName ?? "",
-                        note:        w.note ?? "",
-                        url:         w.url
-                    )
-                }
-            } catch {
-                print("Fetch attempt \(attempt) failed: \(error.localizedDescription)")
-                if attempt == 0 {
-                    try? await Task.sleep(nanoseconds: 500_000_000)
-                }
+            struct Wire: Decodable {
+                let filename: String; let gameType: String; let folder: String?
+                let displayName: String?; let tag: String?; let note: String?; let url: String
             }
+            let wire = try JSONDecoder().decode([Wire].self, from: data)
+            return wire.map { w in
+                RemoteFileLite(
+                    filename: w.filename, gameType: w.gameType, folder: w.folder ?? "Chung",
+                    tag: w.tag ?? "FREE", displayName: w.displayName ?? "", note: w.note ?? "", url: w.url
+                )
+            }
+        } catch {
+            return nil
         }
-        return nil
     }
 
-    private func importAndTag(remote: RemoteFileLite,
-                              url: URL,
-                              store: PatchProjectStore) async {
-        let before = await MainActor.run {
-            Set(store.items.map { $0.packageURL.lastPathComponent })
-        }
+    // ĐÃ XÓA VÒNG LẶP GÂY LAG 40 LẦN
+    private func importAndTag(remote: RemoteFileLite, url: URL, store: PatchProjectStore) async {
+        // Ghi sẵn MetaData
+        metaLock.lock()
+        let meta = PatchMeta(
+            remoteKey: remote.compositeKey, remoteName: remote.filename,
+            gameType: remote.gameType, folder: remote.folder,
+            tag: remote.tag, displayName: remote.displayName,
+            note: remote.note, orphaned: false
+        )
+        // Lưu meta sẵn với key là filename
+        PatchMetaStore.set(meta, forLocal: remote.filename) 
+        metaLock.unlock()
+
+        // Bắn lệnh import cho Store chạy ngầm
         await MainActor.run {
             store.importPackage(from: .remote(url))
         }
-        for attempt in 0..<40 {
-            try? await Task.sleep(nanoseconds: 200_000_000)
-            await MainActor.run { store.reload() }
-            let after = await MainActor.run {
-                Set(store.items.map { $0.packageURL.lastPathComponent })
-            }
-            let diff = after.subtracting(before)
-            if let newFile = diff.first {
-                print("✅ \(remote.compositeKey) → \(newFile) @\(attempt)")
-                metaLock.lock()
-                let meta = PatchMeta(
-                    remoteKey:   remote.compositeKey,
-                    remoteName:  remote.filename,
-                    gameType:    remote.gameType,
-                    folder:      remote.folder,
-                    tag:         remote.tag,
-                    displayName: remote.displayName,
-                    note:        remote.note,
-                    orphaned:    false
-                )
-                PatchMetaStore.set(meta, forLocal: newFile)
-                metaLock.unlock()
-                return
-            }
-        }
-        print("⚠️ Timeout: \(remote.compositeKey)")
     }
 }
 
@@ -1037,6 +995,10 @@ struct PatchGameDetailView: View {
             .toolbarBackground(.visible, for: .navigationBar)
             .toolbarColorScheme(.dark, for: .navigationBar)
             .onAppear {
+                // Tối ưu: Load UI Local ngay lập tức, sau đó chạy ngầm tải File
+                store.reload() 
+                syncFolders()
+                
                 Task {
                     await SyncEngine.shared.run(store: store)
                     await MainActor.run {
@@ -1130,7 +1092,6 @@ struct PatchGameDetailView: View {
         return unique.sorted()
     }
 
-    // ⭐️ NẾU CHƯA CHỌN FOLDER → TRẢ RỖNG (không hiện "tất cả")
     private var displayedItems: [PatchLibraryItem] {
         guard let sel = selectedFolder else { return [] }
         return gameItems.filter { folderName(for: $0) == sel }
