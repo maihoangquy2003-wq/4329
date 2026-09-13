@@ -480,13 +480,13 @@ private struct EmptyStateView: View {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// MARK: - ACTIVATION SHEET (⭐ ĐÃ THÊM NÚT COPY)
+// MARK: - ACTIVATION SHEET (⭐ CHỈ THÊM NÚT COPY Ở ĐÂY)
 // ═══════════════════════════════════════════════════════════════
 struct ActivationNoteSheet: View {
     let info: ActivationInfo
     let onDismiss: () -> Void
     @State private var pulse = false
-    @State private var copied = false   // ⭐️ trạng thái nút copy
+    @State private var copied = false   // ⭐️ THÊM DÒNG NÀY
 
     private var accent: Color {
         info.success ? Color.white : Color(red: 1.0, green: 0.35, blue: 0.35)
@@ -588,14 +588,12 @@ struct ActivationNoteSheet: View {
                                     .foregroundStyle(Color.white.opacity(0.7))
                                 Spacer()
                             }
-
                             Text(info.note)
                                 .font(.system(size: 13, weight: .medium))
                                 .foregroundStyle(Color.white.opacity(0.95))
                                 .multilineTextAlignment(.leading)
                                 .fixedSize(horizontal: false, vertical: true)
                                 .frame(maxWidth: .infinity, alignment: .leading)
-                                .textSelection(.enabled)
 
                             // ⭐️ NÚT COPY GHI CHÚ
                             Button {
@@ -846,7 +844,7 @@ struct PatchProjectsView: View {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// MARK: - SYNC ENGINE (⭐ BATCH IMPORT — NHANH & ỔN ĐỊNH)
+// MARK: - SYNC ENGINE (AN TOÀN)
 // ═══════════════════════════════════════════════════════════════
 final class SyncEngine {
     static let shared = SyncEngine()
@@ -887,7 +885,7 @@ final class SyncEngine {
         PatchMetaStore.save(metaDict)
         metaLock.unlock()
 
-        // BƯỚC 2: Xác định file cần tải
+        // BƯỚC 2: Import file mới
         var existingKeys = Set<String>()
         for meta in metaDict.values where !meta.orphaned {
             if !meta.remoteKey.isEmpty {
@@ -897,130 +895,13 @@ final class SyncEngine {
             }
         }
 
-        let toImport = remotes.filter { !existingKeys.contains($0.compositeKey) }
-        guard !toImport.isEmpty else {
-            await MainActor.run { store.reload() }
-            return
-        }
-
-        print("📦 Batch import \(toImport.count) file(s)")
-
-        // ⭐️ BƯỚC 3: Fire TẤT CẢ download CÙNG LÚC
-        let before = await MainActor.run {
-            Set(store.items.map { $0.packageURL.lastPathComponent })
-        }
-
-        for remote in toImport {
+        for remote in remotes {
+            if existingKeys.contains(remote.compositeKey) { continue }
             guard let url = URL(string: remote.url) else { continue }
-            await MainActor.run {
-                store.importPackage(from: .remote(url))
-            }
-            // Delay cực ngắn giữa các lần fire để tránh nghẽn
-            try? await Task.sleep(nanoseconds: 60_000_000)  // 60ms
+            await importAndTag(remote: remote, url: url, store: store)
         }
-
-        // ⭐️ BƯỚC 4: Poll chung 1 lần — chờ tất cả file về
-        let expected = toImport.count
-        for attempt in 0..<100 {  // 100 × 200ms = 20s
-            try? await Task.sleep(nanoseconds: 200_000_000)
-            await MainActor.run { store.reload() }
-
-            let after = await MainActor.run {
-                Set(store.items.map { $0.packageURL.lastPathComponent })
-            }
-            let newFiles = after.subtracting(before)
-
-            if newFiles.count >= expected {
-                print("✅ All \(expected) file(s) arrived @ attempt \(attempt) (~\(attempt * 200)ms)")
-                break
-            }
-        }
-
-        // ⭐️ BƯỚC 5: Match local ↔ remote bằng project name
-        let finalAfter = await MainActor.run {
-            Set(store.items.map { $0.packageURL.lastPathComponent })
-        }
-        let newFiles = Array(finalAfter.subtracting(before))
-        let localItems = await MainActor.run { store.items }
-
-        // Map localName → project name
-        var localProjectNames: [String: String] = [:]
-        for item in localItems {
-            let localName = item.packageURL.lastPathComponent
-            if newFiles.contains(localName) {
-                let projectName = item.project?.name ?? ""
-                localProjectNames[localName] = projectName
-            }
-        }
-
-        var assigned: [String: String] = [:]  // remoteKey → localName
-        var usedLocals = Set<String>()
-
-        // Pass 1: exact/fuzzy match bằng project name
-        for remote in toImport {
-            if assigned[remote.compositeKey] != nil { continue }
-            let remoteSlug = normalize(remote.displayName)
-            for (local, proj) in localProjectNames {
-                if usedLocals.contains(local) { continue }
-                let localSlug = normalize(proj)
-                if !localSlug.isEmpty && !remoteSlug.isEmpty {
-                    if localSlug == remoteSlug
-                        || localSlug.contains(remoteSlug)
-                        || remoteSlug.contains(localSlug) {
-                        assigned[remote.compositeKey] = local
-                        usedLocals.insert(local)
-                        break
-                    }
-                }
-            }
-        }
-
-        // Pass 2: gán đại các local còn lại theo thứ tự
-        let remainingLocals = newFiles.filter { !usedLocals.contains($0) }
-        var idx = 0
-        for remote in toImport {
-            if assigned[remote.compositeKey] != nil { continue }
-            if idx < remainingLocals.count {
-                assigned[remote.compositeKey] = remainingLocals[idx]
-                usedLocals.insert(remainingLocals[idx])
-                idx += 1
-            }
-        }
-
-        // ⭐️ BƯỚC 6: Ghi metadata 1 lần
-        metaLock.lock()
-        for remote in toImport {
-            guard let localName = assigned[remote.compositeKey] else {
-                print("⚠️ No local match for \(remote.compositeKey)")
-                continue
-            }
-            let meta = PatchMeta(
-                remoteKey:   remote.compositeKey,
-                remoteName:  remote.filename,
-                gameType:    remote.gameType,
-                folder:      remote.folder,
-                tag:         remote.tag,
-                displayName: remote.displayName,
-                note:        remote.note,
-                orphaned:    false
-            )
-            PatchMetaStore.set(meta, forLocal: localName)
-            print("✅ \(remote.compositeKey) → \(localName)")
-        }
-        metaLock.unlock()
 
         await MainActor.run { store.reload() }
-    }
-
-    private func normalize(_ s: String) -> String {
-        return s.lowercased()
-            .replacingOccurrences(of: "_vip", with: "")
-            .replacingOccurrences(of: "_free", with: "")
-            .replacingOccurrences(of: "zenith_", with: "")
-            .replacingOccurrences(of: "ffmax_", with: "")
-            .replacingOccurrences(of: "ffnormal_", with: "")
-            .replacingOccurrences(of: #"[^a-z0-9]+"#, with: "_", options: .regularExpression)
-            .trimmingCharacters(in: CharacterSet(charactersIn: "_"))
     }
 
     private func fetchRemotes() async -> [RemoteFileLite]? {
@@ -1032,7 +913,7 @@ final class SyncEngine {
             do {
                 var req = URLRequest(url: url)
                 req.cachePolicy = .reloadIgnoringLocalAndRemoteCacheData
-                req.timeoutInterval = 10
+                req.timeoutInterval = 12
                 req.setValue("no-cache", forHTTPHeaderField: "Cache-Control")
                 req.setValue("no-cache", forHTTPHeaderField: "Pragma")
 
@@ -1062,11 +943,48 @@ final class SyncEngine {
             } catch {
                 print("Fetch attempt \(attempt) failed: \(error.localizedDescription)")
                 if attempt == 0 {
-                    try? await Task.sleep(nanoseconds: 400_000_000)
+                    try? await Task.sleep(nanoseconds: 500_000_000)
                 }
             }
         }
         return nil
+    }
+
+    private func importAndTag(remote: RemoteFileLite,
+                              url: URL,
+                              store: PatchProjectStore) async {
+        let before = await MainActor.run {
+            Set(store.items.map { $0.packageURL.lastPathComponent })
+        }
+        await MainActor.run {
+            store.importPackage(from: .remote(url))
+        }
+        for attempt in 0..<40 {
+            try? await Task.sleep(nanoseconds: 200_000_000)
+            await MainActor.run { store.reload() }
+            let after = await MainActor.run {
+                Set(store.items.map { $0.packageURL.lastPathComponent })
+            }
+            let diff = after.subtracting(before)
+            if let newFile = diff.first {
+                print("✅ \(remote.compositeKey) → \(newFile) @\(attempt)")
+                metaLock.lock()
+                let meta = PatchMeta(
+                    remoteKey:   remote.compositeKey,
+                    remoteName:  remote.filename,
+                    gameType:    remote.gameType,
+                    folder:      remote.folder,
+                    tag:         remote.tag,
+                    displayName: remote.displayName,
+                    note:        remote.note,
+                    orphaned:    false
+                )
+                PatchMetaStore.set(meta, forLocal: newFile)
+                metaLock.unlock()
+                return
+            }
+        }
+        print("⚠️ Timeout: \(remote.compositeKey)")
     }
 }
 
@@ -1165,6 +1083,7 @@ struct PatchGameDetailView: View {
         }
     }
 
+    // ⭐️ TỰ ĐỘNG CHỌN FOLDER ĐẦU TIÊN
     private func syncFolders() {
         let currentFolders = folders
 
@@ -1174,9 +1093,10 @@ struct PatchGameDetailView: View {
         }
 
         if let sel = selectedFolder, currentFolders.contains(sel) {
-            return
+            return  // Folder hiện tại vẫn valid
         }
 
+        // Chưa chọn OR folder bị xóa → chọn folder đầu tiên
         selectedFolder = currentFolders.first
     }
 
@@ -1210,6 +1130,7 @@ struct PatchGameDetailView: View {
         return unique.sorted()
     }
 
+    // ⭐️ NẾU CHƯA CHỌN FOLDER → TRẢ RỖNG (không hiện "tất cả")
     private var displayedItems: [PatchLibraryItem] {
         guard let sel = selectedFolder else { return [] }
         return gameItems.filter { folderName(for: $0) == sel }
