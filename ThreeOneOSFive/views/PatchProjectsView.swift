@@ -480,14 +480,13 @@ private struct EmptyStateView: View {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// MARK: - ACTIVATION SHEET (có nút COPY NOTE)
+// MARK: - ACTIVATION SHEET (⭐ ĐÃ THÊM NÚT COPY)
 // ═══════════════════════════════════════════════════════════════
 struct ActivationNoteSheet: View {
     let info: ActivationInfo
     let onDismiss: () -> Void
-
     @State private var pulse = false
-    @State private var copied = false
+    @State private var copied = false   // ⭐️ trạng thái nút copy
 
     private var accent: Color {
         info.success ? Color.white : Color(red: 1.0, green: 0.35, blue: 0.35)
@@ -511,7 +510,6 @@ struct ActivationNoteSheet: View {
                 VStack(spacing: 22) {
                     Spacer(minLength: 40)
 
-                    // ICON
                     ZStack {
                         Circle().fill(accent.opacity(0.12))
                             .frame(width: pulse ? 110 : 96, height: pulse ? 110 : 96)
@@ -533,7 +531,6 @@ struct ActivationNoteSheet: View {
                         }
                     }
 
-                    // TITLE
                     VStack(spacing: 8) {
                         Text("HEADLOCK ZENIS")
                             .font(.system(size: 14, weight: .heavy)).tracking(4)
@@ -552,7 +549,6 @@ struct ActivationNoteSheet: View {
                             .padding(.horizontal, 20)
                     }
 
-                    // ERROR (nếu thất bại)
                     if let errMsg = info.errorMessage, !errMsg.isEmpty, !info.success {
                         VStack(alignment: .leading, spacing: 8) {
                             HStack(spacing: 8) {
@@ -580,9 +576,9 @@ struct ActivationNoteSheet: View {
                         .padding(.horizontal, 24)
                     }
 
-                    // NOTE + COPY BUTTON
+                    // ⭐️ NOTE + NÚT COPY
                     if hasNote {
-                        VStack(alignment: .leading, spacing: 10) {
+                        VStack(alignment: .leading, spacing: 12) {
                             HStack(spacing: 8) {
                                 Image(systemName: "note.text")
                                     .font(.system(size: 12, weight: .bold))
@@ -592,6 +588,7 @@ struct ActivationNoteSheet: View {
                                     .foregroundStyle(Color.white.opacity(0.7))
                                 Spacer()
                             }
+
                             Text(info.note)
                                 .font(.system(size: 13, weight: .medium))
                                 .foregroundStyle(Color.white.opacity(0.95))
@@ -600,15 +597,15 @@ struct ActivationNoteSheet: View {
                                 .frame(maxWidth: .infinity, alignment: .leading)
                                 .textSelection(.enabled)
 
-                            // ⭐️ NÚT COPY NOTE
+                            // ⭐️ NÚT COPY GHI CHÚ
                             Button {
                                 SoundFX.tap()
                                 UIPasteboard.general.string = info.note
-                                withAnimation(.spring(response: 0.3)) {
+                                withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
                                     copied = true
                                 }
-                                DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
-                                    withAnimation(.spring(response: 0.3)) {
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 1.6) {
+                                    withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
                                         copied = false
                                     }
                                 }
@@ -617,8 +614,7 @@ struct ActivationNoteSheet: View {
                                     Image(systemName: copied ? "checkmark" : "doc.on.doc")
                                         .font(.system(size: 11, weight: .heavy))
                                     Text(copied ? "ĐÃ COPY" : "COPY GHI CHÚ")
-                                        .font(.system(size: 11, weight: .heavy))
-                                        .tracking(1.2)
+                                        .font(.system(size: 11, weight: .heavy)).tracking(1.2)
                                 }
                                 .foregroundStyle(copied ? Color.black : Color.white)
                                 .padding(.horizontal, 14)
@@ -649,7 +645,6 @@ struct ActivationNoteSheet: View {
                         .padding(.horizontal, 24)
                     }
 
-                    // HINT nếu thất bại
                     if !info.success {
                         Text("💡 Hãy chắc chắn game đã được cài đặt trên thiết bị, sau đó thử lại.")
                             .font(.system(size: 11, weight: .medium))
@@ -660,7 +655,6 @@ struct ActivationNoteSheet: View {
 
                     Spacer(minLength: 20)
 
-                    // NÚT ĐÃ HIỂU
                     Button {
                         SoundFX.tap()
                         onDismiss()
@@ -852,7 +846,7 @@ struct PatchProjectsView: View {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// MARK: - SYNC ENGINE (BATCH IMPORT — TỐI ƯU TỐC ĐỘ)
+// MARK: - SYNC ENGINE (⭐ BATCH IMPORT — NHANH & ỔN ĐỊNH)
 // ═══════════════════════════════════════════════════════════════
 final class SyncEngine {
     static let shared = SyncEngine()
@@ -864,11 +858,14 @@ final class SyncEngine {
 
         // Build dict AN TOÀN bằng composite key
         var remoteByKey: [String: RemoteFileLite] = [:]
-        for r in remotes { remoteByKey[r.compositeKey] = r }
+        for r in remotes {
+            remoteByKey[r.compositeKey] = r
+        }
 
         // BƯỚC 1: Update metadata cũ + mark orphan
         metaLock.lock()
         var metaDict = PatchMetaStore.all()
+
         for (localName, var meta) in metaDict {
             let key = meta.remoteKey.isEmpty
                 ? "\(meta.gameType)/\(meta.folder)/\(meta.remoteName)"
@@ -890,7 +887,7 @@ final class SyncEngine {
         PatchMetaStore.save(metaDict)
         metaLock.unlock()
 
-        // BƯỚC 2: Xác định file cần import
+        // BƯỚC 2: Xác định file cần tải
         var existingKeys = Set<String>()
         for meta in metaDict.values where !meta.orphaned {
             if !meta.remoteKey.isEmpty {
@@ -908,49 +905,45 @@ final class SyncEngine {
 
         print("📦 Batch import \(toImport.count) file(s)")
 
-        // BƯỚC 3: Snapshot trước khi import
+        // ⭐️ BƯỚC 3: Fire TẤT CẢ download CÙNG LÚC
         let before = await MainActor.run {
             Set(store.items.map { $0.packageURL.lastPathComponent })
         }
 
-        // BƯỚC 4: Fire TẤT CẢ download song song (không await từng cái)
         for remote in toImport {
             guard let url = URL(string: remote.url) else { continue }
             await MainActor.run {
                 store.importPackage(from: .remote(url))
             }
-            // Sleep cực ngắn để tránh spam cùng lúc
-            try? await Task.sleep(nanoseconds: 80_000_000)  // 80ms
+            // Delay cực ngắn giữa các lần fire để tránh nghẽn
+            try? await Task.sleep(nanoseconds: 60_000_000)  // 60ms
         }
 
-        // BƯỚC 5: Poll chung 1 lần cho TẤT CẢ file
-        var assigned: [String: String] = [:]  // remoteKey → localName
+        // ⭐️ BƯỚC 4: Poll chung 1 lần — chờ tất cả file về
         let expected = toImport.count
-
-        for attempt in 0..<80 {  // 80 × 250ms = 20s max
-            try? await Task.sleep(nanoseconds: 250_000_000)
+        for attempt in 0..<100 {  // 100 × 200ms = 20s
+            try? await Task.sleep(nanoseconds: 200_000_000)
             await MainActor.run { store.reload() }
 
             let after = await MainActor.run {
                 Set(store.items.map { $0.packageURL.lastPathComponent })
             }
-            let newFiles = Array(after.subtracting(before))
+            let newFiles = after.subtracting(before)
 
             if newFiles.count >= expected {
-                print("✅ All \(expected) file(s) arrived @\(attempt) (0.25s × \(attempt))")
+                print("✅ All \(expected) file(s) arrived @ attempt \(attempt) (~\(attempt * 200)ms)")
                 break
             }
         }
 
-        // BƯỚC 6: Match local ↔ remote bằng project name
+        // ⭐️ BƯỚC 5: Match local ↔ remote bằng project name
         let finalAfter = await MainActor.run {
             Set(store.items.map { $0.packageURL.lastPathComponent })
         }
         let newFiles = Array(finalAfter.subtracting(before))
         let localItems = await MainActor.run { store.items }
-        let usedLocals = NSMutableSet()
 
-        // Build map: localName → project name
+        // Map localName → project name
         var localProjectNames: [String: String] = [:]
         for item in localItems {
             let localName = item.packageURL.lastPathComponent
@@ -960,34 +953,41 @@ final class SyncEngine {
             }
         }
 
-        // Pass 1: exact match bằng project name
+        var assigned: [String: String] = [:]  // remoteKey → localName
+        var usedLocals = Set<String>()
+
+        // Pass 1: exact/fuzzy match bằng project name
         for remote in toImport {
             if assigned[remote.compositeKey] != nil { continue }
-            let remoteName = normalizeName(remote.displayName)
+            let remoteSlug = normalize(remote.displayName)
             for (local, proj) in localProjectNames {
                 if usedLocals.contains(local) { continue }
-                let localName = normalizeName(proj)
-                if !localName.isEmpty && (localName == remoteName || localName.contains(remoteName) || remoteName.contains(localName)) {
-                    assigned[remote.compositeKey] = local
-                    usedLocals.add(local)
-                    break
+                let localSlug = normalize(proj)
+                if !localSlug.isEmpty && !remoteSlug.isEmpty {
+                    if localSlug == remoteSlug
+                        || localSlug.contains(remoteSlug)
+                        || remoteSlug.contains(localSlug) {
+                        assigned[remote.compositeKey] = local
+                        usedLocals.insert(local)
+                        break
+                    }
                 }
             }
         }
 
-        // Pass 2: fallback — gán đại các local chưa dùng
+        // Pass 2: gán đại các local còn lại theo thứ tự
         let remainingLocals = newFiles.filter { !usedLocals.contains($0) }
         var idx = 0
         for remote in toImport {
             if assigned[remote.compositeKey] != nil { continue }
             if idx < remainingLocals.count {
                 assigned[remote.compositeKey] = remainingLocals[idx]
-                usedLocals.add(remainingLocals[idx])
+                usedLocals.insert(remainingLocals[idx])
                 idx += 1
             }
         }
 
-        // BƯỚC 7: Ghi metadata
+        // ⭐️ BƯỚC 6: Ghi metadata 1 lần
         metaLock.lock()
         for remote in toImport {
             guard let localName = assigned[remote.compositeKey] else {
@@ -1012,7 +1012,7 @@ final class SyncEngine {
         await MainActor.run { store.reload() }
     }
 
-    private func normalizeName(_ s: String) -> String {
+    private func normalize(_ s: String) -> String {
         return s.lowercased()
             .replacingOccurrences(of: "_vip", with: "")
             .replacingOccurrences(of: "_free", with: "")
@@ -1167,8 +1167,16 @@ struct PatchGameDetailView: View {
 
     private func syncFolders() {
         let currentFolders = folders
-        if currentFolders.isEmpty { selectedFolder = nil; return }
-        if let sel = selectedFolder, currentFolders.contains(sel) { return }
+
+        if currentFolders.isEmpty {
+            selectedFolder = nil
+            return
+        }
+
+        if let sel = selectedFolder, currentFolders.contains(sel) {
+            return
+        }
+
         selectedFolder = currentFolders.first
     }
 
