@@ -144,7 +144,7 @@ struct CosmicFieldView: View {
 struct GameSelection: Identifiable, Hashable {
     let id = UUID()
     let title: String
-    let prefix: String
+    let prefix: String   // "ffmax" / "ffnormal"
 }
 
 struct PatchMeta: Codable {
@@ -266,79 +266,72 @@ private struct NeonCard<Content: View>: View {
 }
 
 private struct FFLogoView: View {
-    var size: CGFloat = 52
     var body: some View {
         AsyncImage(url: URL(string: "https://solitudepremium.click/ipa/proxy/free.jpg")) { phase in
             switch phase {
             case .empty:
                 ZStack {
-                    RoundedRectangle(cornerRadius: size * 0.25).fill(Color.white.opacity(0.06))
-                    ProgressView().tint(.white).scaleEffect(0.75)
+                    RoundedRectangle(cornerRadius: 13).fill(Color.white.opacity(0.06))
+                    ProgressView().tint(.white)
                 }
             case .success(let img):
-                img.resizable().scaledToFill()
-                    .clipShape(RoundedRectangle(cornerRadius: size * 0.25))
+                img.resizable().scaledToFill().clipShape(RoundedRectangle(cornerRadius: 13))
             case .failure:
                 ZStack {
-                    RoundedRectangle(cornerRadius: size * 0.25).fill(Color.white.opacity(0.06))
+                    RoundedRectangle(cornerRadius: 13).fill(Color.white.opacity(0.06))
                     Image(systemName: "flame.fill")
-                        .font(.system(size: size * 0.42, weight: .bold))
+                        .font(.system(size: 22, weight: .bold))
                         .foregroundStyle(Color.white.opacity(0.8))
                 }
             @unknown default: EmptyView()
             }
         }
-        .frame(width: size, height: size)
-        .overlay(RoundedRectangle(cornerRadius: size * 0.25)
-            .stroke(Color.white.opacity(0.85), lineWidth: 1.2))
-        .shadow(color: .white.opacity(0.5), radius: 12)
+        .frame(width: 52, height: 52)
+        .overlay(RoundedRectangle(cornerRadius: 13).stroke(Color.white.opacity(0.85), lineWidth: 1.2))
+        .shadow(color: .white.opacity(0.55), radius: 14)
     }
 }
 
-/// ⭐️ BỐ CỤC MỚI: Avatar mini nằm ngang với tên
-private struct AvatarMini: View {
-    var size: CGFloat = 62
+private struct AvatarView: View {
     @State private var rotate = false
-
+    @State private var pulse = false
     var body: some View {
         ZStack {
-            // Outer glow
-            Circle().fill(Color.white.opacity(0.15))
-                .frame(width: size + 6, height: size + 6)
-                .blur(radius: 10)
-
-            // Rotating ring
+            Circle().fill(Color.white.opacity(0.18))
+                .frame(width: pulse ? 116 : 94, height: pulse ? 116 : 94).blur(radius: 24)
             Circle()
                 .stroke(AngularGradient(gradient: Gradient(colors: [
                     .white, .white.opacity(0.15), .white, .white.opacity(0.15), .white
-                ]), center: .center), lineWidth: 1.8)
-                .frame(width: size, height: size)
+                ]), center: .center), lineWidth: 2.5)
+                .frame(width: 94, height: 94)
                 .rotationEffect(.degrees(rotate ? 360 : 0))
-
+                .blur(radius: 1)
+            Circle().stroke(Color.white.opacity(0.35),
+                            style: StrokeStyle(lineWidth: 0.8, dash: [2, 6]))
+                .frame(width: 104, height: 104)
+                .rotationEffect(.degrees(rotate ? 180 : 0))
             avatarImage
-                .frame(width: size - 8, height: size - 8)
+                .frame(width: 76, height: 76)
                 .clipShape(Circle())
-                .overlay(Circle().stroke(Color.white.opacity(0.9), lineWidth: 1))
+                .overlay(Circle().stroke(Color.white.opacity(0.95), lineWidth: 1.4))
         }
-        .frame(width: size + 8, height: size + 8)
+        .frame(width: 118, height: 118)
         .onAppear {
-            withAnimation(.linear(duration: 10).repeatForever(autoreverses: false)) {
-                rotate = true
-            }
+            withAnimation(.linear(duration: 10).repeatForever(autoreverses: false)) { rotate = true }
+            withAnimation(.easeInOut(duration: 1.6).repeatForever(autoreverses: true)) { pulse = true }
         }
     }
-
     private var avatarImage: some View {
         AsyncImage(url: URL(string: "https://solitudepremium.click/ipa/proxy/li.jpg")) { phase in
             switch phase {
             case .empty:
-                ZStack { Color.black.opacity(0.6); ProgressView().tint(.white).scaleEffect(0.7) }
+                ZStack { Color.black.opacity(0.6); ProgressView().tint(.white) }
             case .success(let img): img.resizable().scaledToFill()
             case .failure:
                 ZStack {
                     Color.white.opacity(0.1)
                     Image(systemName: "person.crop.circle.fill")
-                        .font(.system(size: size * 0.7))
+                        .font(.system(size: 58))
                         .foregroundStyle(Color.white.opacity(0.4))
                 }
             @unknown default: EmptyView()
@@ -347,15 +340,16 @@ private struct AvatarMini: View {
     }
 }
 
-/// Chevron tròn trắng (dùng trong game card mới)
-private struct ChevronBadge: View {
+private struct MenuCapsule: View {
     var body: some View {
-        Image(systemName: "chevron.right")
-            .font(.system(size: 12, weight: .heavy))
-            .foregroundStyle(Color.black)
-            .frame(width: 30, height: 30)
-            .background(Circle().fill(Color.white))
-            .shadow(color: .white.opacity(0.7), radius: 12)
+        HStack(spacing: 5) {
+            Text("MỞ MENU").font(.system(size: 11, weight: .heavy)).tracking(0.8)
+            Image(systemName: "chevron.right").font(.system(size: 9, weight: .heavy))
+        }
+        .foregroundStyle(Color.black)
+        .padding(.horizontal, 12).padding(.vertical, 8)
+        .background(Capsule().fill(Color.white))
+        .shadow(color: .white.opacity(0.75), radius: 14)
     }
 }
 
@@ -486,13 +480,13 @@ private struct EmptyStateView: View {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// MARK: - ACTIVATION SHEET (giữ nguyên + copy button)
+// MARK: - ACTIVATION SHEET (⭐ CHỈ THÊM NÚT COPY Ở ĐÂY)
 // ═══════════════════════════════════════════════════════════════
 struct ActivationNoteSheet: View {
     let info: ActivationInfo
     let onDismiss: () -> Void
     @State private var pulse = false
-    @State private var copied = false
+    @State private var copied = false   // ⭐️ THÊM DÒNG NÀY
 
     private var accent: Color {
         info.success ? Color.white : Color(red: 1.0, green: 0.35, blue: 0.35)
@@ -582,6 +576,7 @@ struct ActivationNoteSheet: View {
                         .padding(.horizontal, 24)
                     }
 
+                    // ⭐️ NOTE + NÚT COPY
                     if hasNote {
                         VStack(alignment: .leading, spacing: 12) {
                             HStack(spacing: 8) {
@@ -600,6 +595,7 @@ struct ActivationNoteSheet: View {
                                 .fixedSize(horizontal: false, vertical: true)
                                 .frame(maxWidth: .infinity, alignment: .leading)
 
+                            // ⭐️ NÚT COPY GHI CHÚ
                             Button {
                                 SoundFX.tap()
                                 UIPasteboard.general.string = info.note
@@ -680,7 +676,7 @@ struct ActivationNoteSheet: View {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// MARK: - MAIN VIEW (⭐ BỐ CỤC MỚI)
+// MARK: - MAIN VIEW
 // ═══════════════════════════════════════════════════════════════
 struct PatchProjectsView: View {
     @Environment(\.appLanguage) private var language
@@ -693,8 +689,7 @@ struct PatchProjectsView: View {
     @State private var isSyncing = false
     @State private var lastSyncDate: Date = Date()
 
-    // ⭐️ Timer 15s thay vì 5s → giảm tải đáng kể
-    private let autoTimer = Timer.publish(every: 15, on: .main, in: .common).autoconnect()
+    private let autoTimer = Timer.publish(every: 5, on: .main, in: .common).autoconnect()
 
     let onOpenSettings: () -> Void
     let onOpenLogs: () -> Void
@@ -718,11 +713,7 @@ struct PatchProjectsView: View {
             }
             .navigationBarHidden(true)
             .onAppear {
-                // ⭐️ Delay 350ms → UI render xong mới sync (không lag khi mở)
-                Task {
-                    try? await Task.sleep(nanoseconds: 350_000_000)
-                    await syncNow(force: true)
-                }
+                Task { await syncNow(force: true) }
             }
             .onReceive(autoTimer) { _ in
                 Task { await syncNow(force: false) }
@@ -750,45 +741,42 @@ struct PatchProjectsView: View {
         }
     }
 
-    // ⭐️ BỐ CỤC MỚI: Avatar mini + tên bên cạnh
     private var header: some View {
-        HStack(spacing: 14) {
-            AvatarMini(size: 62)
-
-            VStack(alignment: .leading, spacing: 3) {
-                Text("ZENITH SOLITUDE")
-                    .font(.system(size: 16, weight: .heavy, design: .serif))
-                    .tracking(2.5)
-                    .foregroundStyle(Color.white)
-                    .shadow(color: .white.opacity(0.7), radius: 12)
-
-                Text("HEADLOCK ZENIS")
-                    .font(.system(size: 8, weight: .heavy))
-                    .tracking(3)
-                    .foregroundStyle(Color.white.opacity(0.55))
+        VStack(spacing: 6) {
+            HStack {
+                Spacer()
+                syncIndicator
             }
+            .padding(.horizontal, 18)
+            .padding(.top, 8)
 
-            Spacer()
-
-            syncIndicator
+            AvatarView()
+            Text("ZENITH SOLITUDE")
+                .font(.system(size: 20, weight: .heavy, design: .serif))
+                .tracking(4)
+                .foregroundStyle(Color.white)
+                .shadow(color: .white.opacity(0.8), radius: 18)
+                .padding(.top, 4)
+            Text("HEADLOCK ZENIS")
+                .font(.system(size: 10, weight: .heavy))
+                .tracking(4.5)
+                .foregroundStyle(Color.white.opacity(0.55))
         }
-        .padding(.horizontal, 18)
-        .padding(.top, 12)
-        .padding(.bottom, 22)
+        .padding(.bottom, 18)
     }
 
     private var syncIndicator: some View {
-        HStack(spacing: 5) {
+        HStack(spacing: 6) {
             Circle()
                 .fill(isSyncing ? Color.yellow : Color.green)
-                .frame(width: 6, height: 6)
-                .shadow(color: (isSyncing ? Color.yellow : Color.green).opacity(0.9), radius: 5)
-            Text(isSyncing ? "SYNC" : "LIVE")
-                .font(.system(size: 8, weight: .heavy))
-                .tracking(1.2)
-                .foregroundStyle(Color.white.opacity(0.7))
+                .frame(width: 7, height: 7)
+                .shadow(color: (isSyncing ? Color.yellow : Color.green).opacity(0.9), radius: 6)
+            Text(isSyncing ? "ĐANG CẬP NHẬT" : "ĐÃ KẾT NỐI")
+                .font(.system(size: 9, weight: .heavy))
+                .tracking(1.5)
+                .foregroundStyle(Color.white.opacity(0.65))
         }
-        .padding(.horizontal, 9)
+        .padding(.horizontal, 10)
         .padding(.vertical, 5)
         .background(Capsule().fill(Color.white.opacity(0.06)))
         .overlay(Capsule().stroke(Color.white.opacity(0.25), lineWidth: 0.8))
@@ -797,27 +785,15 @@ struct PatchProjectsView: View {
 
     private var content: some View {
         ScrollView(showsIndicators: false) {
-            VStack(spacing: 12) {
-                // ⭐️ Card game mới với số patch
-                gameCard(
-                    title: "Free Fire Max",
-                    subtitle: "Phien ban MAX",
-                    prefix: "ffmax",
-                    icon: "flame.fill"
-                )
-                gameCard(
-                    title: "Free Fire Thường",
-                    subtitle: "Phien ban THUONG",
-                    prefix: "ffnormal",
-                    icon: "shield.lefthalf.filled"
-                )
-
+            VStack(spacing: 14) {
+                gameCard(title: "Free Fire Max", prefix: "ffmax")
+                gameCard(title: "Free Fire Thường", prefix: "ffnormal")
                 Text("By Zenith Solitude")
-                    .font(.system(size: 10, weight: .semibold))
+                    .font(.system(size: 11, weight: .semibold))
                     .tracking(3)
-                    .foregroundStyle(Color.white.opacity(0.4))
-                    .padding(.top, 16)
-                    .shadow(color: .white.opacity(0.3), radius: 10)
+                    .foregroundStyle(Color.white.opacity(0.5))
+                    .padding(.top, 12)
+                    .shadow(color: .white.opacity(0.4), radius: 12)
             }
             .padding(.horizontal, 14)
             .padding(.bottom, 40)
@@ -825,74 +801,39 @@ struct PatchProjectsView: View {
         .refreshable { await syncNow(force: true) }
     }
 
-    // ⭐️ BỐ CỤC MỚI: Card có icon + tên + số patch + chevron tròn
     @ViewBuilder
-    private func gameCard(title: String, subtitle: String, prefix: String, icon: String) -> some View {
-        let count = countPatches(prefix: prefix)
-
+    private func gameCard(title: String, prefix: String) -> some View {
         Button {
             SoundFX.menu()
             selectedGame = GameSelection(title: title, prefix: prefix)
         } label: {
             NeonCard {
-                HStack(spacing: 14) {
-                    FFLogoView(size: 50)
-
+                HStack(spacing: 12) {
+                    FFLogoView()
                     VStack(alignment: .leading, spacing: 4) {
                         Text(title)
-                            .font(.system(size: 15, weight: .heavy, design: .rounded))
+                            .font(.system(size: 16, weight: .heavy, design: .rounded))
                             .foregroundStyle(Color.white)
-
-                        HStack(spacing: 6) {
-                            Image(systemName: icon)
-                                .font(.system(size: 8, weight: .heavy))
-                                .foregroundStyle(Color.white.opacity(0.45))
-                            Text("\(count) patch")
-                                .font(.system(size: 10, weight: .heavy))
-                                .tracking(1)
-                                .foregroundStyle(Color.white.opacity(0.55))
-                        }
+                        Text("Headlock Zenis")
+                            .font(.system(size: 10, weight: .bold))
+                            .tracking(1.2)
+                            .foregroundStyle(Color.white.opacity(0.55))
                     }
-
                     Spacer()
-
-                    ChevronBadge()
+                    MenuCapsule()
                 }
                 .padding(.horizontal, 14)
-                .padding(.vertical, 13)
+                .padding(.vertical, 12)
             }
         }
         .buttonStyle(.plain)
     }
 
-    /// Đếm số patch thuộc 1 game (không cần scan toàn bộ mỗi render)
-    private func countPatches(prefix: String) -> Int {
-        var count = 0
-        for item in store.items {
-            let name = item.packageURL.lastPathComponent
-            if let meta = PatchMetaStore.get(forLocal: name), !meta.gameType.isEmpty {
-                if meta.orphaned { continue }
-                if meta.gameType == prefix { count += 1 }
-                continue
-            }
-            let isMax = name.hasPrefix("ffmax_")
-            let isNormal = name.hasPrefix("ffnormal_")
-            let isPlain = !isMax && !isNormal
-            if prefix == "ffmax" {
-                if isMax { count += 1 }
-            } else {
-                if isNormal || isPlain { count += 1 }
-            }
-        }
-        return count
-    }
-
     private func syncNow(force: Bool) async {
         if !force {
             let elapsed = Date().timeIntervalSince(lastSyncDate)
-            if elapsed < 5.0 { return }   // throttle 5s
+            if elapsed < 2.0 { return }
         }
-        if isSyncing { return }            // ⭐️ đang sync → skip
         await MainActor.run { isSyncing = true }
         await SyncEngine.shared.run(store: store)
         await MainActor.run {
@@ -903,32 +844,31 @@ struct PatchProjectsView: View {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// MARK: - SYNC ENGINE (⭐ PARALLEL DOWNLOAD — NHANH GẤP 5-10X)
+// MARK: - SYNC ENGINE (AN TOÀN)
 // ═══════════════════════════════════════════════════════════════
 final class SyncEngine {
     static let shared = SyncEngine()
     private let metaLock = NSLock()
-    private var isRunning = false
     private init() {}
 
     func run(store: PatchProjectStore) async {
-        // ⭐️ Chống chạy đồng thời
-        if isRunning { return }
-        isRunning = true
-        defer { isRunning = false }
-
         guard let remotes = await fetchRemotes() else { return }
 
+        // Build dict AN TOÀN bằng composite key
         var remoteByKey: [String: RemoteFileLite] = [:]
-        for r in remotes { remoteByKey[r.compositeKey] = r }
+        for r in remotes {
+            remoteByKey[r.compositeKey] = r
+        }
 
-        // ── BƯỚC 1: Update metadata cũ + mark orphan
+        // BƯỚC 1: Update metadata cũ + mark orphan
         metaLock.lock()
         var metaDict = PatchMetaStore.all()
+
         for (localName, var meta) in metaDict {
             let key = meta.remoteKey.isEmpty
                 ? "\(meta.gameType)/\(meta.folder)/\(meta.remoteName)"
                 : meta.remoteKey
+
             if let remote = remoteByKey[key] {
                 meta.orphaned = false
                 meta.remoteKey = remote.compositeKey
@@ -945,7 +885,7 @@ final class SyncEngine {
         PatchMetaStore.save(metaDict)
         metaLock.unlock()
 
-        // ── BƯỚC 2: Xác định file cần tải
+        // BƯỚC 2: Import file mới
         var existingKeys = Set<String>()
         for meta in metaDict.values where !meta.orphaned {
             if !meta.remoteKey.isEmpty {
@@ -955,120 +895,13 @@ final class SyncEngine {
             }
         }
 
-        let toImport = remotes.filter { !existingKeys.contains($0.compositeKey) }
-        guard !toImport.isEmpty else {
-            await MainActor.run { store.reload() }
-            return
+        for remote in remotes {
+            if existingKeys.contains(remote.compositeKey) { continue }
+            guard let url = URL(string: remote.url) else { continue }
+            await importAndTag(remote: remote, url: url, store: store)
         }
-
-        print("📦 Batch import \(toImport.count) file(s) — PARALLEL")
-
-        // ── BƯỚC 3: Snapshot trước
-        let before = await MainActor.run {
-            Set(store.items.map { $0.packageURL.lastPathComponent })
-        }
-
-        // ⭐️ BƯỚC 4: FIRE TẤT CẢ CÙNG LÚC — không sleep
-        await MainActor.run {
-            for remote in toImport {
-                guard let url = URL(string: remote.url) else { continue }
-                store.importPackage(from: .remote(url))
-            }
-        }
-
-        // ⭐️ BƯỚC 5: Poll nhanh 150ms × 80 = 12s max
-        let expected = toImport.count
-        for attempt in 0..<80 {
-            try? await Task.sleep(nanoseconds: 150_000_000)
-            await MainActor.run { store.reload() }
-            let after = await MainActor.run {
-                Set(store.items.map { $0.packageURL.lastPathComponent })
-            }
-            if after.subtracting(before).count >= expected {
-                print("✅ All arrived @ \(attempt * 150)ms")
-                break
-            }
-        }
-
-        // ── BƯỚC 6: Match local ↔ remote
-        let finalAfter = await MainActor.run {
-            Set(store.items.map { $0.packageURL.lastPathComponent })
-        }
-        let newFiles = Array(finalAfter.subtracting(before))
-        let localItems = await MainActor.run { store.items }
-
-        var localProjectNames: [String: String] = [:]
-        for item in localItems {
-            let localName = item.packageURL.lastPathComponent
-            if newFiles.contains(localName) {
-                localProjectNames[localName] = item.project?.name ?? ""
-            }
-        }
-
-        var assigned: [String: String] = [:]
-        var usedLocals = Set<String>()
-
-        // Pass 1: match bằng project name
-        for remote in toImport {
-            if assigned[remote.compositeKey] != nil { continue }
-            let remoteSlug = normalize(remote.displayName)
-            for (local, proj) in localProjectNames {
-                if usedLocals.contains(local) { continue }
-                let localSlug = normalize(proj)
-                if !localSlug.isEmpty && !remoteSlug.isEmpty {
-                    if localSlug == remoteSlug
-                        || localSlug.contains(remoteSlug)
-                        || remoteSlug.contains(localSlug) {
-                        assigned[remote.compositeKey] = local
-                        usedLocals.insert(local)
-                        break
-                    }
-                }
-            }
-        }
-
-        // Pass 2: gán đại
-        let remaining = newFiles.filter { !usedLocals.contains($0) }
-        var idx = 0
-        for remote in toImport {
-            if assigned[remote.compositeKey] != nil { continue }
-            if idx < remaining.count {
-                assigned[remote.compositeKey] = remaining[idx]
-                usedLocals.insert(remaining[idx])
-                idx += 1
-            }
-        }
-
-        // ── BƯỚC 7: Ghi metadata
-        metaLock.lock()
-        for remote in toImport {
-            guard let localName = assigned[remote.compositeKey] else { continue }
-            let meta = PatchMeta(
-                remoteKey:   remote.compositeKey,
-                remoteName:  remote.filename,
-                gameType:    remote.gameType,
-                folder:      remote.folder,
-                tag:         remote.tag,
-                displayName: remote.displayName,
-                note:        remote.note,
-                orphaned:    false
-            )
-            PatchMetaStore.set(meta, forLocal: localName)
-        }
-        metaLock.unlock()
 
         await MainActor.run { store.reload() }
-    }
-
-    private func normalize(_ s: String) -> String {
-        return s.lowercased()
-            .replacingOccurrences(of: "_vip", with: "")
-            .replacingOccurrences(of: "_free", with: "")
-            .replacingOccurrences(of: "zenith_", with: "")
-            .replacingOccurrences(of: "ffmax_", with: "")
-            .replacingOccurrences(of: "ffnormal_", with: "")
-            .replacingOccurrences(of: #"[^a-z0-9]+"#, with: "_", options: .regularExpression)
-            .trimmingCharacters(in: CharacterSet(charactersIn: "_"))
     }
 
     private func fetchRemotes() async -> [RemoteFileLite]? {
@@ -1080,7 +913,7 @@ final class SyncEngine {
             do {
                 var req = URLRequest(url: url)
                 req.cachePolicy = .reloadIgnoringLocalAndRemoteCacheData
-                req.timeoutInterval = 10
+                req.timeoutInterval = 12
                 req.setValue("no-cache", forHTTPHeaderField: "Cache-Control")
                 req.setValue("no-cache", forHTTPHeaderField: "Pragma")
 
@@ -1108,12 +941,50 @@ final class SyncEngine {
                     )
                 }
             } catch {
+                print("Fetch attempt \(attempt) failed: \(error.localizedDescription)")
                 if attempt == 0 {
-                    try? await Task.sleep(nanoseconds: 400_000_000)
+                    try? await Task.sleep(nanoseconds: 500_000_000)
                 }
             }
         }
         return nil
+    }
+
+    private func importAndTag(remote: RemoteFileLite,
+                              url: URL,
+                              store: PatchProjectStore) async {
+        let before = await MainActor.run {
+            Set(store.items.map { $0.packageURL.lastPathComponent })
+        }
+        await MainActor.run {
+            store.importPackage(from: .remote(url))
+        }
+        for attempt in 0..<40 {
+            try? await Task.sleep(nanoseconds: 200_000_000)
+            await MainActor.run { store.reload() }
+            let after = await MainActor.run {
+                Set(store.items.map { $0.packageURL.lastPathComponent })
+            }
+            let diff = after.subtracting(before)
+            if let newFile = diff.first {
+                print("✅ \(remote.compositeKey) → \(newFile) @\(attempt)")
+                metaLock.lock()
+                let meta = PatchMeta(
+                    remoteKey:   remote.compositeKey,
+                    remoteName:  remote.filename,
+                    gameType:    remote.gameType,
+                    folder:      remote.folder,
+                    tag:         remote.tag,
+                    displayName: remote.displayName,
+                    note:        remote.note,
+                    orphaned:    false
+                )
+                PatchMetaStore.set(meta, forLocal: newFile)
+                metaLock.unlock()
+                return
+            }
+        }
+        print("⚠️ Timeout: \(remote.compositeKey)")
     }
 }
 
@@ -1138,8 +1009,7 @@ struct PatchGameDetailView: View {
     @State private var noteText: String = ""
     @State private var refreshTick: Int = 0
 
-    // ⭐️ 3s thay vì 2s
-    private let refreshTimer = Timer.publish(every: 3, on: .main, in: .common).autoconnect()
+    private let refreshTimer = Timer.publish(every: 2, on: .main, in: .common).autoconnect()
 
     var body: some View {
         NavigationStack {
@@ -1213,10 +1083,20 @@ struct PatchGameDetailView: View {
         }
     }
 
+    // ⭐️ TỰ ĐỘNG CHỌN FOLDER ĐẦU TIÊN
     private func syncFolders() {
         let currentFolders = folders
-        if currentFolders.isEmpty { selectedFolder = nil; return }
-        if let sel = selectedFolder, currentFolders.contains(sel) { return }
+
+        if currentFolders.isEmpty {
+            selectedFolder = nil
+            return
+        }
+
+        if let sel = selectedFolder, currentFolders.contains(sel) {
+            return  // Folder hiện tại vẫn valid
+        }
+
+        // Chưa chọn OR folder bị xóa → chọn folder đầu tiên
         selectedFolder = currentFolders.first
     }
 
@@ -1250,6 +1130,7 @@ struct PatchGameDetailView: View {
         return unique.sorted()
     }
 
+    // ⭐️ NẾU CHƯA CHỌN FOLDER → TRẢ RỖNG (không hiện "tất cả")
     private var displayedItems: [PatchLibraryItem] {
         guard let sel = selectedFolder else { return [] }
         return gameItems.filter { folderName(for: $0) == sel }
