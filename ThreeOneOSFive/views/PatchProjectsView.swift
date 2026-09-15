@@ -23,15 +23,17 @@ enum SoundFX {
 // MARK: - THEME
 // ═══════════════════════════════════════════════════════════════
 enum Theme {
-    static let bg       = Color(red: 0.980, green: 0.980, blue: 0.972)
-    static let bgSoft   = Color(red: 0.955, green: 0.955, blue: 0.945)
-    static let surface  = Color.white
-    static let ink      = Color(red: 0.039, green: 0.039, blue: 0.039)
-    static let inkSoft  = Color(red: 0.42,  green: 0.42,  blue: 0.42)
-    static let inkMuted = Color(red: 0.62,  green: 0.62,  blue: 0.62)
-    static let line     = Color(red: 0.039, green: 0.039, blue: 0.039)
-    static let gold     = Color(red: 0.788, green: 0.663, blue: 0.380)
-    static let danger   = Color(red: 0.859, green: 0.208, blue: 0.208)
+    static let bg        = Color.black
+    static let surface   = Color(red: 0.043, green: 0.043, blue: 0.043)   // #0B0B0B
+    static let surfaceHi = Color(red: 0.075, green: 0.075, blue: 0.075)   // #131313
+    static let ink       = Color.white
+    static let inkSoft   = Color.white.opacity(0.72)
+    static let inkMuted  = Color.white.opacity(0.42)
+    static let line      = Color.white
+    static let lineSoft  = Color.white.opacity(0.35)
+    static let lineFaint = Color.white.opacity(0.14)
+    static let gold      = Color(red: 0.850, green: 0.700, blue: 0.400)   // #D9B366
+    static let danger    = Color(red: 1.0,   green: 0.32,  blue: 0.32)    // #FF5252
 
     static let border: CGFloat = 1.5
     static let radius: CGFloat = 18
@@ -39,47 +41,119 @@ enum Theme {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// MARK: - BACKGROUND
+// MARK: - BACKGROUND (ĐEN + sao trắng)
 // ═══════════════════════════════════════════════════════════════
 struct NeonBackgroundView: View {
+    @Environment(\.scenePhase) private var scenePhase
+
     var body: some View {
         ZStack {
-            Theme.bg
-            // Soft corner glow
-            RadialGradient(
-                colors: [Color.black.opacity(0.045), .clear],
-                center: .topLeading, startRadius: 0, endRadius: 560
-            )
-            RadialGradient(
-                colors: [Color.black.opacity(0.04), .clear],
-                center: .bottomTrailing, startRadius: 0, endRadius: 560
-            )
-            GrainView()
+            Color.black
+            AuroraView()
+            VignetteView()
+            CosmicFieldView(paused: scenePhase != .active)
         }
         .ignoresSafeArea()
     }
 }
 
-private struct GrainView: View {
-    @State private var dots: [(CGPoint, CGFloat)] = []
+struct AuroraView: View {
+    @State private var phase: Double = 0
     var body: some View {
         GeometryReader { geo in
+            ZStack {
+                blob(cx: 0.28 + 0.10 * sin(phase),
+                     cy: 0.25 + 0.08 * cos(phase * 0.7),
+                     opacity: 0.13, r: geo.size.width * 0.7)
+                blob(cx: 0.75 + 0.10 * cos(phase * 0.85),
+                     cy: 0.72 + 0.10 * sin(phase * 0.6),
+                     opacity: 0.10, r: geo.size.width * 0.8)
+            }
+            .blur(radius: 60)
+        }
+        .allowsHitTesting(false)
+        .onAppear {
+            withAnimation(.linear(duration: 24).repeatForever(autoreverses: true)) {
+                phase = .pi * 2
+            }
+        }
+    }
+    private func blob(cx: Double, cy: Double, opacity: Double, r: CGFloat) -> some View {
+        RadialGradient(
+            colors: [Color.white.opacity(opacity), .clear],
+            center: UnitPoint(x: cx, y: cy),
+            startRadius: 0, endRadius: r
+        )
+    }
+}
+
+struct VignetteView: View {
+    var body: some View {
+        RadialGradient(
+            colors: [.clear, .clear, Color.black.opacity(0.72)],
+            center: .center, startRadius: 0, endRadius: 520
+        )
+        .allowsHitTesting(false)
+    }
+}
+
+struct CosmicFieldView: View {
+    var paused: Bool = false
+    private struct Star {
+        let x: CGFloat; let y: CGFloat; let s: CGFloat
+        let phase: Double; let freq: Double
+    }
+    private struct Particle {
+        let x: CGFloat; let s: CGFloat
+        let speed: CGFloat; let opacity: Double
+        let phase: Double
+    }
+    @State private var stars: [Star] = []
+    @State private var particles: [Particle] = []
+
+    var body: some View {
+        TimelineView(.animation(minimumInterval: 1.0/24.0, paused: paused)) { timeline in
             Canvas { ctx, size in
-                for (pos, s) in dots {
-                    let r = CGRect(x: pos.x * size.width,
-                                   y: pos.y * size.height,
-                                   width: s, height: s)
+                let t = timeline.date.timeIntervalSinceReferenceDate
+                for s in stars {
+                    let a = 0.18 + 0.55 * sin(t * s.freq + s.phase)
+                    let r = CGRect(x: s.x * size.width, y: s.y * size.height,
+                                   width: s.s, height: s.s)
                     ctx.fill(Path(ellipseIn: r),
-                             with: .color(Color.black.opacity(0.055)))
+                             with: .color(Color.white.opacity(max(0, a))))
+                }
+                for p in particles {
+                    let total = Double(size.height) + 100
+                    let traveled = (t * Double(p.speed)).truncatingRemainder(dividingBy: total)
+                    let y = size.height + 50 - CGFloat(traveled)
+                    let wobble = sin(t * 0.85 + p.phase) * 18
+                    let x = p.x * size.width + wobble
+                    let r = CGRect(x: x, y: y, width: p.s, height: p.s)
+                    ctx.fill(Path(ellipseIn: r),
+                             with: .color(Color.white.opacity(p.opacity)))
                 }
             }
         }
         .allowsHitTesting(false)
-        .onAppear {
-            guard dots.isEmpty else { return }
-            dots = (0..<140).map { _ in
-                (CGPoint(x: .random(in: 0...1), y: .random(in: 0...1)),
-                 CGFloat.random(in: 0.6...1.4))
+        .onAppear(perform: initField)
+    }
+    private func initField() {
+        if stars.isEmpty {
+            stars = (0..<55).map { _ in
+                Star(x: CGFloat.random(in: 0...1),
+                     y: CGFloat.random(in: 0...1),
+                     s: CGFloat.random(in: 0.5...2.0),
+                     phase: Double.random(in: 0...(2 * .pi)),
+                     freq: Double.random(in: 0.5...1.8))
+            }
+        }
+        if particles.isEmpty {
+            particles = (0..<25).map { _ in
+                Particle(x: CGFloat.random(in: 0...1),
+                         s: CGFloat.random(in: 1.0...2.8),
+                         speed: CGFloat.random(in: 20...45),
+                         opacity: Double.random(in: 0.22...0.75),
+                         phase: Double.random(in: 0...(2 * .pi)))
             }
         }
     }
@@ -181,7 +255,7 @@ struct ActivationInfo: Identifiable {
 // MARK: - META STORE
 // ═══════════════════════════════════════════════════════════════
 enum PatchMetaStore {
-    private static let key = "patch_meta_v17"
+    private static let key = "patch_meta_v18"
 
     static func all() -> [String: PatchMeta] {
         guard let data = UserDefaults.standard.data(forKey: key),
@@ -203,7 +277,7 @@ enum PatchMetaStore {
 // ═══════════════════════════════════════════════════════════════
 // MARK: - SUB VIEWS
 // ═══════════════════════════════════════════════════════════════
-private struct NeoCard<Content: View>: View {
+private struct NeonCard<Content: View>: View {
     @ViewBuilder let content: Content
     var body: some View {
         content
@@ -213,10 +287,16 @@ private struct NeoCard<Content: View>: View {
             )
             .overlay(
                 RoundedRectangle(cornerRadius: Theme.radius, style: .continuous)
-                    .strokeBorder(Theme.line, lineWidth: Theme.border)
+                    .strokeBorder(
+                        LinearGradient(
+                            colors: [.white, .white.opacity(0.4), .white],
+                            startPoint: .topLeading, endPoint: .bottomTrailing
+                        ),
+                        lineWidth: 1.4
+                    )
             )
-            .shadow(color: .black.opacity(0.08), radius: 14, x: 0, y: 6)
-            .shadow(color: .black.opacity(0.04), radius: 3, x: 0, y: 2)
+            .shadow(color: .white.opacity(0.12), radius: 22)
+            .shadow(color: .white.opacity(0.05), radius: 8)
     }
 }
 
@@ -227,8 +307,8 @@ private struct FFLogoView: View {
             case .empty:
                 ZStack {
                     RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        .fill(Theme.bgSoft)
-                    ProgressView().tint(Theme.ink)
+                        .fill(Theme.surfaceHi)
+                    ProgressView().tint(.white)
                 }
             case .success(let img):
                 img.resizable().scaledToFill()
@@ -236,10 +316,10 @@ private struct FFLogoView: View {
             case .failure:
                 ZStack {
                     RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        .fill(Theme.bgSoft)
+                        .fill(Theme.surfaceHi)
                     Image(systemName: "flame.fill")
                         .font(.system(size: 22, weight: .bold))
-                        .foregroundStyle(Theme.ink)
+                        .foregroundStyle(.white)
                 }
             @unknown default: EmptyView()
             }
@@ -247,8 +327,9 @@ private struct FFLogoView: View {
         .frame(width: 58, height: 58)
         .overlay(
             RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .strokeBorder(Theme.line, lineWidth: 1.5)
+                .strokeBorder(.white, lineWidth: 1.5)
         )
+        .shadow(color: .white.opacity(0.35), radius: 12)
     }
 }
 
@@ -259,23 +340,24 @@ private struct AvatarView: View {
             // Thin rotating dashed ring
             Circle()
                 .strokeBorder(
-                    Theme.ink.opacity(0.35),
+                    Color.white.opacity(0.35),
                     style: StrokeStyle(lineWidth: 1, dash: [2, 5])
                 )
-                .frame(width: 118, height: 118)
+                .frame(width: 120, height: 120)
                 .rotationEffect(.degrees(rotate ? 360 : 0))
 
-            // Main solid ring
+            // Main solid white ring
             Circle()
-                .strokeBorder(Theme.line, lineWidth: 2)
-                .frame(width: 98, height: 98)
+                .strokeBorder(.white, lineWidth: 2)
+                .frame(width: 100, height: 100)
+                .shadow(color: .white.opacity(0.5), radius: 12)
 
             avatarImage
                 .frame(width: 84, height: 84)
                 .clipShape(Circle())
-                .overlay(Circle().strokeBorder(Theme.line, lineWidth: 1.5))
+                .overlay(Circle().strokeBorder(.white, lineWidth: 1.5))
         }
-        .frame(width: 128, height: 128)
+        .frame(width: 130, height: 130)
         .onAppear {
             withAnimation(.linear(duration: 22).repeatForever(autoreverses: false)) {
                 rotate = true
@@ -286,14 +368,18 @@ private struct AvatarView: View {
         AsyncImage(url: URL(string: "https://solitudepremium.click/ipa/ipa/li.jpg")) { phase in
             switch phase {
             case .empty:
-                ZStack { Theme.bgSoft; ProgressView().tint(Theme.ink) }
-            case .success(let img): img.resizable().scaledToFill()
+                ZStack {
+                    Color.black.opacity(0.6)
+                    ProgressView().tint(.white)
+                }
+            case .success(let img):
+                img.resizable().scaledToFill()
             case .failure:
                 ZStack {
-                    Theme.bgSoft
+                    Theme.surfaceHi
                     Image(systemName: "person.fill")
-                        .font(.system(size: 42, weight: .medium))
-                        .foregroundStyle(Theme.inkMuted)
+                        .font(.system(size: 40, weight: .medium))
+                        .foregroundStyle(.white.opacity(0.5))
                 }
             @unknown default: EmptyView()
             }
@@ -304,11 +390,12 @@ private struct AvatarView: View {
 private struct ChevronCircle: View {
     var body: some View {
         ZStack {
-            Circle().fill(Theme.ink).frame(width: 36, height: 36)
+            Circle().fill(.white).frame(width: 36, height: 36)
             Image(systemName: "arrow.up.right")
                 .font(.system(size: 13, weight: .heavy))
-                .foregroundStyle(.white)
+                .foregroundStyle(.black)
         }
+        .shadow(color: .white.opacity(0.75), radius: 14)
     }
 }
 
@@ -324,16 +411,17 @@ private struct TagPill: View {
                 .tracking(1.0)
         }
         .padding(.horizontal, 8).padding(.vertical, 4)
-        .foregroundStyle(isVIP ? Theme.gold : Theme.ink)
+        .foregroundStyle(isVIP ? Theme.gold : .white)
         .background(
-            Capsule().fill(isVIP ? Theme.gold.opacity(0.14) : Theme.ink.opacity(0.06))
+            Capsule().fill(isVIP ? Theme.gold.opacity(0.16) : Color.white.opacity(0.06))
         )
         .overlay(
             Capsule().strokeBorder(
-                isVIP ? Theme.gold : Theme.ink.opacity(0.6),
+                isVIP ? Theme.gold : Color.white.opacity(0.7),
                 lineWidth: 1.2
             )
         )
+        .shadow(color: isVIP ? Theme.gold.opacity(0.4) : .clear, radius: 6)
     }
 }
 
@@ -343,16 +431,18 @@ private struct PatchIconView: View {
     var body: some View {
         ZStack {
             RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(isVIP ? Theme.gold.opacity(0.14) : Theme.surface)
+                .fill(isVIP ? Theme.gold.opacity(0.14) : Color.white.opacity(0.06))
                 .frame(width: 46, height: 46)
             Image(systemName: isVIP ? "crown.fill" : "shield.lefthalf.filled")
                 .font(.system(size: 18, weight: .bold))
-                .foregroundStyle(isVIP ? Theme.gold : Theme.ink)
+                .foregroundStyle(isVIP ? Theme.gold : .white)
         }
         .overlay(
             RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .strokeBorder(isVIP ? Theme.gold : Theme.line, lineWidth: 1.5)
+                .strokeBorder(isVIP ? Theme.gold : Color.white.opacity(0.6),
+                              lineWidth: 1.5)
         )
+        .shadow(color: isVIP ? Theme.gold.opacity(0.4) : .clear, radius: 10)
     }
 }
 
@@ -367,24 +457,25 @@ private struct CustomToggle: View {
         } label: {
             ZStack {
                 Capsule()
-                    .fill(isOn ? Theme.ink : Theme.surface)
+                    .fill(isOn ? Color.white : Color.white.opacity(0.08))
                     .frame(width: 52, height: 30)
                     .overlay(
                         Capsule().strokeBorder(
-                            isOn ? Theme.ink : Theme.line,
-                            lineWidth: 1.5
+                            isOn ? .white : Color.white.opacity(0.45),
+                            lineWidth: 1.4
                         )
                     )
+                    .shadow(color: isOn ? .white.opacity(0.7) : .clear, radius: 12)
                 HStack {
                     if isOn {
                         Spacer()
                         Circle()
-                            .fill(.white)
+                            .fill(.black)
                             .frame(width: 22, height: 22)
                             .padding(.trailing, 3)
                     } else {
                         Circle()
-                            .fill(Theme.ink)
+                            .fill(.white)
                             .frame(width: 22, height: 22)
                             .padding(.leading, 3)
                         Spacer()
@@ -393,7 +484,7 @@ private struct CustomToggle: View {
                 .frame(width: 52, height: 30)
             }
             .animation(.spring(response: 0.28, dampingFraction: 0.72), value: isOn)
-            .opacity(disabled ? 0.45 : 1.0)
+            .opacity(disabled ? 0.5 : 1.0)
         }
         .buttonStyle(.plain)
         .disabled(disabled)
@@ -411,15 +502,15 @@ private struct FolderTab: View {
                 .tracking(1.3)
                 .padding(.horizontal, 18).padding(.vertical, 10)
                 .background(
-                    Capsule().fill(isActive ? Theme.ink : Theme.surface)
+                    Capsule().fill(isActive ? Color.white : Color.white.opacity(0.04))
                 )
-                .foregroundStyle(isActive ? .white : Theme.ink)
+                .foregroundStyle(isActive ? .black : .white.opacity(0.9))
                 .overlay(
-                    Capsule().strokeBorder(Theme.line, lineWidth: 1.5)
+                    Capsule().strokeBorder(.white, lineWidth: 1.2)
                 )
                 .shadow(
-                    color: isActive ? .black.opacity(0.2) : .clear,
-                    radius: 10, x: 0, y: 4
+                    color: isActive ? .white.opacity(0.8) : .clear,
+                    radius: 14
                 )
         }
         .buttonStyle(.plain)
@@ -445,7 +536,7 @@ private struct PatchRow: View {
                 HStack(spacing: 7) {
                     Text(displayName)
                         .font(.system(size: 14, weight: .heavy))
-                        .foregroundStyle(Theme.ink)
+                        .foregroundStyle(.white)
                         .lineLimit(1)
                     Button(action: onTapTag) { TagPill(tag: tag) }
                         .buttonStyle(.plain)
@@ -454,11 +545,11 @@ private struct PatchRow: View {
                     HStack(alignment: .top, spacing: 5) {
                         Image(systemName: "text.alignleft")
                             .font(.system(size: 8, weight: .bold))
-                            .foregroundStyle(Theme.inkMuted)
+                            .foregroundStyle(.white.opacity(0.42))
                             .padding(.top, 1)
                         Text(note)
                             .font(.system(size: 10.5, weight: .medium))
-                            .foregroundStyle(Theme.inkSoft)
+                            .foregroundStyle(.white.opacity(0.72))
                             .lineLimit(2)
                             .multilineTextAlignment(.leading)
                     }
@@ -469,7 +560,7 @@ private struct PatchRow: View {
 
             if isWorking {
                 ProgressView()
-                    .tint(Theme.ink)
+                    .tint(.white)
                     .scaleEffect(0.8)
                     .frame(width: 52, height: 30)
             } else {
@@ -481,18 +572,18 @@ private struct PatchRow: View {
         .padding(12)
         .background(
             RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(isApplied ? Theme.bgSoft : Theme.surface)
+                .fill(isApplied ? Color.white.opacity(0.08) : Color.white.opacity(0.025))
         )
         .overlay(
             RoundedRectangle(cornerRadius: 14, style: .continuous)
                 .strokeBorder(
-                    isApplied ? Theme.line : Theme.line.opacity(0.28),
-                    lineWidth: isApplied ? 1.6 : 1.2
+                    isApplied ? Color.white : Color.white.opacity(0.35),
+                    lineWidth: isApplied ? 1.6 : 1.1
                 )
         )
         .shadow(
-            color: isApplied ? .black.opacity(0.09) : .black.opacity(0.04),
-            radius: isApplied ? 12 : 6, x: 0, y: 4
+            color: isApplied ? .white.opacity(0.35) : .clear,
+            radius: 16
         )
         .contextMenu {
             Button(action: onRename)   { Label("Đổi tên", systemImage: "pencil") }
@@ -508,16 +599,16 @@ private struct EmptyStateView: View {
         VStack(spacing: 14) {
             ZStack {
                 Circle()
-                    .strokeBorder(Theme.line.opacity(0.25),
+                    .strokeBorder(.white.opacity(0.25),
                                   style: StrokeStyle(lineWidth: 1.4, dash: [3, 5]))
                     .frame(width: 74, height: 74)
                 Image(systemName: "tray")
                     .font(.system(size: 26, weight: .light))
-                    .foregroundStyle(Theme.inkSoft)
+                    .foregroundStyle(.white.opacity(0.5))
             }
             Text(message)
                 .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(Theme.inkSoft)
+                .foregroundStyle(.white.opacity(0.55))
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 40)
         }
@@ -527,58 +618,43 @@ private struct EmptyStateView: View {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// MARK: - ACTIVATION SHEET (hiện cả khi THÀNH CÔNG & THẤT BẠI)
+// MARK: - ERROR SHEET (CHỈ HIỆN KHI LỖI) + NÚT COPY NOTE
 // ═══════════════════════════════════════════════════════════════
 struct ActivationNoteSheet: View {
     let info: ActivationInfo
     let onDismiss: () -> Void
 
-    @State private var appear = false
     @State private var pulse = false
     @State private var copied = false
 
-    private var accent: Color {
-        info.success ? Theme.ink : Theme.danger
-    }
-    private var titleText: String {
-        info.success ? "ĐÃ KÍCH HOẠT" : "KHÔNG KÍCH HOẠT ĐƯỢC"
-    }
-    private var iconName: String {
-        info.success ? "checkmark" : "xmark"
-    }
+    private var accent: Color { Theme.danger }
     private var hasNote: Bool {
         !info.note.trimmingCharacters(in: .whitespaces).isEmpty
     }
 
     var body: some View {
         ZStack {
-            Theme.bg.ignoresSafeArea()
-
-            // Subtle corner glow
-            RadialGradient(
-                colors: [accent.opacity(0.06), .clear],
-                center: .top, startRadius: 0, endRadius: 400
-            )
-            .ignoresSafeArea()
+            Color.black.ignoresSafeArea()
+            AuroraView().ignoresSafeArea().opacity(0.5)
 
             ScrollView(showsIndicators: false) {
-                VStack(spacing: 26) {
+                VStack(spacing: 24) {
                     Spacer(minLength: 50)
 
-                    // ─── BIG ICON ───
+                    // ─── ERROR ICON ───
                     ZStack {
                         Circle()
-                            .strokeBorder(accent.opacity(0.18), lineWidth: 1.5)
-                            .frame(width: pulse ? 130 : 108,
-                                   height: pulse ? 130 : 108)
+                            .strokeBorder(accent.opacity(0.25), lineWidth: 1.5)
+                            .frame(width: pulse ? 128 : 106,
+                                   height: pulse ? 128 : 106)
 
                         Circle()
                             .fill(accent)
-                            .frame(width: 90, height: 90)
-                            .shadow(color: accent.opacity(0.35), radius: 22, y: 8)
+                            .frame(width: 88, height: 88)
+                            .shadow(color: accent.opacity(0.6), radius: 24, y: 6)
 
-                        Image(systemName: iconName)
-                            .font(.system(size: 38, weight: .heavy))
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .font(.system(size: 36, weight: .heavy))
                             .foregroundStyle(.white)
                     }
                     .onAppear {
@@ -588,44 +664,44 @@ struct ActivationNoteSheet: View {
                         }
                     }
 
-                    // ─── TITLE BLOCK ───
+                    // ─── TITLE ───
                     VStack(spacing: 10) {
                         Text("HEADLOCK ZENIS")
-                            .font(.system(size: 10, weight: .heavy))
-                            .tracking(4)
-                            .foregroundStyle(Theme.inkMuted)
+                            .font(.system(size: 11, weight: .heavy))
+                            .tracking(4.5)
+                            .foregroundStyle(.white.opacity(0.55))
 
-                        Text(titleText)
-                            .font(.system(size: 24, weight: .heavy))
+                        Text("KHÔNG KÍCH HOẠT ĐƯỢC")
+                            .font(.system(size: 22, weight: .heavy))
                             .tracking(2)
                             .foregroundStyle(accent)
                             .multilineTextAlignment(.center)
+                            .shadow(color: accent.opacity(0.8), radius: 18)
                             .padding(.horizontal, 20)
 
                         Text(info.patchName)
                             .font(.system(size: 15, weight: .semibold))
-                            .foregroundStyle(Theme.inkSoft)
+                            .foregroundStyle(.white.opacity(0.85))
                             .multilineTextAlignment(.center)
                             .padding(.horizontal, 28)
                             .padding(.top, 2)
                     }
 
-                    // ─── ERROR BOX ───
-                    if !info.success,
-                       let errMsg = info.errorMessage, !errMsg.isEmpty {
+                    // ─── ERROR REASON ───
+                    if let errMsg = info.errorMessage, !errMsg.isEmpty {
                         VStack(alignment: .leading, spacing: 10) {
                             HStack(spacing: 7) {
-                                Image(systemName: "exclamationmark.triangle.fill")
+                                Image(systemName: "exclamationmark.circle.fill")
                                     .font(.system(size: 11, weight: .heavy))
-                                    .foregroundStyle(Theme.danger)
+                                    .foregroundStyle(accent)
                                 Text("LÝ DO")
                                     .font(.system(size: 10, weight: .heavy))
-                                    .tracking(2)
-                                    .foregroundStyle(Theme.danger)
+                                    .tracking(2.2)
+                                    .foregroundStyle(accent)
                             }
                             Text(errMsg)
                                 .font(.system(size: 12.5, weight: .medium))
-                                .foregroundStyle(Theme.ink)
+                                .foregroundStyle(.white.opacity(0.9))
                                 .multilineTextAlignment(.leading)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
@@ -633,12 +709,13 @@ struct ActivationNoteSheet: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .background(
                             RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                .fill(Theme.danger.opacity(0.06))
+                                .fill(accent.opacity(0.08))
                         )
                         .overlay(
                             RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                .strokeBorder(Theme.danger.opacity(0.5), lineWidth: 1.2)
+                                .strokeBorder(accent.opacity(0.55), lineWidth: 1.3)
                         )
+                        .shadow(color: accent.opacity(0.3), radius: 16)
                         .padding(.horizontal, 24)
                     }
 
@@ -648,28 +725,28 @@ struct ActivationNoteSheet: View {
                             HStack(spacing: 8) {
                                 Image(systemName: "note.text")
                                     .font(.system(size: 12, weight: .bold))
-                                    .foregroundStyle(Theme.ink)
+                                    .foregroundStyle(.white)
                                 Text("GHI CHÚ")
                                     .font(.system(size: 10, weight: .heavy))
                                     .tracking(2.2)
-                                    .foregroundStyle(Theme.ink)
+                                    .foregroundStyle(.white)
                                 Spacer()
                             }
 
                             Text(info.note)
                                 .font(.system(size: 13.5, weight: .medium))
-                                .foregroundStyle(Theme.ink)
+                                .foregroundStyle(.white.opacity(0.95))
                                 .multilineTextAlignment(.leading)
                                 .fixedSize(horizontal: false, vertical: true)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                                 .padding(14)
                                 .background(
                                     RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                        .fill(Theme.bgSoft)
+                                        .fill(Color.white.opacity(0.05))
                                 )
                                 .overlay(
                                     RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                        .strokeBorder(Theme.line.opacity(0.25),
+                                        .strokeBorder(.white.opacity(0.25),
                                                       style: StrokeStyle(lineWidth: 1,
                                                                          dash: [4, 4]))
                                 )
@@ -699,21 +776,21 @@ struct ActivationNoteSheet: View {
                                         .font(.system(size: 11.5, weight: .heavy))
                                         .tracking(1.8)
                                 }
-                                .foregroundStyle(copied ? .white : Theme.ink)
+                                .foregroundStyle(copied ? .black : .white)
                                 .frame(maxWidth: .infinity)
                                 .padding(.vertical, 13)
                                 .background(
                                     RoundedRectangle(cornerRadius: 12,
                                                      style: .continuous)
-                                        .fill(copied ? Theme.ink : Theme.surface)
+                                        .fill(copied ? Color.white : Color.white.opacity(0.06))
                                 )
                                 .overlay(
                                     RoundedRectangle(cornerRadius: 12,
                                                      style: .continuous)
-                                        .strokeBorder(Theme.line, lineWidth: 1.5)
+                                        .strokeBorder(.white, lineWidth: 1.4)
                                 )
-                                .shadow(color: .black.opacity(copied ? 0.15 : 0.06),
-                                        radius: 8, y: 4)
+                                .shadow(color: copied ? .white.opacity(0.65) : .clear,
+                                        radius: 14)
                             }
                             .buttonStyle(.plain)
                         }
@@ -724,13 +801,19 @@ struct ActivationNoteSheet: View {
                         )
                         .overlay(
                             RoundedRectangle(cornerRadius: 16, style: .continuous)
-                                .strokeBorder(Theme.line, lineWidth: 1.6)
+                                .strokeBorder(
+                                    LinearGradient(
+                                        colors: [.white, .white.opacity(0.35), .white],
+                                        startPoint: .leading, endPoint: .trailing
+                                    ),
+                                    lineWidth: 1.3
+                                )
                         )
-                        .shadow(color: .black.opacity(0.06), radius: 12, y: 5)
+                        .shadow(color: .white.opacity(0.25), radius: 18)
                         .padding(.horizontal, 22)
                     }
 
-                    // ─── DISMISS BUTTON ───
+                    // ─── DISMISS ───
                     Button {
                         SoundFX.tap()
                         onDismiss()
@@ -738,23 +821,20 @@ struct ActivationNoteSheet: View {
                         Text("ĐÃ HIỂU")
                             .font(.system(size: 14, weight: .heavy))
                             .tracking(3)
-                            .foregroundStyle(.white)
+                            .foregroundStyle(.black)
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 16)
                             .background(
                                 RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                    .fill(Theme.ink)
+                                    .fill(.white)
                             )
-                            .shadow(color: .black.opacity(0.25), radius: 14, y: 8)
+                            .shadow(color: .white.opacity(0.7), radius: 18)
                             .padding(.horizontal, 40)
                     }
                     .buttonStyle(.plain)
                     .padding(.bottom, 50)
                 }
             }
-        }
-        .onAppear {
-            withAnimation(.easeOut(duration: 0.4)) { appear = true }
         }
     }
 }
@@ -831,38 +911,34 @@ struct PatchProjectsView: View {
     // ─── HEADER ───
     private var header: some View {
         VStack(spacing: 0) {
-
-            // Top strip with sync pill
             HStack {
                 Spacer()
                 syncPill
             }
             .padding(.horizontal, 20)
             .padding(.top, 10)
-            .padding(.bottom, 6)
+            .padding(.bottom, 4)
 
-            // Avatar
             AvatarView()
-                .padding(.top, 4)
+                .padding(.top, 2)
 
-            // Brand
             Text("ZENITH SOLITUDE")
                 .font(.system(size: 21, weight: .black, design: .serif))
                 .tracking(3.5)
-                .foregroundStyle(Theme.ink)
+                .foregroundStyle(.white)
+                .shadow(color: .white.opacity(0.75), radius: 18)
                 .padding(.top, 14)
 
-            // Subtitle with double border line
             HStack(spacing: 10) {
                 Rectangle()
-                    .fill(Theme.line.opacity(0.35))
+                    .fill(.white.opacity(0.35))
                     .frame(width: 26, height: 1)
                 Text("HEADLOCK ZENIS")
                     .font(.system(size: 9.5, weight: .heavy))
                     .tracking(4.2)
-                    .foregroundStyle(Theme.inkSoft)
+                    .foregroundStyle(.white.opacity(0.55))
                 Rectangle()
-                    .fill(Theme.line.opacity(0.35))
+                    .fill(.white.opacity(0.35))
                     .frame(width: 26, height: 1)
             }
             .padding(.top, 8)
@@ -874,24 +950,25 @@ struct PatchProjectsView: View {
         HStack(spacing: 7) {
             ZStack {
                 Circle()
-                    .fill((isSyncing ? Color.orange : Color.green).opacity(0.16))
+                    .fill((isSyncing ? Color.yellow : Color.green).opacity(0.18))
                     .frame(width: 14, height: 14)
                 Circle()
-                    .fill(isSyncing ? Color.orange : Color.green)
+                    .fill(isSyncing ? Color.yellow : Color.green)
                     .frame(width: 7, height: 7)
+                    .shadow(color: (isSyncing ? Color.yellow : Color.green).opacity(0.9),
+                            radius: 6)
             }
             Text(isSyncing ? "ĐANG CẬP NHẬT" : "ĐÃ KẾT NỐI")
                 .font(.system(size: 9, weight: .heavy))
                 .tracking(1.6)
-                .foregroundStyle(Theme.ink)
+                .foregroundStyle(.white.opacity(0.75))
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 7)
         .background(
-            Capsule().fill(Theme.surface)
+            Capsule().fill(Color.white.opacity(0.05))
         )
-        .overlay(Capsule().strokeBorder(Theme.line, lineWidth: 1.2))
-        .shadow(color: .black.opacity(0.05), radius: 6, y: 2)
+        .overlay(Capsule().strokeBorder(.white.opacity(0.28), lineWidth: 1))
         .animation(.easeInOut(duration: 0.25), value: isSyncing)
     }
 
@@ -903,13 +980,13 @@ struct PatchProjectsView: View {
                 gameCard(title: "Free Fire Thường", subtitle: "CLASSIC EDITION", prefix: "ffnormal")
 
                 HStack(spacing: 8) {
-                    Rectangle().fill(Theme.line.opacity(0.25)).frame(height: 1)
+                    Rectangle().fill(.white.opacity(0.2)).frame(height: 1)
                     Text("BY ZENITH SOLITUDE")
                         .font(.system(size: 9, weight: .heavy))
                         .tracking(3)
-                        .foregroundStyle(Theme.inkMuted)
+                        .foregroundStyle(.white.opacity(0.5))
                         .fixedSize()
-                    Rectangle().fill(Theme.line.opacity(0.25)).frame(height: 1)
+                    Rectangle().fill(.white.opacity(0.2)).frame(height: 1)
                 }
                 .padding(.horizontal, 40)
                 .padding(.top, 22)
@@ -926,17 +1003,17 @@ struct PatchProjectsView: View {
             SoundFX.menu()
             selectedGame = GameSelection(title: title, prefix: prefix)
         } label: {
-            NeoCard {
+            NeonCard {
                 HStack(spacing: 14) {
                     FFLogoView()
                     VStack(alignment: .leading, spacing: 5) {
                         Text(title)
                             .font(.system(size: 16.5, weight: .heavy, design: .rounded))
-                            .foregroundStyle(Theme.ink)
+                            .foregroundStyle(.white)
                         Text(subtitle)
                             .font(.system(size: 9.5, weight: .heavy))
                             .tracking(2)
-                            .foregroundStyle(Theme.inkMuted)
+                            .foregroundStyle(.white.opacity(0.5))
                     }
                     Spacer()
                     ChevronCircle()
@@ -987,12 +1064,10 @@ final class SyncEngine {
 
         guard let remotes = await fetchRemotes() else { return }
 
-        // 1) Lookup remote
         var remoteByKey: [String: RemoteFileLite] = [:]
         remoteByKey.reserveCapacity(remotes.count)
         for r in remotes { remoteByKey[r.compositeKey] = r }
 
-        // 2) Sync meta + mark orphan
         var metaDict = PatchMetaStore.all()
         for (localName, var meta) in metaDict {
             let key = meta.remoteKey.isEmpty
@@ -1014,7 +1089,6 @@ final class SyncEngine {
         }
         PatchMetaStore.save(metaDict)
 
-        // 3) Missing files
         var existingUIDs = Set<String>()
         for meta in metaDict.values where !meta.orphaned {
             existingUIDs.insert(meta.uid)
@@ -1024,7 +1098,6 @@ final class SyncEngine {
         await MainActor.run { store.reload() }
         guard !missing.isEmpty else { return }
 
-        // 4) Fire all downloads
         await MainActor.run {
             for r in missing {
                 if let url = URL(string: r.url) {
@@ -1033,7 +1106,6 @@ final class SyncEngine {
             }
         }
 
-        // 5) Central poll loop
         var pendingByUID: [String: RemoteFileLite] = [:]
         for r in missing { pendingByUID[r.uid] = r }
 
@@ -1223,6 +1295,7 @@ struct PatchGameDetailView: View {
                 Button("FREE 🛡") { commitTag("FREE") }
                 Button("Huỷ", role: .cancel) { tagPickerItem = nil }
             }
+            // ⚡ Chỉ hiện sheet khi có activationInfo (được set trong catch)
             .fullScreenCover(item: $activationInfo) { info in
                 ActivationNoteSheet(info: info) { activationInfo = nil }
             }
@@ -1237,13 +1310,13 @@ struct PatchGameDetailView: View {
             } label: {
                 ZStack {
                     Circle()
-                        .fill(Theme.surface)
+                        .fill(Color.white.opacity(0.06))
                         .frame(width: 40, height: 40)
-                        .overlay(Circle().strokeBorder(Theme.line, lineWidth: 1.5))
-                        .shadow(color: .black.opacity(0.08), radius: 6, y: 3)
+                        .overlay(Circle().strokeBorder(.white, lineWidth: 1.4))
+                        .shadow(color: .white.opacity(0.25), radius: 8)
                     Image(systemName: "arrow.left")
                         .font(.system(size: 15, weight: .heavy))
-                        .foregroundStyle(Theme.ink)
+                        .foregroundStyle(.white)
                 }
             }
             .buttonStyle(.plain)
@@ -1251,11 +1324,11 @@ struct PatchGameDetailView: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(game.title)
                     .font(.system(size: 16, weight: .heavy))
-                    .foregroundStyle(Theme.ink)
+                    .foregroundStyle(.white)
                 Text("\(displayedItems.count) PATCH · \(folders.count) FOLDER")
                     .font(.system(size: 9.5, weight: .heavy))
                     .tracking(1.4)
-                    .foregroundStyle(Theme.inkMuted)
+                    .foregroundStyle(.white.opacity(0.5))
             }
 
             Spacer()
@@ -1445,6 +1518,9 @@ struct PatchGameDetailView: View {
         noteItem = nil
     }
 
+    // ═══════════════════════════════════════════════════════════
+    // 🔑 HÀM TOGGLE PATCH — BỎ ALERT THÀNH CÔNG
+    // ═══════════════════════════════════════════════════════════
     private func togglePatch(item: PatchLibraryItem, activate: Bool) {
         workingFileID = item.id.uuidString
         let nameSnap = displayName(for: item)
@@ -1480,16 +1556,14 @@ struct PatchGameDetailView: View {
                     return
                 }
                 _ = try DevicePatchService.apply(project: p)
-                // ⚡ HIỆN SHEET KHI THÀNH CÔNG — có note + nút copy
+                // ⚡ BẬT THÀNH CÔNG: KHÔNG HIỆN GÌ CẢ
+                // Chỉ reload + nhả workingFileID, im lặng
                 await MainActor.run {
                     store.reload()
                     workingFileID = nil
                     SoundFX.success()
-                    activationInfo = ActivationInfo(
-                        patchName: nameSnap, note: noteSnap,
-                        success: true, errorMessage: nil
-                    )
                 }
+                // ❌ Đã XÓA HOÀN TOÀN block tạo activationInfo khi success
             } catch {
                 await MainActor.run {
                     store.reload()
