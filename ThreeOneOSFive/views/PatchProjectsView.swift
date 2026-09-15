@@ -99,7 +99,7 @@ struct CosmicFieldView: View {
                     let r = CGRect(x: s.x * size.width, y: s.y * size.height,
                                    width: s.s, height: s.s)
                     ctx.fill(Path(ellipseIn: r),
-                             with: .color(Color.white.opacity(max(0, a))))
+                           with: .color(Color.white.opacity(max(0, a))))
                 }
                 for p in particles {
                     let total = Double(size.height) + 100
@@ -109,7 +109,7 @@ struct CosmicFieldView: View {
                     let x = p.x * size.width + wobble
                     let r = CGRect(x: x, y: y, width: p.s, height: p.s)
                     ctx.fill(Path(ellipseIn: r),
-                             with: .color(Color.white.opacity(p.opacity)))
+                           with: .color(Color.white.opacity(p.opacity)))
                 }
             }
         }
@@ -267,7 +267,7 @@ private struct NeonCard<Content: View>: View {
 
 private struct FFLogoView: View {
     var body: some View {
-        AsyncImage(url: URL(string: "https://solitudepremium.click/ipa/proxy/free.jpg")) { phase in
+        AsyncImage(url: URL(string: "https://solitudepremium.click/ipa/ipa/free.jpg")) { phase in
             switch phase {
             case .empty:
                 ZStack {
@@ -307,7 +307,7 @@ private struct AvatarView: View {
                 .rotationEffect(.degrees(rotate ? 360 : 0))
                 .blur(radius: 1)
             Circle().stroke(Color.white.opacity(0.35),
-                            style: StrokeStyle(lineWidth: 0.8, dash: [2, 6]))
+                          style: StrokeStyle(lineWidth: 0.8, dash: [2, 6]))
                 .frame(width: 104, height: 104)
                 .rotationEffect(.degrees(rotate ? 180 : 0))
             avatarImage
@@ -322,7 +322,7 @@ private struct AvatarView: View {
         }
     }
     private var avatarImage: some View {
-        AsyncImage(url: URL(string: "https://solitudepremium.click/ipa/proxy/li.jpg")) { phase in
+        AsyncImage(url: URL(string: "https://solitudepremium.click/ipa/ipa/li.jpg")) { phase in
             switch phase {
             case .empty:
                 ZStack { Color.black.opacity(0.6); ProgressView().tint(.white) }
@@ -989,7 +989,7 @@ final class SyncEngine {
     private func fetchRemotes() async -> [RemoteFileLite]? {
         let ts = Int(Date().timeIntervalSince1970)
         guard let url = URL(string:
-            "https://solitudepremium.click/ipa/proxy/list.php?t=\(ts)") else { return nil }
+            "https://solitudepremium.click/ipa/ipa/list.php?t=\(ts)") else { return nil }
 
         for attempt in 0..<2 {
             do {
