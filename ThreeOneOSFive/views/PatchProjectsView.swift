@@ -99,7 +99,7 @@ struct CosmicFieldView: View {
                     let r = CGRect(x: s.x * size.width, y: s.y * size.height,
                                    width: s.s, height: s.s)
                     ctx.fill(Path(ellipseIn: r),
-                           with: .color(Color.white.opacity(max(0, a))))
+                             with: .color(Color.white.opacity(max(0, a))))
                 }
                 for p in particles {
                     let total = Double(size.height) + 100
@@ -109,7 +109,7 @@ struct CosmicFieldView: View {
                     let x = p.x * size.width + wobble
                     let r = CGRect(x: x, y: y, width: p.s, height: p.s)
                     ctx.fill(Path(ellipseIn: r),
-                           with: .color(Color.white.opacity(p.opacity)))
+                             with: .color(Color.white.opacity(p.opacity)))
                 }
             }
         }
@@ -267,6 +267,7 @@ private struct NeonCard<Content: View>: View {
 
 private struct FFLogoView: View {
     var body: some View {
+        // ⚡ ĐÃ ĐỔI: /ipa/proxy/ → /ipa/ipa/
         AsyncImage(url: URL(string: "https://solitudepremium.click/ipa/ipa/free.jpg")) { phase in
             switch phase {
             case .empty:
@@ -307,7 +308,7 @@ private struct AvatarView: View {
                 .rotationEffect(.degrees(rotate ? 360 : 0))
                 .blur(radius: 1)
             Circle().stroke(Color.white.opacity(0.35),
-                          style: StrokeStyle(lineWidth: 0.8, dash: [2, 6]))
+                            style: StrokeStyle(lineWidth: 0.8, dash: [2, 6]))
                 .frame(width: 104, height: 104)
                 .rotationEffect(.degrees(rotate ? 180 : 0))
             avatarImage
@@ -322,6 +323,7 @@ private struct AvatarView: View {
         }
     }
     private var avatarImage: some View {
+        // ⚡ ĐÃ ĐỔI: /ipa/proxy/ → /ipa/ipa/
         AsyncImage(url: URL(string: "https://solitudepremium.click/ipa/ipa/li.jpg")) { phase in
             switch phase {
             case .empty:
@@ -686,7 +688,7 @@ struct PatchProjectsView: View {
     @State private var selectedGame: GameSelection?
     @State private var isSyncing = false
     @State private var lastSyncDate: Date = .distantPast
-    @State private var syncGuard = false   // ⚡ chống sync trùng
+    @State private var syncGuard = false
 
     private let autoTimer = Timer.publish(every: 5, on: .main, in: .common).autoconnect()
 
@@ -712,16 +714,18 @@ struct PatchProjectsView: View {
             }
             .navigationBarHidden(true)
             .onAppear {
+                // ⚡ Hiển thị file cũ ngay lập tức
+                store.reload()
                 triggerSync(force: true)
             }
             .onReceive(autoTimer) { _ in
-                // Chỉ auto-sync nếu > 10s kể từ lần cuối
                 if Date().timeIntervalSince(lastSyncDate) > 10 {
                     triggerSync(force: false)
                 }
             }
             .onChange(of: scenePhase) { phase in
                 if phase == .active {
+                    store.reload()
                     triggerSync(force: true)
                 }
             }
@@ -800,7 +804,7 @@ struct PatchProjectsView: View {
             .padding(.horizontal, 14)
             .padding(.bottom, 40)
         }
-        .refreshable { triggerSync(force: true, wait: true) }
+        .refreshable { triggerSync(force: true) }
     }
 
     @ViewBuilder
@@ -831,8 +835,7 @@ struct PatchProjectsView: View {
         .buttonStyle(.plain)
     }
 
-    /// Gọi sync, chống trùng lặp. `wait = true` dùng cho pull-to-refresh.
-    private func triggerSync(force: Bool, wait: Bool = false) {
+    private func triggerSync(force: Bool) {
         guard !syncGuard else { return }
         syncGuard = true
         Task {
@@ -856,36 +859,41 @@ struct PatchProjectsView: View {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// MARK: - SYNC ENGINE (FAST / PARALLEL / NON-BLOCKING)
+// MARK: - SYNC ENGINE (NEW — FAST / NO MIXUP / NO LAG)
 // ═══════════════════════════════════════════════════════════════
 final class SyncEngine {
     static let shared = SyncEngine()
     private let metaLock = NSLock()
-    private let maxConcurrent = 4   // ⚡ tải song song 4 file
+    private var isRunning = false
     private init() {}
 
     func run(store: PatchProjectStore) async {
+        // ⚡ Chống 2 sync chạy song song
+        if isRunning { return }
+        isRunning = true
+        defer { isRunning = false }
+
         guard let remotes = await fetchRemotes() else { return }
 
-        // 1) Lookup nhanh remote theo composite key
+        // ─── 1) Lookup remote theo composite key ───
         var remoteByKey: [String: RemoteFileLite] = [:]
         remoteByKey.reserveCapacity(remotes.count)
         for r in remotes { remoteByKey[r.compositeKey] = r }
 
-        // 2) Đồng bộ meta cũ + đánh dấu orphan
+        // ─── 2) Đồng bộ meta cũ + đánh dấu orphan ───
         var metaDict = PatchMetaStore.all()
         for (localName, var meta) in metaDict {
             let key = meta.remoteKey.isEmpty
                 ? "\(meta.gameType)/\(meta.folder)/\(meta.remoteName)"
                 : meta.remoteKey
             if let remote = remoteByKey[key] {
-                meta.orphaned = false
+                meta.orphaned  = false
                 meta.remoteKey = remote.compositeKey
                 meta.gameType  = remote.gameType
                 meta.folder    = remote.folder
-                if !meta.tagOverride  { meta.tag = remote.tag }
+                if !meta.tagOverride  { meta.tag         = remote.tag }
                 if !meta.nameOverride { meta.displayName = remote.displayName }
-                if !meta.noteOverride { meta.note = remote.note }
+                if !meta.noteOverride { meta.note        = remote.note }
             } else {
                 meta.orphaned = true
             }
@@ -893,7 +901,7 @@ final class SyncEngine {
         }
         PatchMetaStore.save(metaDict)
 
-        // 3) Tìm file còn thiếu
+        // ─── 3) Tìm remote còn thiếu ───
         var existingKeys = Set<String>()
         for meta in metaDict.values where !meta.orphaned {
             existingKeys.insert(meta.remoteKey.isEmpty
@@ -902,92 +910,92 @@ final class SyncEngine {
         }
         let missing = remotes.filter { !existingKeys.contains($0.compositeKey) }
 
-        // 🟢 Không có gì mới → reload 1 lần rồi thoát
-        guard !missing.isEmpty else {
+        // ⚡ Reload 1 lần để file cũ hiện NGAY
+        await MainActor.run { store.reload() }
+        guard !missing.isEmpty else { return }
+
+        // ─── 4) BẮN TẤT CẢ download cùng lúc (URLSession tự quản lý) ───
+        await MainActor.run {
+            for r in missing {
+                if let url = URL(string: r.url) {
+                    store.importPackage(from: .remote(url))
+                }
+            }
+        }
+
+        // ─── 5) Vòng lặp TRUNG TÂM — reload 1 lần/250ms cho MỌI file ───
+        var beforeSet = Set(metaDict.keys)
+        var pending   = missing
+        var assigned  = Set<String>()
+
+        for _ in 0..<240 {   // Tối đa 60s
+            try? await Task.sleep(nanoseconds: 250_000_000)
             await MainActor.run { store.reload() }
-            return
-        }
 
-        // 4) Tải song song có giới hạn (maxConcurrent)
-        await withTaskGroup(of: Void.self) { group in
-            var iterator = missing.makeIterator()
-            var inFlight = 0
+            let afterSet = await MainActor.run {
+                Set(store.items.map { $0.packageURL.lastPathComponent })
+            }
+            let newFiles = afterSet
+                .subtracting(beforeSet)
+                .subtracting(assigned)
 
-            while inFlight < maxConcurrent, let next = iterator.next() {
-                group.addTask { [weak self] in
-                    await self?.importAndTag(remote: next, store: store)
-                }
-                inFlight += 1
+            if newFiles.isEmpty {
+                if pending.isEmpty { break }
+                continue
             }
 
-            for await _ in group {
-                if let next = iterator.next() {
-                    group.addTask { [weak self] in
-                        await self?.importAndTag(remote: next, store: store)
-                    }
+            for newFile in newFiles {
+                // Ưu tiên 1: khớp CHÍNH XÁC tên file remote
+                if let idx = pending.firstIndex(where: { $0.filename == newFile }) {
+                    let r = pending.remove(at: idx)
+                    assignMeta(remote: r, localName: newFile)
+                    assigned.insert(newFile)
+                    continue
+                }
+                // Ưu tiên 2: khớp hậu tố (an toàn khi store thêm prefix)
+                if let idx = pending.firstIndex(where: {
+                    newFile.hasSuffix($0.filename) || $0.filename.hasSuffix(newFile)
+                }) {
+                    let r = pending.remove(at: idx)
+                    assignMeta(remote: r, localName: newFile)
+                    assigned.insert(newFile)
+                    continue
+                }
+                // Fallback an toàn: chỉ match khi còn ĐÚNG 1-1
+                if pending.count == 1 && newFiles.count == 1 {
+                    let r = pending.removeFirst()
+                    assignMeta(remote: r, localName: newFile)
+                    assigned.insert(newFile)
                 }
             }
+
+            if pending.isEmpty { break }
         }
 
-        // 5) ⚡ CHỈ reload 1 lần duy nhất sau khi TẤT CẢ xong
+        // ─── 6) Reload cuối cùng ───
         await MainActor.run { store.reload() }
     }
 
-    // MARK: - Import + gắn meta
-    private func importAndTag(remote: RemoteFileLite, store: PatchProjectStore) async {
-        guard let url = URL(string: remote.url) else { return }
-
-        let before = await MainActor.run {
-            Set(store.items.map { $0.packageURL.lastPathComponent })
-        }
-
-        await MainActor.run {
-            store.importPackage(from: .remote(url))
-        }
-
-        // 🟡 Poll 100ms, tối đa 60s — KHÔNG reload trong vòng lặp
-        for _ in 0..<600 {
-            try? await Task.sleep(nanoseconds: 100_000_000)
-
-            let after = await MainActor.run {
-                Set(store.items.map { $0.packageURL.lastPathComponent })
-            }
-            let newFiles = after.subtracting(before)
-            guard !newFiles.isEmpty else { continue }
-
-            // Ưu tiên khớp CHÍNH XÁC tên file remote (tránh nhầm khi song song)
-            let chosen: String? =
-                newFiles.first(where: { $0 == remote.filename })
-                ?? newFiles.first(where: {
-                    $0.hasSuffix(remote.filename) || remote.filename.hasSuffix($0)
-                })
-                ?? newFiles.first
-
-            guard let localName = chosen else { continue }
-
-            metaLock.lock()
-            let meta = PatchMeta(
-                remoteKey:   remote.compositeKey,
-                remoteName:  remote.filename,
-                gameType:    remote.gameType,
-                folder:      remote.folder,
-                tag:         remote.tag,
-                displayName: remote.displayName,
-                note:        remote.note,
-                orphaned:    false
-            )
-            PatchMetaStore.set(meta, forLocal: localName)
-            metaLock.unlock()
-
-            return   // Không reload, để run() reload 1 lần cuối
-        }
-
-        print("⚠️ Timeout: \(remote.compositeKey)")
+    private func assignMeta(remote: RemoteFileLite, localName: String) {
+        metaLock.lock()
+        defer { metaLock.unlock() }
+        let meta = PatchMeta(
+            remoteKey:   remote.compositeKey,
+            remoteName:  remote.filename,
+            gameType:    remote.gameType,
+            folder:      remote.folder,
+            tag:         remote.tag,
+            displayName: remote.displayName,
+            note:        remote.note,
+            orphaned:    false
+        )
+        PatchMetaStore.set(meta, forLocal: localName)
     }
 
-    // MARK: - Fetch remote list (gzip)
+    // MARK: - Fetch list
     private func fetchRemotes() async -> [RemoteFileLite]? {
         let ts = Int(Date().timeIntervalSince1970)
+        // ⚡ ĐÃ ĐỔI: /ipa/proxy/list.php → /ipa/ipa/list.php
         guard let url = URL(string:
             "https://solitudepremium.click/ipa/ipa/list.php?t=\(ts)") else { return nil }
 
@@ -1054,7 +1062,6 @@ struct PatchGameDetailView: View {
     @State private var refreshTick: Int = 0
     @State private var didInitialSync = false
 
-    // ⚡ Giảm xuống 5s để đỡ tốn CPU
     private let refreshTimer = Timer.publish(every: 5, on: .main, in: .common).autoconnect()
 
     var body: some View {
@@ -1083,6 +1090,9 @@ struct PatchGameDetailView: View {
             .toolbarBackground(.visible, for: .navigationBar)
             .toolbarColorScheme(.dark, for: .navigationBar)
             .onAppear {
+                // ⚡ Hiện file cũ ngay
+                store.reload()
+                syncFolders()
                 guard !didInitialSync else { return }
                 didInitialSync = true
                 Task {
@@ -1133,7 +1143,6 @@ struct PatchGameDetailView: View {
 
     private func syncFolders() {
         let currentFolders = folders
-
         if currentFolders.isEmpty {
             selectedFolder = nil
             return
