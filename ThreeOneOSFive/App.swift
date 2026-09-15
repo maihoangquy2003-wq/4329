@@ -11,7 +11,10 @@ struct ThreeOneOSFiveApp: App {
     @AppStorage(AppLanguage.storageKey) private var languageCode = AppLanguage.english.rawValue
     @State private var showOnboarding = OnboardingStore.shouldShow()
     @State private var showAttribution = false
-    @State private var updateOffer: AppUpdateChecker.Offer?
+    
+    // Đã tắt biến lưu trạng thái cập nhật
+    // @State private var updateOffer: AppUpdateChecker.Offer?
+    
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -31,12 +34,15 @@ struct ThreeOneOSFiveApp: App {
         AppLanguage(rawValue: languageCode) ?? .english
     }
 
+    // Đã tắt hàm kiểm tra cập nhật
+    /*
     private func checkForUpdate() {
         Task {
             guard let offer = await AppUpdateChecker.check() else { return }
             await MainActor.run { updateOffer = offer }
         }
     }
+    */
 
     var body: some Scene {
         WindowGroup {
@@ -59,7 +65,9 @@ struct ThreeOneOSFiveApp: App {
                             showOnboarding = false
                         }
                         appState.detectSupport()
-                        checkForUpdate()
+                        
+                        // Đã tắt gọi hàm kiểm tra cập nhật sau khi hoàn thành Onboarding
+                        // checkForUpdate()
                     }
                     .environment(\.appLanguage, language)
                     .environment(\.locale, language.locale)
@@ -75,6 +83,8 @@ struct ThreeOneOSFiveApp: App {
             .sheet(isPresented: $showAttribution) {
                 DisplayAttributionSheet()
             }
+            // Đã tắt popup hiển thị thông báo cập nhật
+            /*
             .alert(item: $updateOffer) { offer in
                 Alert(
                     title: Text(language.text("update.title")),
@@ -87,10 +97,13 @@ struct ThreeOneOSFiveApp: App {
                     }
                 )
             }
+            */
             .onAppear {
                 if !showOnboarding {
                     appState.detectSupport()
-                    checkForUpdate()
+                    
+                    // Đã tắt gọi hàm kiểm tra cập nhật mỗi khi mở app
+                    // checkForUpdate()
                 }
             }
             .onChange(of: scenePhase) { phase in
