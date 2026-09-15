@@ -24,28 +24,23 @@ enum SoundFX {
 // ═══════════════════════════════════════════════════════════════
 enum Theme {
     static let bg        = Color.black
-    static let surface   = Color(red: 0.043, green: 0.043, blue: 0.043)   // #0B0B0B
-    static let surfaceHi = Color(red: 0.075, green: 0.075, blue: 0.075)   // #131313
+    static let surface   = Color(red: 0.043, green: 0.043, blue: 0.043)
+    static let surfaceHi = Color(red: 0.078, green: 0.078, blue: 0.078)
     static let ink       = Color.white
-    static let inkSoft   = Color.white.opacity(0.72)
-    static let inkMuted  = Color.white.opacity(0.42)
+    static let inkSoft   = Color.white.opacity(0.7)
+    static let inkMuted  = Color.white.opacity(0.4)
     static let line      = Color.white
-    static let lineSoft  = Color.white.opacity(0.35)
-    static let lineFaint = Color.white.opacity(0.14)
-    static let gold      = Color(red: 0.850, green: 0.700, blue: 0.400)   // #D9B366
-    static let danger    = Color(red: 1.0,   green: 0.32,  blue: 0.32)    // #FF5252
-
-    static let border: CGFloat = 1.5
-    static let radius: CGFloat = 18
-    static let radiusSm: CGFloat = 12
+    static let lineHi    = Color.white.opacity(0.9)
+    static let lineMid   = Color.white.opacity(0.35)
+    static let gold      = Color(red: 0.850, green: 0.700, blue: 0.400)
+    static let danger    = Color(red: 1.0, green: 0.32, blue: 0.32)
 }
 
 // ═══════════════════════════════════════════════════════════════
-// MARK: - BACKGROUND (ĐEN + sao trắng)
+// MARK: - BACKGROUND
 // ═══════════════════════════════════════════════════════════════
 struct NeonBackgroundView: View {
     @Environment(\.scenePhase) private var scenePhase
-
     var body: some View {
         ZStack {
             Color.black
@@ -214,7 +209,7 @@ struct PatchMeta: Codable {
         remoteKey    = (try? c.decode(String.self, forKey: .remoteKey)) ?? ""
         remoteName   = (try? c.decode(String.self, forKey: .remoteName)) ?? ""
         gameType     = (try? c.decode(String.self, forKey: .gameType)) ?? "ffnormal"
-        folder       = (try? c.decode(String.self, forKey: .folder)) ?? "Chung"
+        folder       = (try? c.decode(String.self, forKey: .folder)) ?? ""
         tag          = (try? c.decode(String.self, forKey: .tag)) ?? "FREE"
         displayName  = (try? c.decode(String.self, forKey: .displayName)) ?? ""
         note         = (try? c.decode(String.self, forKey: .note)) ?? ""
@@ -252,10 +247,10 @@ struct ActivationInfo: Identifiable {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// MARK: - META STORE
+// MARK: - META STORE (Key = UID) + LOCAL MAP
 // ═══════════════════════════════════════════════════════════════
 enum PatchMetaStore {
-    private static let key = "patch_meta_v18"
+    private static let key = "patch_meta_v21"
 
     static func all() -> [String: PatchMeta] {
         guard let data = UserDefaults.standard.data(forKey: key),
@@ -268,10 +263,46 @@ enum PatchMetaStore {
             UserDefaults.standard.set(data, forKey: key)
         }
     }
-    static func set(_ meta: PatchMeta, forLocal local: String) {
-        var d = all(); d[local] = meta; save(d)
+    static func set(_ meta: PatchMeta, uid: String) {
+        var d = all(); d[uid] = meta; save(d)
     }
-    static func get(forLocal local: String) -> PatchMeta? { all()[local] }
+    static func get(uid: String) -> PatchMeta? { all()[uid] }
+
+    /// Lookup 3 tầng — không bao giờ miss
+    static func lookup(localName: String) -> PatchMeta? {
+        // 1) Qua LocalMap
+        if let uid = LocalMapStore.uid(forLocal: localName),
+           let m = all()[uid] { return m }
+
+        // 2) Tìm theo remoteName == localName
+        for m in all().values where m.remoteName == localName { return m }
+
+        // 3) Tìm theo tên không extension
+        let base = (localName as NSString).deletingPathExtension.lowercased()
+        for m in all().values {
+            let rbase = (m.remoteName as NSString).deletingPathExtension.lowercased()
+            if !rbase.isEmpty && rbase == base { return m }
+        }
+
+        return nil
+    }
+}
+
+enum LocalMapStore {
+    private static let key = "patch_localmap_v21"
+
+    static func all() -> [String: String] {
+        (UserDefaults.standard.dictionary(forKey: key) as? [String: String]) ?? [:]
+    }
+    static func save(_ d: [String: String]) {
+        UserDefaults.standard.set(d, forKey: key)
+    }
+    static func link(local: String, uid: String) {
+        var d = all(); d[local] = uid; save(d)
+    }
+    static func uid(forLocal local: String) -> String? {
+        all()[local]
+    }
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -282,11 +313,11 @@ private struct NeonCard<Content: View>: View {
     var body: some View {
         content
             .background(
-                RoundedRectangle(cornerRadius: Theme.radius, style: .continuous)
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
                     .fill(Theme.surface)
             )
             .overlay(
-                RoundedRectangle(cornerRadius: Theme.radius, style: .continuous)
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
                     .strokeBorder(
                         LinearGradient(
                             colors: [.white, .white.opacity(0.4), .white],
@@ -337,27 +368,21 @@ private struct AvatarView: View {
     @State private var rotate = false
     var body: some View {
         ZStack {
-            // Thin rotating dashed ring
             Circle()
-                .strokeBorder(
-                    Color.white.opacity(0.35),
-                    style: StrokeStyle(lineWidth: 1, dash: [2, 5])
-                )
-                .frame(width: 120, height: 120)
+                .strokeBorder(Color.white.opacity(0.35),
+                              style: StrokeStyle(lineWidth: 1, dash: [2, 5]))
+                .frame(width: 122, height: 122)
                 .rotationEffect(.degrees(rotate ? 360 : 0))
-
-            // Main solid white ring
             Circle()
                 .strokeBorder(.white, lineWidth: 2)
-                .frame(width: 100, height: 100)
+                .frame(width: 102, height: 102)
                 .shadow(color: .white.opacity(0.5), radius: 12)
-
             avatarImage
-                .frame(width: 84, height: 84)
+                .frame(width: 86, height: 86)
                 .clipShape(Circle())
                 .overlay(Circle().strokeBorder(.white, lineWidth: 1.5))
         }
-        .frame(width: 130, height: 130)
+        .frame(width: 132, height: 132)
         .onAppear {
             withAnimation(.linear(duration: 22).repeatForever(autoreverses: false)) {
                 rotate = true
@@ -368,17 +393,13 @@ private struct AvatarView: View {
         AsyncImage(url: URL(string: "https://solitudepremium.click/ipa/ipa/li.jpg")) { phase in
             switch phase {
             case .empty:
-                ZStack {
-                    Color.black.opacity(0.6)
-                    ProgressView().tint(.white)
-                }
-            case .success(let img):
-                img.resizable().scaledToFill()
+                ZStack { Color.black.opacity(0.6); ProgressView().tint(.white) }
+            case .success(let img): img.resizable().scaledToFill()
             case .failure:
                 ZStack {
                     Theme.surfaceHi
                     Image(systemName: "person.fill")
-                        .font(.system(size: 40, weight: .medium))
+                        .font(.system(size: 42, weight: .medium))
                         .foregroundStyle(.white.opacity(0.5))
                 }
             @unknown default: EmptyView()
@@ -407,20 +428,15 @@ private struct TagPill: View {
             Image(systemName: isVIP ? "crown.fill" : "shield.fill")
                 .font(.system(size: 8, weight: .heavy))
             Text(tag)
-                .font(.system(size: 9, weight: .heavy))
-                .tracking(1.0)
+                .font(.system(size: 9, weight: .heavy)).tracking(1.0)
         }
         .padding(.horizontal, 8).padding(.vertical, 4)
         .foregroundStyle(isVIP ? Theme.gold : .white)
-        .background(
-            Capsule().fill(isVIP ? Theme.gold.opacity(0.16) : Color.white.opacity(0.06))
-        )
-        .overlay(
-            Capsule().strokeBorder(
-                isVIP ? Theme.gold : Color.white.opacity(0.7),
-                lineWidth: 1.2
-            )
-        )
+        .background(Capsule().fill(isVIP ? Theme.gold.opacity(0.16)
+                                    : Color.white.opacity(0.06)))
+        .overlay(Capsule().strokeBorder(
+            isVIP ? Theme.gold : Color.white.opacity(0.7),
+            lineWidth: 1.2))
         .shadow(color: isVIP ? Theme.gold.opacity(0.4) : .clear, radius: 6)
     }
 }
@@ -459,23 +475,18 @@ private struct CustomToggle: View {
                 Capsule()
                     .fill(isOn ? Color.white : Color.white.opacity(0.08))
                     .frame(width: 52, height: 30)
-                    .overlay(
-                        Capsule().strokeBorder(
-                            isOn ? .white : Color.white.opacity(0.45),
-                            lineWidth: 1.4
-                        )
-                    )
+                    .overlay(Capsule().strokeBorder(
+                        isOn ? .white : Color.white.opacity(0.45),
+                        lineWidth: 1.4))
                     .shadow(color: isOn ? .white.opacity(0.7) : .clear, radius: 12)
                 HStack {
                     if isOn {
                         Spacer()
-                        Circle()
-                            .fill(.black)
+                        Circle().fill(.black)
                             .frame(width: 22, height: 22)
                             .padding(.trailing, 3)
                     } else {
-                        Circle()
-                            .fill(.white)
+                        Circle().fill(.white)
                             .frame(width: 22, height: 22)
                             .padding(.leading, 3)
                         Spacer()
@@ -491,27 +502,44 @@ private struct CustomToggle: View {
     }
 }
 
-private struct FolderTab: View {
+// ⭐ Folder chip dạng GRID 2 cột với số đếm
+private struct FolderChip: View {
     let title: String
+    let count: Int
     let isActive: Bool
     let action: () -> Void
     var body: some View {
         Button(action: action) {
-            Text(title.uppercased())
-                .font(.system(size: 11, weight: .heavy))
-                .tracking(1.3)
-                .padding(.horizontal, 18).padding(.vertical, 10)
-                .background(
-                    Capsule().fill(isActive ? Color.white : Color.white.opacity(0.04))
-                )
-                .foregroundStyle(isActive ? .black : .white.opacity(0.9))
-                .overlay(
-                    Capsule().strokeBorder(.white, lineWidth: 1.2)
-                )
-                .shadow(
-                    color: isActive ? .white.opacity(0.8) : .clear,
-                    radius: 14
-                )
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 6) {
+                    Image(systemName: isActive ? "folder.fill" : "folder")
+                        .font(.system(size: 11, weight: .bold))
+                    Text("\(count)")
+                        .font(.system(size: 11, weight: .heavy))
+                    Spacer()
+                }
+                .foregroundStyle(isActive ? .black : .white.opacity(0.55))
+
+                Text(title)
+                    .font(.system(size: 12, weight: .heavy))
+                    .tracking(0.6)
+                    .foregroundStyle(isActive ? .black : .white)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 11)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: 13, style: .continuous)
+                    .fill(isActive ? Color.white : Color.white.opacity(0.04))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 13, style: .continuous)
+                    .strokeBorder(isActive ? .white : Theme.lineMid,
+                                  lineWidth: isActive ? 1.8 : 1.1)
+            )
+            .shadow(color: isActive ? .white.opacity(0.6) : .clear, radius: 12)
         }
         .buttonStyle(.plain)
     }
@@ -559,9 +587,7 @@ private struct PatchRow: View {
             Spacer(minLength: 6)
 
             if isWorking {
-                ProgressView()
-                    .tint(.white)
-                    .scaleEffect(0.8)
+                ProgressView().tint(.white).scaleEffect(0.8)
                     .frame(width: 52, height: 30)
             } else {
                 CustomToggle(isOn: isApplied, disabled: false) { nv in
@@ -572,19 +598,15 @@ private struct PatchRow: View {
         .padding(12)
         .background(
             RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(isApplied ? Color.white.opacity(0.08) : Color.white.opacity(0.025))
+                .fill(isApplied ? Color.white.opacity(0.08)
+                      : Color.white.opacity(0.025))
         )
         .overlay(
             RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .strokeBorder(
-                    isApplied ? Color.white : Color.white.opacity(0.35),
-                    lineWidth: isApplied ? 1.6 : 1.1
-                )
+                .strokeBorder(isApplied ? Color.white : Color.white.opacity(0.35),
+                              lineWidth: isApplied ? 1.6 : 1.1)
         )
-        .shadow(
-            color: isApplied ? .white.opacity(0.35) : .clear,
-            radius: 16
-        )
+        .shadow(color: isApplied ? .white.opacity(0.35) : .clear, radius: 16)
         .contextMenu {
             Button(action: onRename)   { Label("Đổi tên", systemImage: "pencil") }
             Button(action: onTapTag)   { Label("Đổi VIP/FREE", systemImage: "crown") }
@@ -618,7 +640,7 @@ private struct EmptyStateView: View {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// MARK: - ERROR SHEET (CHỈ HIỆN KHI LỖI) + NÚT COPY NOTE
+// MARK: - ERROR SHEET (chỉ khi LỖI)
 // ═══════════════════════════════════════════════════════════════
 struct ActivationNoteSheet: View {
     let info: ActivationInfo
@@ -641,18 +663,15 @@ struct ActivationNoteSheet: View {
                 VStack(spacing: 24) {
                     Spacer(minLength: 50)
 
-                    // ─── ERROR ICON ───
                     ZStack {
                         Circle()
                             .strokeBorder(accent.opacity(0.25), lineWidth: 1.5)
                             .frame(width: pulse ? 128 : 106,
                                    height: pulse ? 128 : 106)
-
                         Circle()
                             .fill(accent)
                             .frame(width: 88, height: 88)
                             .shadow(color: accent.opacity(0.6), radius: 24, y: 6)
-
                         Image(systemName: "exclamationmark.triangle.fill")
                             .font(.system(size: 36, weight: .heavy))
                             .foregroundStyle(.white)
@@ -664,30 +683,24 @@ struct ActivationNoteSheet: View {
                         }
                     }
 
-                    // ─── TITLE ───
                     VStack(spacing: 10) {
                         Text("HEADLOCK ZENIS")
                             .font(.system(size: 11, weight: .heavy))
                             .tracking(4.5)
                             .foregroundStyle(.white.opacity(0.55))
-
                         Text("KHÔNG KÍCH HOẠT ĐƯỢC")
-                            .font(.system(size: 22, weight: .heavy))
-                            .tracking(2)
+                            .font(.system(size: 22, weight: .heavy)).tracking(2)
                             .foregroundStyle(accent)
                             .multilineTextAlignment(.center)
                             .shadow(color: accent.opacity(0.8), radius: 18)
                             .padding(.horizontal, 20)
-
                         Text(info.patchName)
                             .font(.system(size: 15, weight: .semibold))
                             .foregroundStyle(.white.opacity(0.85))
                             .multilineTextAlignment(.center)
-                            .padding(.horizontal, 28)
-                            .padding(.top, 2)
+                            .padding(.horizontal, 28).padding(.top, 2)
                     }
 
-                    // ─── ERROR REASON ───
                     if let errMsg = info.errorMessage, !errMsg.isEmpty {
                         VStack(alignment: .leading, spacing: 10) {
                             HStack(spacing: 7) {
@@ -696,8 +709,7 @@ struct ActivationNoteSheet: View {
                                     .foregroundStyle(accent)
                                 Text("LÝ DO")
                                     .font(.system(size: 10, weight: .heavy))
-                                    .tracking(2.2)
-                                    .foregroundStyle(accent)
+                                    .tracking(2.2).foregroundStyle(accent)
                             }
                             Text(errMsg)
                                 .font(.system(size: 12.5, weight: .medium))
@@ -707,19 +719,14 @@ struct ActivationNoteSheet: View {
                         }
                         .padding(16)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(
-                            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                .fill(accent.opacity(0.08))
-                        )
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                .strokeBorder(accent.opacity(0.55), lineWidth: 1.3)
-                        )
+                        .background(RoundedRectangle(cornerRadius: 14, style: .continuous)
+                            .fill(accent.opacity(0.08)))
+                        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous)
+                            .strokeBorder(accent.opacity(0.55), lineWidth: 1.3))
                         .shadow(color: accent.opacity(0.3), radius: 16)
                         .padding(.horizontal, 24)
                     }
 
-                    // ─── NOTE + COPY BUTTON ───
                     if hasNote {
                         VStack(alignment: .leading, spacing: 14) {
                             HStack(spacing: 8) {
@@ -728,30 +735,24 @@ struct ActivationNoteSheet: View {
                                     .foregroundStyle(.white)
                                 Text("GHI CHÚ")
                                     .font(.system(size: 10, weight: .heavy))
-                                    .tracking(2.2)
-                                    .foregroundStyle(.white)
+                                    .tracking(2.2).foregroundStyle(.white)
                                 Spacer()
                             }
-
                             Text(info.note)
                                 .font(.system(size: 13.5, weight: .medium))
                                 .foregroundStyle(.white.opacity(0.95))
-                                .multilineTextAlignment(.leading)
                                 .fixedSize(horizontal: false, vertical: true)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                                 .padding(14)
-                                .background(
-                                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                        .fill(Color.white.opacity(0.05))
-                                )
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                        .strokeBorder(.white.opacity(0.25),
-                                                      style: StrokeStyle(lineWidth: 1,
-                                                                         dash: [4, 4]))
-                                )
+                                .background(RoundedRectangle(cornerRadius: 12,
+                                                             style: .continuous)
+                                    .fill(Color.white.opacity(0.05)))
+                                .overlay(RoundedRectangle(cornerRadius: 12,
+                                                             style: .continuous)
+                                    .strokeBorder(.white.opacity(0.25),
+                                                  style: StrokeStyle(lineWidth: 1,
+                                                                     dash: [4, 4])))
 
-                            // ⚡ NÚT COPY GHI CHÚ
                             Button {
                                 SoundFX.tap()
                                 UIPasteboard.general.string = info.note
@@ -779,55 +780,42 @@ struct ActivationNoteSheet: View {
                                 .foregroundStyle(copied ? .black : .white)
                                 .frame(maxWidth: .infinity)
                                 .padding(.vertical, 13)
-                                .background(
-                                    RoundedRectangle(cornerRadius: 12,
-                                                     style: .continuous)
-                                        .fill(copied ? Color.white : Color.white.opacity(0.06))
-                                )
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 12,
-                                                     style: .continuous)
-                                        .strokeBorder(.white, lineWidth: 1.4)
-                                )
+                                .background(RoundedRectangle(cornerRadius: 12,
+                                                             style: .continuous)
+                                    .fill(copied ? Color.white
+                                          : Color.white.opacity(0.06)))
+                                .overlay(RoundedRectangle(cornerRadius: 12,
+                                                             style: .continuous)
+                                    .strokeBorder(.white, lineWidth: 1.4))
                                 .shadow(color: copied ? .white.opacity(0.65) : .clear,
                                         radius: 14)
                             }
                             .buttonStyle(.plain)
                         }
                         .padding(18)
-                        .background(
-                            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                                .fill(Theme.surface)
-                        )
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                                .strokeBorder(
-                                    LinearGradient(
-                                        colors: [.white, .white.opacity(0.35), .white],
-                                        startPoint: .leading, endPoint: .trailing
-                                    ),
-                                    lineWidth: 1.3
-                                )
-                        )
+                        .background(RoundedRectangle(cornerRadius: 16, style: .continuous)
+                            .fill(Theme.surface))
+                        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous)
+                            .strokeBorder(LinearGradient(
+                                colors: [.white, .white.opacity(0.35), .white],
+                                startPoint: .leading, endPoint: .trailing),
+                                lineWidth: 1.3))
                         .shadow(color: .white.opacity(0.25), radius: 18)
                         .padding(.horizontal, 22)
                     }
 
-                    // ─── DISMISS ───
                     Button {
                         SoundFX.tap()
                         onDismiss()
                     } label: {
                         Text("ĐÃ HIỂU")
-                            .font(.system(size: 14, weight: .heavy))
-                            .tracking(3)
+                            .font(.system(size: 14, weight: .heavy)).tracking(3)
                             .foregroundStyle(.black)
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 16)
-                            .background(
-                                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                    .fill(.white)
-                            )
+                            .background(RoundedRectangle(cornerRadius: 14,
+                                                         style: .continuous)
+                                .fill(.white))
                             .shadow(color: .white.opacity(0.7), radius: 18)
                             .padding(.horizontal, 40)
                     }
@@ -892,10 +880,8 @@ struct PatchProjectsView: View {
             }
             .sheet(item: $selectedGame) { game in
                 PatchGameDetailView(
-                    game: game,
-                    store: store,
-                    actionAlert: $actionAlert,
-                    language: language
+                    game: game, store: store,
+                    actionAlert: $actionAlert, language: language
                 )
             }
             .alert(item: $actionAlert) { alert in
@@ -908,7 +894,6 @@ struct PatchProjectsView: View {
         }
     }
 
-    // ─── HEADER ───
     private var header: some View {
         VStack(spacing: 0) {
             HStack {
@@ -916,11 +901,9 @@ struct PatchProjectsView: View {
                 syncPill
             }
             .padding(.horizontal, 20)
-            .padding(.top, 10)
-            .padding(.bottom, 4)
+            .padding(.top, 10).padding(.bottom, 4)
 
-            AvatarView()
-                .padding(.top, 2)
+            AvatarView().padding(.top, 2)
 
             Text("ZENITH SOLITUDE")
                 .font(.system(size: 21, weight: .black, design: .serif))
@@ -930,19 +913,14 @@ struct PatchProjectsView: View {
                 .padding(.top, 14)
 
             HStack(spacing: 10) {
-                Rectangle()
-                    .fill(.white.opacity(0.35))
-                    .frame(width: 26, height: 1)
+                Rectangle().fill(.white.opacity(0.35)).frame(width: 26, height: 1)
                 Text("HEADLOCK ZENIS")
                     .font(.system(size: 9.5, weight: .heavy))
                     .tracking(4.2)
                     .foregroundStyle(.white.opacity(0.55))
-                Rectangle()
-                    .fill(.white.opacity(0.35))
-                    .frame(width: 26, height: 1)
+                Rectangle().fill(.white.opacity(0.35)).frame(width: 26, height: 1)
             }
-            .padding(.top, 8)
-            .padding(.bottom, 22)
+            .padding(.top, 8).padding(.bottom, 22)
         }
     }
 
@@ -955,24 +933,20 @@ struct PatchProjectsView: View {
                 Circle()
                     .fill(isSyncing ? Color.yellow : Color.green)
                     .frame(width: 7, height: 7)
-                    .shadow(color: (isSyncing ? Color.yellow : Color.green).opacity(0.9),
-                            radius: 6)
+                    .shadow(color: (isSyncing ? Color.yellow : Color.green)
+                        .opacity(0.9), radius: 6)
             }
             Text(isSyncing ? "ĐANG CẬP NHẬT" : "ĐÃ KẾT NỐI")
                 .font(.system(size: 9, weight: .heavy))
                 .tracking(1.6)
                 .foregroundStyle(.white.opacity(0.75))
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 7)
-        .background(
-            Capsule().fill(Color.white.opacity(0.05))
-        )
+        .padding(.horizontal, 12).padding(.vertical, 7)
+        .background(Capsule().fill(Color.white.opacity(0.05)))
         .overlay(Capsule().strokeBorder(.white.opacity(0.28), lineWidth: 1))
         .animation(.easeInOut(duration: 0.25), value: isSyncing)
     }
 
-    // ─── CONTENT ───
     private var content: some View {
         ScrollView(showsIndicators: false) {
             VStack(spacing: 14) {
@@ -1018,8 +992,7 @@ struct PatchProjectsView: View {
                     Spacer()
                     ChevronCircle()
                 }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 15)
+                .padding(.horizontal, 16).padding(.vertical, 15)
             }
         }
         .buttonStyle(.plain)
@@ -1049,11 +1022,11 @@ struct PatchProjectsView: View {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// MARK: - SYNC ENGINE
+// MARK: - SYNC ENGINE V3 — Mapping local↔UID
 // ═══════════════════════════════════════════════════════════════
 final class SyncEngine {
     static let shared = SyncEngine()
-    private let metaLock = NSLock()
+    private let lock = NSLock()
     private var isRunning = false
     private init() {}
 
@@ -1064,108 +1037,95 @@ final class SyncEngine {
 
         guard let remotes = await fetchRemotes() else { return }
 
-        var remoteByKey: [String: RemoteFileLite] = [:]
-        remoteByKey.reserveCapacity(remotes.count)
-        for r in remotes { remoteByKey[r.compositeKey] = r }
+        // 1) Build lookup
+        var remoteByUID: [String: RemoteFileLite] = [:]
+        remoteByUID.reserveCapacity(remotes.count)
+        for r in remotes { remoteByUID[r.uid] = r }
 
+        // 2) Đồng bộ meta cũ (đã lưu theo UID)
         var metaDict = PatchMetaStore.all()
-        for (localName, var meta) in metaDict {
-            let key = meta.remoteKey.isEmpty
-                ? "\(meta.gameType)/\(meta.folder)/\(meta.remoteName)"
-                : meta.remoteKey
-            if let remote = remoteByKey[key] {
-                meta.orphaned  = false
+        for (uid, var meta) in metaDict {
+            if let remote = remoteByUID[uid] {
+                meta.orphaned = false
                 meta.remoteKey = remote.compositeKey
-                meta.uid       = remote.uid
-                meta.gameType  = remote.gameType
-                meta.folder    = remote.folder
+                meta.remoteName = remote.filename
+                meta.gameType = remote.gameType
+                meta.folder = remote.folder
                 if !meta.tagOverride  { meta.tag         = remote.tag }
                 if !meta.nameOverride { meta.displayName = remote.displayName }
                 if !meta.noteOverride { meta.note        = remote.note }
             } else {
                 meta.orphaned = true
             }
-            metaDict[localName] = meta
+            metaDict[uid] = meta
         }
         PatchMetaStore.save(metaDict)
 
-        var existingUIDs = Set<String>()
-        for meta in metaDict.values where !meta.orphaned {
-            existingUIDs.insert(meta.uid)
-        }
-        let missing = remotes.filter { !existingUIDs.contains($0.uid) }
-
+        // 3) Reload file cũ NGAY
         await MainActor.run { store.reload() }
+
+        // 4) Tìm remote cần tải
+        let missing = remotes.filter { metaDict[$0.uid] == nil }
+
         guard !missing.isEmpty else { return }
 
-        await MainActor.run {
-            for r in missing {
-                if let url = URL(string: r.url) {
-                    store.importPackage(from: .remote(url))
-                }
-            }
+        // 5) Import TUẦN TỰ, mapping local↔uid ngay khi file xuất hiện
+        for remote in missing {
+            await importOne(remote: remote, store: store)
         }
 
-        var pendingByUID: [String: RemoteFileLite] = [:]
-        for r in missing { pendingByUID[r.uid] = r }
+        // 6) Reload cuối
+        await MainActor.run { store.reload() }
+    }
 
-        var seen = Set(metaDict.keys)
+    private func importOne(remote: RemoteFileLite,
+                           store: PatchProjectStore) async {
+        guard let url = URL(string: remote.url) else { return }
 
-        for _ in 0..<300 {
-            try? await Task.sleep(nanoseconds: 200_000_000)
+        let before = await MainActor.run {
+            Set(store.items.map { $0.packageURL.lastPathComponent })
+        }
+
+        await MainActor.run {
+            store.importPackage(from: .remote(url))
+        }
+
+        // Poll tối đa 90s
+        for _ in 0..<900 {
+            try? await Task.sleep(nanoseconds: 100_000_000)
             await MainActor.run { store.reload() }
 
             let after = await MainActor.run {
                 Set(store.items.map { $0.packageURL.lastPathComponent })
             }
-            let newFiles = after.subtracting(seen)
-            guard !newFiles.isEmpty else {
-                if pendingByUID.isEmpty { break }
-                continue
-            }
+            let newFiles = after.subtracting(before)
 
-            for newFile in newFiles {
-                seen.insert(newFile)
+            guard let newFile = newFiles.first else { continue }
 
-                if let remote = pendingByUID.values.first(where: { $0.filename == newFile }) {
-                    assign(remote: remote, localName: newFile)
-                    pendingByUID.removeValue(forKey: remote.uid)
-                    continue
-                }
-                if let remote = pendingByUID.values.first(where: {
-                    newFile.hasSuffix($0.filename) || $0.filename.hasSuffix(newFile)
-                }) {
-                    assign(remote: remote, localName: newFile)
-                    pendingByUID.removeValue(forKey: remote.uid)
-                    continue
-                }
-                if pendingByUID.count == 1 && newFiles.count == 1,
-                   let (_, remote) = pendingByUID.first {
-                    assign(remote: remote, localName: newFile)
-                    pendingByUID.removeAll()
-                }
-            }
-            if pendingByUID.isEmpty { break }
+            // ⭐ Ghi mapping localName → uid
+            lock.lock()
+            LocalMapStore.link(local: newFile, uid: remote.uid)
+
+            // Lưu meta với key = uid
+            let meta = PatchMeta(
+                uid:         remote.uid,
+                remoteKey:   remote.compositeKey,
+                remoteName:  remote.filename,
+                gameType:    remote.gameType,
+                folder:      remote.folder,
+                tag:         remote.tag,
+                displayName: remote.displayName,
+                note:        remote.note,
+                orphaned:    false
+            )
+            PatchMetaStore.set(meta, uid: remote.uid)
+            lock.unlock()
+
+            print("✅ \(remote.compositeKey) → local:\(newFile)")
+            return
         }
 
-        await MainActor.run { store.reload() }
-    }
-
-    private func assign(remote: RemoteFileLite, localName: String) {
-        metaLock.lock()
-        defer { metaLock.unlock() }
-        let meta = PatchMeta(
-            uid:         remote.uid,
-            remoteKey:   remote.compositeKey,
-            remoteName:  remote.filename,
-            gameType:    remote.gameType,
-            folder:      remote.folder,
-            tag:         remote.tag,
-            displayName: remote.displayName,
-            note:        remote.note,
-            orphaned:    false
-        )
-        PatchMetaStore.set(meta, forLocal: localName)
+        print("⚠️ Timeout: \(remote.compositeKey)")
     }
 
     private func fetchRemotes() async -> [RemoteFileLite]? {
@@ -1207,7 +1167,7 @@ final class SyncEngine {
                     )
                 }
             } catch {
-                print("Fetch attempt \(attempt) failed: \(error.localizedDescription)")
+                print("Fetch \(attempt) failed: \(error.localizedDescription)")
                 if attempt == 0 { try? await Task.sleep(nanoseconds: 500_000_000) }
             }
         }
@@ -1245,7 +1205,7 @@ struct PatchGameDetailView: View {
                 NeonBackgroundView()
                 VStack(spacing: 0) {
                     topBar
-                    if !folders.isEmpty { folderTabs }
+                    folderGrid
                     listContent
                 }
             }
@@ -1259,13 +1219,21 @@ struct PatchGameDetailView: View {
                     await SyncEngine.shared.run(store: store)
                     await MainActor.run {
                         store.reload()
+                        refreshTick &+= 1
                         syncFolders()
                     }
                 }
             }
             .onChange(of: scenePhase) { phase in
                 if phase == .active {
-                    Task { await SyncEngine.shared.run(store: store) }
+                    Task {
+                        await SyncEngine.shared.run(store: store)
+                        await MainActor.run {
+                            store.reload()
+                            refreshTick &+= 1
+                            syncFolders()
+                        }
+                    }
                 }
             }
             .onReceive(refreshTimer) { _ in
@@ -1295,22 +1263,20 @@ struct PatchGameDetailView: View {
                 Button("FREE 🛡") { commitTag("FREE") }
                 Button("Huỷ", role: .cancel) { tagPickerItem = nil }
             }
-            // ⚡ Chỉ hiện sheet khi có activationInfo (được set trong catch)
             .fullScreenCover(item: $activationInfo) { info in
                 ActivationNoteSheet(info: info) { activationInfo = nil }
             }
         }
     }
 
-    // ─── CUSTOM TOP BAR ───
+    // Top bar gọn
     private var topBar: some View {
         HStack(spacing: 14) {
             Button {
                 SoundFX.tap(); dismiss()
             } label: {
                 ZStack {
-                    Circle()
-                        .fill(Color.white.opacity(0.06))
+                    Circle().fill(Color.white.opacity(0.06))
                         .frame(width: 40, height: 40)
                         .overlay(Circle().strokeBorder(.white, lineWidth: 1.4))
                         .shadow(color: .white.opacity(0.25), radius: 8)
@@ -1323,10 +1289,10 @@ struct PatchGameDetailView: View {
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(game.title)
-                    .font(.system(size: 16, weight: .heavy))
+                    .font(.system(size: 15, weight: .heavy))
                     .foregroundStyle(.white)
                 Text("\(displayedItems.count) PATCH · \(folders.count) FOLDER")
-                    .font(.system(size: 9.5, weight: .heavy))
+                    .font(.system(size: 9, weight: .heavy))
                     .tracking(1.4)
                     .foregroundStyle(.white.opacity(0.5))
             }
@@ -1334,8 +1300,42 @@ struct PatchGameDetailView: View {
             Spacer()
         }
         .padding(.horizontal, 18)
-        .padding(.top, 14)
-        .padding(.bottom, 14)
+        .padding(.top, 14).padding(.bottom, 12)
+    }
+
+    // ⭐ Folder GRID 2 cột — layout khác biệt
+    @ViewBuilder
+    private var folderGrid: some View {
+        if folders.isEmpty {
+            EmptyView()
+        } else {
+            ScrollView(.vertical, showsIndicators: false) {
+                LazyVGrid(
+                    columns: [
+                        GridItem(.flexible(), spacing: 9),
+                        GridItem(.flexible(), spacing: 9)
+                    ],
+                    spacing: 9
+                ) {
+                    ForEach(folders, id: \.self) { f in
+                        FolderChip(
+                            title: f,
+                            count: gameItems.filter { folderName(for: $0) == f }.count,
+                            isActive: selectedFolder == f
+                        ) {
+                            SoundFX.tap()
+                            withAnimation(.spring(response: 0.3,
+                                                 dampingFraction: 0.75)) {
+                                selectedFolder = f
+                            }
+                        }
+                    }
+                }
+                .padding(.horizontal, 18)
+            }
+            .frame(maxHeight: 180)
+            .padding(.bottom, 14)
+        }
     }
 
     private func syncFolders() {
@@ -1349,11 +1349,13 @@ struct PatchGameDetailView: View {
         _ = refreshTick
         return store.items.filter { item in
             let name = item.packageURL.lastPathComponent
-            let meta = PatchMetaStore.get(forLocal: name)
+            let meta = PatchMetaStore.lookup(localName: name)
+
             if let m = meta, !m.gameType.isEmpty {
                 if m.orphaned { return false }
                 return m.gameType == game.prefix
             }
+
             let isMax = name.hasPrefix("ffmax_")
             let isNormal = name.hasPrefix("ffnormal_")
             let isPlain = !isMax && !isNormal
@@ -1386,24 +1388,6 @@ struct PatchGameDetailView: View {
         Binding(get: { noteItem != nil }, set: { if !$0 { noteItem = nil } })
     }
 
-    private var folderTabs: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 9) {
-                ForEach(folders, id: \.self) { f in
-                    FolderTab(title: f, isActive: selectedFolder == f) {
-                        SoundFX.tap()
-                        withAnimation(.spring(response: 0.32, dampingFraction: 0.75)) {
-                            selectedFolder = f
-                        }
-                    }
-                }
-            }
-            .padding(.horizontal, 18)
-            .padding(.vertical, 4)
-        }
-        .padding(.bottom, 14)
-    }
-
     private var listContent: some View {
         ScrollView(showsIndicators: false) {
             if displayedItems.isEmpty {
@@ -1417,8 +1401,7 @@ struct PatchGameDetailView: View {
                     }
                 }
                 .padding(.horizontal, 16)
-                .padding(.top, 4)
-                .padding(.bottom, 40)
+                .padding(.top, 4).padding(.bottom, 40)
             }
         }
     }
@@ -1440,7 +1423,8 @@ struct PatchGameDetailView: View {
             },
             onTapTag:  { SoundFX.tap(); tagPickerItem = item },
             onRename:  { SoundFX.tap(); renameItem = item; renameText = name },
-            onEditNote:{ SoundFX.tap(); noteItem = item; noteText = currentNote(for: item) }
+            onEditNote:{ SoundFX.tap(); noteItem = item
+                noteText = currentNote(for: item) }
         )
     }
 
@@ -1448,7 +1432,7 @@ struct PatchGameDetailView: View {
         item.packageURL.lastPathComponent
     }
     private func meta(for item: PatchLibraryItem) -> PatchMeta? {
-        PatchMetaStore.get(forLocal: localKey(for: item))
+        PatchMetaStore.lookup(localName: localKey(for: item))
     }
     private func displayName(for item: PatchLibraryItem) -> String {
         if let m = meta(for: item), !m.displayName.isEmpty { return m.displayName }
@@ -1468,59 +1452,70 @@ struct PatchGameDetailView: View {
         meta(for: item)?.note ?? ""
     }
     private func folderName(for item: PatchLibraryItem) -> String {
+        // 1) Meta folder — ưu tiên tuyệt đối
         if let m = meta(for: item), !m.folder.isEmpty { return m.folder }
+
+        // 2) Parse filename ZENITH_xxx_
         let fname = item.packageURL.lastPathComponent
-        if let range = fname.range(of: #"^ZENITH_([a-zA-Z0-9]+)_"#, options: .regularExpression) {
+        if let range = fname.range(of: #"^ZENITH_([a-zA-Z0-9]+)_"#,
+                                    options: .regularExpression) {
             let matched = String(fname[range])
                 .replacingOccurrences(of: "ZENITH_", with: "")
                 .trimmingCharacters(in: CharacterSet(charactersIn: "_"))
             if !matched.isEmpty { return matched.uppercased() }
         }
+
+        // 3) Parse path components
         let comps = item.packageURL.pathComponents.filter { $0 != "/" }
         if let idx = comps.firstIndex(where: { $0 == "ffmax" || $0 == "ffnormal" }),
            idx + 2 < comps.count {
             return comps[idx + 1]
         }
-        return "Chung"
+
+        return "CHƯA PHÂN LOẠI"
     }
 
     private func commitRename() {
         guard let item = renameItem else { return }
         let t = renameText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !t.isEmpty else { renameItem = nil; return }
-        let key = localKey(for: item)
-        if var m = PatchMetaStore.get(forLocal: key) {
-            m.displayName = t; m.nameOverride = true
-            PatchMetaStore.set(m, forLocal: key)
+        let localName = localKey(for: item)
+        guard let uid = LocalMapStore.uid(forLocal: localName),
+              var m = PatchMetaStore.get(uid: uid) else {
+            renameItem = nil; return
         }
+        m.displayName = t; m.nameOverride = true
+        PatchMetaStore.set(m, uid: uid)
         store.reload()
         renameItem = nil
     }
     private func commitTag(_ tag: String) {
         guard let item = tagPickerItem else { return }
-        let key = localKey(for: item)
-        if var m = PatchMetaStore.get(forLocal: key) {
-            m.tag = tag; m.tagOverride = true
-            PatchMetaStore.set(m, forLocal: key)
+        let localName = localKey(for: item)
+        guard let uid = LocalMapStore.uid(forLocal: localName),
+              var m = PatchMetaStore.get(uid: uid) else {
+            tagPickerItem = nil; return
         }
+        m.tag = tag; m.tagOverride = true
+        PatchMetaStore.set(m, uid: uid)
         store.reload()
         tagPickerItem = nil
     }
     private func commitNote() {
         guard let item = noteItem else { return }
         let t = noteText.trimmingCharacters(in: .whitespacesAndNewlines)
-        let key = localKey(for: item)
-        if var m = PatchMetaStore.get(forLocal: key) {
-            m.note = t; m.noteOverride = true
-            PatchMetaStore.set(m, forLocal: key)
+        let localName = localKey(for: item)
+        guard let uid = LocalMapStore.uid(forLocal: localName),
+              var m = PatchMetaStore.get(uid: uid) else {
+            noteItem = nil; return
         }
+        m.note = t; m.noteOverride = true
+        PatchMetaStore.set(m, uid: uid)
         store.reload()
         noteItem = nil
     }
 
-    // ═══════════════════════════════════════════════════════════
-    // 🔑 HÀM TOGGLE PATCH — BỎ ALERT THÀNH CÔNG
-    // ═══════════════════════════════════════════════════════════
+    // ⭐ Toggle — bỏ HOÀN TOÀN alert thành công
     private func togglePatch(item: PatchLibraryItem, activate: Bool) {
         workingFileID = item.id.uuidString
         let nameSnap = displayName(for: item)
@@ -1552,18 +1547,17 @@ struct PatchGameDetailView: View {
 
             do {
                 guard let p = item.project else {
+                    print("❌ project nil: \(item.packageURL)")
                     await MainActor.run { workingFileID = nil }
                     return
                 }
                 _ = try DevicePatchService.apply(project: p)
-                // ⚡ BẬT THÀNH CÔNG: KHÔNG HIỆN GÌ CẢ
-                // Chỉ reload + nhả workingFileID, im lặng
+                // ⚡ THÀNH CÔNG: IM LẶNG HOÀN TOÀN
                 await MainActor.run {
                     store.reload()
                     workingFileID = nil
                     SoundFX.success()
                 }
-                // ❌ Đã XÓA HOÀN TOÀN block tạo activationInfo khi success
             } catch {
                 await MainActor.run {
                     store.reload()
@@ -1636,7 +1630,8 @@ private struct PatchStorePresentationModifier: ViewModifier {
     @ObservedObject var store: PatchProjectStore
     func body(content: Content) -> some View {
         content
-            .sheet(item: $store.passwordRequest, onDismiss: store.cancelUnlock) { request in
+            .sheet(item: $store.passwordRequest,
+                   onDismiss: store.cancelUnlock) { request in
                 PatchUnlockView(store: store, request: request)
             }
     }
@@ -1646,4 +1641,3 @@ extension View {
     func patchStorePresentation(_ store: PatchProjectStore) -> some View {
         modifier(PatchStorePresentationModifier(store: store))
     }
-}
