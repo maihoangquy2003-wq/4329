@@ -219,7 +219,7 @@ struct ContentView: View {
         let group = DispatchGroup()
         
         group.enter()
-        let maintURL = URL(string: "https://solitudepremium.click/ipa/proxy/apibaotri.php")!
+        let maintURL = URL(string: "https://solitudepremium.click/ipa/ipa/apibaotri.php")!
         URLSession.shared.dataTask(with: maintURL) { data, _, _ in
             defer { group.leave() }
             if let data = data, let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
@@ -236,7 +236,7 @@ struct ContentView: View {
         
         if isUnlocked && !activeKey.isEmpty {
             group.enter()
-            let endpoint = URL(string: "https://solitudepremium.click/ipa/proxy/api.php")!
+            let endpoint = URL(string: "https://solitudepremium.click/ipa/ipa/api.php")!
             var request = URLRequest(url: endpoint)
             request.httpMethod = "POST"
             request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
@@ -375,7 +375,7 @@ struct FloatingHeadlockOverlayView: View {
                         .onAppear { withAnimation(.linear(duration: 3).repeatForever(autoreverses: false)) { rotationAngle = 360 } }
                         .shadow(color: .white, radius: 8)
                     
-                    CachedImageView(url: "https://solitudepremium.click/ipa/proxy/li.jpg", fallbackIcon: "person.circle.fill")
+                    CachedImageView(url: "https://solitudepremium.click/ipa/ipa/li.jpg", fallbackIcon: "person.circle.fill")
                         .frame(width: 52, height: 52)
                         .clipShape(Circle())
                         .shadow(color: .white.opacity(0.8), radius: 6)
@@ -441,7 +441,7 @@ struct CustomZenithHomeView: View {
                                     .onAppear { withAnimation(.linear(duration: 3).repeatForever(autoreverses: false)) { avatarRotationAngle = 360 } }
                                     .shadow(color: .white, radius: 10)
                                 
-                                CachedImageView(url: "https://solitudepremium.click/ipa/proxy/li.jpg", fallbackIcon: "person.circle.fill")
+                                CachedImageView(url: "https://solitudepremium.click/ipa/ipa/li.jpg", fallbackIcon: "person.circle.fill")
                                     .frame(width: 90, height: 90)
                                     .clipShape(Circle())
                             }
@@ -464,7 +464,7 @@ struct CustomZenithHomeView: View {
                             AppListItemView(
                                 title: "Free Fire",
                                 subtitle: "Trạng thái: Hoạt động ổn định",
-                                imageUrl: "https://solitudepremium.click/ipa/proxy/free.jpg",
+                                imageUrl: "https://solitudepremium.click/ipa/ipa/free.jpg",
                                 onOpen: onOpenApp
                             )
                             
@@ -474,7 +474,7 @@ struct CustomZenithHomeView: View {
                                 icon: "network.badge.shield.half.filled",
                                 title: "Tải DNS ANTIBAN",
                                 subtitle: "Cài đặt cấu hình vượt tường lửa",
-                                url: "https://solitudepremium.click/ipa/proxy/dns.mobileconfig"
+                                url: "https://solitudepremium.click/ipa/ipa/dns.mobileconfig"
                             )
                             
                             LinkBoxView(
@@ -651,7 +651,7 @@ private struct KeyLockView: View {
                     .onAppear { withAnimation(.linear(duration: 3).repeatForever(autoreverses: false)) { rotationAngle = 360 } }
                     .shadow(color: .white, radius: 10)
                 
-                CachedImageView(url: "https://solitudepremium.click/ipa/proxy/li.jpg", fallbackIcon: "person.circle.fill")
+                CachedImageView(url: "https://solitudepremium.click/ipa/ipa/li.jpg", fallbackIcon: "person.circle.fill")
                     .frame(width: 94, height: 94)
                     .clipShape(Circle())
                     .overlay(Circle().stroke(Color.white, lineWidth: 2).shadow(color: .white, radius: 5))
@@ -818,7 +818,7 @@ private struct KeyLockView: View {
     private func findKeyByDeviceID() {
         isFinding = true; inlineErrorMsg = nil; isSuccessMsg = false
         
-        let endpoint = URL(string: "https://solitudepremium.click/ipa/proxy/api.php")!
+        let endpoint = URL(string: "https://solitudepremium.click/ipa/ipa/api.php")!
         var request = URLRequest(url: endpoint)
         request.httpMethod = "POST"
         request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
@@ -849,7 +849,7 @@ private struct KeyLockView: View {
         guard !trimmedKey.isEmpty else { triggerError(msg: "⚠️ Vui lòng nhập mã Key!"); return }
         isLoading = true; inlineErrorMsg = nil; isSuccessMsg = false
 
-        let endpoint = URL(string: "https://solitudepremium.click/ipa/proxy/api.php")!
+        let endpoint = URL(string: "https://solitudepremium.click/ipa/ipa/api.php")!
         var request = URLRequest(url: endpoint)
         request.httpMethod = "POST"
         request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
