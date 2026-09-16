@@ -27,11 +27,12 @@ enum Theme {
     static let surface   = Color(red: 0.043, green: 0.043, blue: 0.043)
     static let surfaceHi = Color(red: 0.078, green: 0.078, blue: 0.078)
     static let ink       = Color.white
-    static let inkSoft   = Color.white.opacity(0.7)
+    static let inkSoft   = Color.white.opacity(0.72)
     static let inkMuted  = Color.white.opacity(0.4)
     static let line      = Color.white
     static let lineHi    = Color.white.opacity(0.9)
     static let lineMid   = Color.white.opacity(0.35)
+    static let lineFaint = Color.white.opacity(0.14)
     static let gold      = Color(red: 0.850, green: 0.700, blue: 0.400)
     static let danger    = Color(red: 1.0, green: 0.32, blue: 0.32)
 }
@@ -47,6 +48,7 @@ struct NeonBackgroundView: View {
             AuroraView()
             VignetteView()
             CosmicFieldView(paused: scenePhase != .active)
+            GridOverlay()
         }
         .ignoresSafeArea()
     }
@@ -88,6 +90,41 @@ struct VignetteView: View {
             colors: [.clear, .clear, Color.black.opacity(0.72)],
             center: .center, startRadius: 0, endRadius: 520
         )
+        .allowsHitTesting(false)
+    }
+}
+
+struct GridOverlay: View {
+    var body: some View {
+        GeometryReader { geo in
+            Canvas { ctx, size in
+                let step: CGFloat = 56
+                let lineColor = Color.white.opacity(0.025)
+                var x: CGFloat = 0
+                while x <= size.width {
+                    var path = Path()
+                    path.move(to: CGPoint(x: x, y: 0))
+                    path.addLine(to: CGPoint(x: x, y: size.height))
+                    ctx.stroke(path, with: .color(lineColor), lineWidth: 0.6)
+                    x += step
+                }
+                var y: CGFloat = 0
+                while y <= size.height {
+                    var path = Path()
+                    path.move(to: CGPoint(x: 0, y: y))
+                    path.addLine(to: CGPoint(x: size.width, y: y))
+                    ctx.stroke(path, with: .color(lineColor), lineWidth: 0.6)
+                    y += step
+                }
+            }
+            .mask(
+                RadialGradient(
+                    colors: [.black, .black.opacity(0.3), .clear],
+                    center: .center, startRadius: 0,
+                    endRadius: max(geo.size.width, geo.size.height) * 0.75
+                )
+            )
+        }
         .allowsHitTesting(false)
     }
 }
@@ -261,33 +298,26 @@ enum PatchMetaStore {
         else { return [:] }
         return dict
     }
-
     static func save(_ dict: [String: PatchMeta]) {
         if let data = try? JSONEncoder().encode(dict) {
             UserDefaults.standard.set(data, forKey: key)
         }
     }
-
     static func set(_ meta: PatchMeta, uid: String) {
         var d = all()
         d[uid] = meta
         save(d)
     }
-
-    static func get(uid: String) -> PatchMeta? {
-        all()[uid]
-    }
+    static func get(uid: String) -> PatchMeta? { all()[uid] }
 
     static func lookup(localName: String) -> PatchMeta? {
-        if let uid = LocalMapStore.uid(forLocal: localName),
-           let m = all()[uid] {
+        let dict = all()
+        if let uid = LocalMapStore.uid(forLocal: localName), let m = dict[uid] {
             return m
         }
-        for m in all().values where m.remoteName == localName {
-            return m
-        }
+        for m in dict.values where m.remoteName == localName { return m }
         let base = (localName as NSString).deletingPathExtension.lowercased()
-        for m in all().values {
+        for m in dict.values {
             let rbase = (m.remoteName as NSString).deletingPathExtension.lowercased()
             if !rbase.isEmpty && rbase == base { return m }
         }
@@ -297,165 +327,54 @@ enum PatchMetaStore {
 
 enum LocalMapStore {
     private static let key = "patch_localmap_v21"
-
     static func all() -> [String: String] {
         (UserDefaults.standard.dictionary(forKey: key) as? [String: String]) ?? [:]
     }
-
     static func save(_ d: [String: String]) {
         UserDefaults.standard.set(d, forKey: key)
     }
-
     static func link(local: String, uid: String) {
         var d = all()
         d[local] = uid
         save(d)
     }
-
-    static func uid(forLocal local: String) -> String? {
-        all()[local]
-    }
+    static func uid(forLocal local: String) -> String? { all()[local] }
 }
 
 // ═══════════════════════════════════════════════════════════════
-// MARK: - SMALL COMPONENTS
+// MARK: - SMALL PIECES
 // ═══════════════════════════════════════════════════════════════
-private struct NeonCard<Content: View>: View {
-    @ViewBuilder let content: Content
-    var body: some View {
-        content
-            .background(
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .fill(Theme.surface)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .strokeBorder(
-                        LinearGradient(
-                            colors: [.white, .white.opacity(0.4), .white],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        ),
-                        lineWidth: 1.4
-                    )
-            )
-            .shadow(color: .white.opacity(0.12), radius: 22)
-            .shadow(color: .white.opacity(0.05), radius: 8)
-    }
-}
-
-private struct FFLogoView: View {
-    var body: some View {
-        AsyncImage(url: URL(string: "https://solitudepremium.click/ipa/ipa/free.jpg")) { phase in
-            switch phase {
-            case .empty:
-                ZStack {
-                    RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        .fill(Theme.surfaceHi)
-                    ProgressView().tint(.white)
-                }
-            case .success(let img):
-                img.resizable().scaledToFill()
-                    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-            case .failure:
-                ZStack {
-                    RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        .fill(Theme.surfaceHi)
-                    Image(systemName: "flame.fill")
-                        .font(.system(size: 22, weight: .bold))
-                        .foregroundStyle(.white)
-                }
-            @unknown default:
-                EmptyView()
-            }
-        }
-        .frame(width: 58, height: 58)
-        .overlay(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .strokeBorder(.white, lineWidth: 1.5)
-        )
-        .shadow(color: .white.opacity(0.35), radius: 12)
-    }
-}
-
-private struct AvatarView: View {
-    @State private var rotate = false
-    var body: some View {
-        ZStack {
-            Circle()
-                .strokeBorder(Color.white.opacity(0.3),
-                              style: StrokeStyle(lineWidth: 1, dash: [2, 5]))
-                .frame(width: 108, height: 108)
-                .rotationEffect(.degrees(rotate ? 360 : 0))
-            Circle()
-                .strokeBorder(.white, lineWidth: 2)
-                .frame(width: 92, height: 92)
-                .shadow(color: .white.opacity(0.5), radius: 12)
-            avatarImage
-                .frame(width: 78, height: 78)
-                .clipShape(Circle())
-                .overlay(Circle().strokeBorder(.white, lineWidth: 1.5))
-        }
-        .frame(width: 118, height: 118)
-        .onAppear {
-            withAnimation(.linear(duration: 22).repeatForever(autoreverses: false)) {
-                rotate = true
-            }
-        }
-    }
-
-    private var avatarImage: some View {
-        AsyncImage(url: URL(string: "https://solitudepremium.click/ipa/ipa/li.jpg")) { phase in
-            switch phase {
-            case .empty:
-                ZStack {
-                    Color.black.opacity(0.6)
-                    ProgressView().tint(.white)
-                }
-            case .success(let img):
-                img.resizable().scaledToFill()
-            case .failure:
-                ZStack {
-                    Theme.surfaceHi
-                    Image(systemName: "person.fill")
-                        .font(.system(size: 38, weight: .medium))
-                        .foregroundStyle(.white.opacity(0.5))
-                }
-            @unknown default:
-                EmptyView()
-            }
-        }
-    }
-}
-
 private struct ChevronCircle: View {
+    var size: CGFloat = 36
     var body: some View {
         ZStack {
-            Circle().fill(.white).frame(width: 36, height: 36)
+            Circle().fill(.white).frame(width: size, height: size)
             Image(systemName: "arrow.up.right")
-                .font(.system(size: 13, weight: .heavy))
+                .font(.system(size: size * 0.36, weight: .heavy))
                 .foregroundStyle(.black)
         }
-        .shadow(color: .white.opacity(0.75), radius: 14)
+        .shadow(color: .white.opacity(0.7), radius: 12)
     }
 }
 
 private struct TagPill: View {
     let tag: String
+    var compact: Bool = false
     private var isVIP: Bool { tag == "VIP" }
     var body: some View {
         HStack(spacing: 4) {
             Image(systemName: isVIP ? "crown.fill" : "shield.fill")
-                .font(.system(size: 8, weight: .heavy))
+                .font(.system(size: compact ? 7 : 8, weight: .heavy))
             Text(tag)
-                .font(.system(size: 9, weight: .heavy))
+                .font(.system(size: compact ? 8 : 9, weight: .heavy))
                 .tracking(1.0)
         }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 4)
+        .padding(.horizontal, compact ? 6 : 8)
+        .padding(.vertical, compact ? 3 : 4)
         .foregroundStyle(isVIP ? Theme.gold : .white)
         .background(
-            Capsule().fill(isVIP ? Theme.gold.opacity(0.16) : Color.white.opacity(0.06))
+            Capsule().fill(isVIP ? Theme.gold.opacity(0.16)
+                                 : Color.white.opacity(0.06))
         )
         .overlay(
             Capsule().strokeBorder(
@@ -464,28 +383,6 @@ private struct TagPill: View {
             )
         )
         .shadow(color: isVIP ? Theme.gold.opacity(0.4) : .clear, radius: 6)
-    }
-}
-
-private struct PatchIconView: View {
-    let tag: String
-    private var isVIP: Bool { tag == "VIP" }
-    var body: some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(isVIP ? Theme.gold.opacity(0.14) : Color.white.opacity(0.06))
-                .frame(width: 52, height: 52)
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .strokeBorder(
-                    isVIP ? Theme.gold : Color.white.opacity(0.5),
-                    lineWidth: 1.5
-                )
-                .frame(width: 52, height: 52)
-            Image(systemName: isVIP ? "crown.fill" : "shield.lefthalf.filled")
-                .font(.system(size: 21, weight: .bold))
-                .foregroundStyle(isVIP ? Theme.gold : .white)
-                .shadow(color: isVIP ? Theme.gold.opacity(0.7) : .clear, radius: 10)
-        }
     }
 }
 
@@ -534,8 +431,280 @@ private struct CustomToggle: View {
     }
 }
 
-// ⭐ Folder pill ngang — dạng trượt premium
-private struct FolderPill: View {
+private struct SearchBar: View {
+    @Binding var text: String
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "magnifyingglass")
+                .font(.system(size: 13, weight: .bold))
+                .foregroundStyle(.white.opacity(0.42))
+            TextField("", text: $text)
+                .placeholder(when: text.isEmpty) {
+                    Text("Tìm patch...")
+                        .foregroundStyle(.white.opacity(0.32))
+                }
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(.white)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+            if !text.isEmpty {
+                Button {
+                    withAnimation { text = "" }
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 14))
+                        .foregroundStyle(.white.opacity(0.35))
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 11)
+        .background(
+            RoundedRectangle(cornerRadius: 13, style: .continuous)
+                .fill(Color.white.opacity(0.03))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 13, style: .continuous)
+                .strokeBorder(.white.opacity(0.2), lineWidth: 1)
+        )
+    }
+}
+
+extension View {
+    func placeholder<Content: View>(
+        when shouldShow: Bool,
+        alignment: Alignment = .leading,
+        @ViewBuilder placeholder: () -> Content
+    ) -> some View {
+        ZStack(alignment: alignment) {
+            placeholder().opacity(shouldShow ? 1 : 0)
+            self
+        }
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// MARK: - HERO HEADER (bố cục mới)
+// ═══════════════════════════════════════════════════════════════
+private struct HeroHeader: View {
+    let isSyncing: Bool
+
+    var body: some View {
+        VStack(spacing: 0) {
+            // Status bar row
+            HStack {
+                Spacer()
+                statusPill
+            }
+            .padding(.horizontal, 20)
+            .padding(.top, 10)
+
+            // Logo mark
+            logoMark
+                .padding(.top, 8)
+
+            // Title stack
+            VStack(spacing: 8) {
+                Text("HEADLOCK")
+                    .font(.system(size: 24, weight: .black, design: .serif))
+                    .tracking(6)
+                    .foregroundStyle(.white)
+                    .shadow(color: .white.opacity(0.7), radius: 20)
+
+                Text("ZENIS")
+                    .font(.system(size: 12, weight: .heavy))
+                    .tracking(10)
+                    .foregroundStyle(.white.opacity(0.55))
+            }
+            .padding(.top, 14)
+
+            // Double divider
+            VStack(spacing: 3) {
+                Rectangle()
+                    .fill(.white.opacity(0.6))
+                    .frame(width: 60, height: 1.2)
+                Rectangle()
+                    .fill(.white.opacity(0.25))
+                    .frame(width: 40, height: 1)
+            }
+            .padding(.top, 12)
+            .padding(.bottom, 24)
+        }
+    }
+
+    private var logoMark: some View {
+        ZStack {
+            Circle()
+                .strokeBorder(.white.opacity(0.35), lineWidth: 1.4)
+                .frame(width: 78, height: 78)
+            Circle()
+                .strokeBorder(.white.opacity(0.18),
+                              style: StrokeStyle(lineWidth: 1, dash: [2, 4]))
+                .frame(width: 92, height: 92)
+                .rotationEffect(.degrees(45))
+            Circle()
+                .fill(.white)
+                .frame(width: 60, height: 60)
+                .shadow(color: .white.opacity(0.7), radius: 20)
+            Text("⚡")
+                .font(.system(size: 30))
+        }
+    }
+
+    private var statusPill: some View {
+        HStack(spacing: 7) {
+            ZStack {
+                Circle()
+                    .fill((isSyncing ? Color.yellow : Color.green).opacity(0.18))
+                    .frame(width: 14, height: 14)
+                Circle()
+                    .fill(isSyncing ? Color.yellow : Color.green)
+                    .frame(width: 7, height: 7)
+                    .shadow(
+                        color: (isSyncing ? Color.yellow : Color.green).opacity(0.9),
+                        radius: 6
+                    )
+            }
+            Text(isSyncing ? "ĐANG CẬP NHẬT" : "ĐÃ KẾT NỐI")
+                .font(.system(size: 9, weight: .heavy))
+                .tracking(1.6)
+                .foregroundStyle(.white.opacity(0.75))
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 7)
+        .background(Capsule().fill(Color.white.opacity(0.05)))
+        .overlay(Capsule().strokeBorder(.white.opacity(0.28), lineWidth: 1))
+        .animation(.easeInOut(duration: 0.25), value: isSyncing)
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// MARK: - GAME CARD (bố cục split mới)
+// ═══════════════════════════════════════════════════════════════
+private struct GameCard: View {
+    let title: String
+    let subtitle: String
+    let prefix: String
+    let count: Int
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(alignment: .center, spacing: 0) {
+                // Left: info
+                HStack(spacing: 14) {
+                    logoView
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(title)
+                            .font(.system(size: 17, weight: .heavy,
+                                          design: .rounded))
+                            .foregroundStyle(.white)
+                            .lineLimit(1)
+                        Text(subtitle)
+                            .font(.system(size: 9, weight: .heavy))
+                            .tracking(2.2)
+                            .foregroundStyle(.white.opacity(0.42))
+                    }
+                    Spacer(minLength: 0)
+                }
+                .padding(.leading, 16)
+                .padding(.trailing, 10)
+
+                // Right: count + chevron
+                HStack(spacing: 12) {
+                    VStack(alignment: .trailing, spacing: 2) {
+                        Text("\(count)")
+                            .font(.system(size: 26, weight: .black))
+                            .foregroundStyle(.white)
+                            .monospacedDigit()
+                        Text("PATCH")
+                            .font(.system(size: 8, weight: .heavy))
+                            .tracking(1.8)
+                            .foregroundStyle(.white.opacity(0.42))
+                    }
+                    ChevronCircle(size: 34)
+                }
+                .padding(.trailing, 16)
+            }
+            .padding(.vertical, 16)
+            .background(
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .fill(
+                        LinearGradient(
+                            colors: [
+                                Color.white.opacity(0.055),
+                                Color.white.opacity(0.015)
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .strokeBorder(
+                        LinearGradient(
+                            colors: [.white, .white.opacity(0.35), .white],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        ),
+                        lineWidth: 1.4
+                    )
+            )
+            .shadow(color: .white.opacity(0.1), radius: 20)
+            .shadow(color: .black.opacity(0.5), radius: 4, y: 2)
+        }
+        .buttonStyle(ScaleButtonStyle())
+    }
+
+    private var logoView: some View {
+        AsyncImage(url: URL(string: "https://solitudepremium.click/ipa/ipa/free.jpg")) { phase in
+            switch phase {
+            case .empty:
+                ZStack {
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .fill(Theme.surfaceHi)
+                    ProgressView().tint(.white)
+                }
+            case .success(let img):
+                img.resizable().scaledToFill()
+                    .clipShape(RoundedRectangle(cornerRadius: 14,
+                                                style: .continuous))
+            case .failure:
+                ZStack {
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .fill(Theme.surfaceHi)
+                    Image(systemName: "flame.fill")
+                        .font(.system(size: 22, weight: .bold))
+                        .foregroundStyle(.white)
+                }
+            @unknown default:
+                EmptyView()
+            }
+        }
+        .frame(width: 56, height: 56)
+        .overlay(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .strokeBorder(.white, lineWidth: 1.4)
+        )
+        .shadow(color: .white.opacity(0.35), radius: 10)
+    }
+}
+
+struct ScaleButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed ? 0.975 : 1.0)
+            .animation(.spring(response: 0.25, dampingFraction: 0.75),
+                       value: configuration.isPressed)
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// MARK: - FOLDER SEGMENTED BAR
+// ═══════════════════════════════════════════════════════════════
+private struct FolderSegment: View {
     let title: String
     let count: Int
     let isActive: Bool
@@ -543,29 +712,34 @@ private struct FolderPill: View {
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 8) {
-                Circle()
-                    .fill(isActive ? Color.black : Color.white.opacity(0.55))
-                    .frame(width: 6, height: 6)
-                Text(title)
-                    .font(.system(size: 12, weight: .heavy))
-                    .tracking(1.0)
-                    .foregroundStyle(isActive ? .black : .white)
-                Text("\(count)")
-                    .font(.system(size: 10, weight: .heavy))
-                    .foregroundStyle(isActive ? .black.opacity(0.55)
-                                    : .white.opacity(0.4))
-                    .padding(.leading, 2)
+            VStack(spacing: 3) {
+                HStack(spacing: 6) {
+                    Text(title)
+                        .font(.system(size: 12, weight: .heavy))
+                        .tracking(0.8)
+                        .lineLimit(1)
+                    Text("\(count)")
+                        .font(.system(size: 10, weight: .heavy))
+                        .foregroundStyle(
+                            isActive ? .black.opacity(0.5)
+                                     : .white.opacity(0.4)
+                        )
+                }
+                .foregroundStyle(isActive ? .black : .white)
+
+                Rectangle()
+                    .fill(isActive ? Color.black.opacity(0.5) : .clear)
+                    .frame(height: 1.2)
+                    .padding(.horizontal, 8)
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 10)
             .background(
-                Capsule()
-                    .fill(isActive ? Color.white : Color.white.opacity(0.04))
+                Capsule().fill(isActive ? Color.white : Color.white.opacity(0.04))
             )
             .overlay(
                 Capsule().strokeBorder(
-                    isActive ? Color.white : Color.white.opacity(0.28),
+                    isActive ? .white : Color.white.opacity(0.25),
                     lineWidth: 1.2
                 )
             )
@@ -575,7 +749,9 @@ private struct FolderPill: View {
     }
 }
 
-// ⭐ Patch card — layout mới, đẹp và rõ ràng
+// ═══════════════════════════════════════════════════════════════
+// MARK: - PATCH CARD (bố cục 2 hàng mới)
+// ═══════════════════════════════════════════════════════════════
 private struct PatchCard: View {
     let isApplied: Bool
     let isWorking: Bool
@@ -590,46 +766,62 @@ private struct PatchCard: View {
     private var isVIP: Bool { tag == "VIP" }
 
     var body: some View {
-        HStack(alignment: .center, spacing: 14) {
-            PatchIconView(tag: tag)
-
-            VStack(alignment: .leading, spacing: 7) {
-                HStack(spacing: 8) {
+        VStack(alignment: .leading, spacing: 10) {
+            // Row 1: icon + name + toggle
+            HStack(spacing: 12) {
+                iconBox
+                VStack(alignment: .leading, spacing: 4) {
                     Text(displayName)
                         .font(.system(size: 14.5, weight: .heavy))
                         .foregroundStyle(.white)
                         .lineLimit(1)
-                    Button(action: onTapTag) {
-                        TagPill(tag: tag)
+                    HStack(spacing: 6) {
+                        Button(action: onTapTag) {
+                            TagPill(tag: tag, compact: true)
+                        }
+                        .buttonStyle(.plain)
                     }
-                    .buttonStyle(.plain)
                 }
-                if !note.isEmpty {
-                    HStack(alignment: .top, spacing: 5) {
-                        Image(systemName: "text.alignleft")
-                            .font(.system(size: 9, weight: .bold))
-                            .foregroundStyle(.white.opacity(0.4))
-                            .padding(.top, 2)
-                        Text(note)
-                            .font(.system(size: 11, weight: .medium))
-                            .foregroundStyle(.white.opacity(0.62))
-                            .lineLimit(2)
-                            .multilineTextAlignment(.leading)
+                Spacer(minLength: 4)
+                if isWorking {
+                    ProgressView()
+                        .tint(.white)
+                        .scaleEffect(0.8)
+                        .frame(width: 52, height: 30)
+                } else {
+                    CustomToggle(isOn: isApplied, disabled: false) { nv in
+                        onToggle(nv)
                     }
                 }
             }
 
-            Spacer(minLength: 4)
-
-            if isWorking {
-                ProgressView()
-                    .tint(.white)
-                    .scaleEffect(0.8)
-                    .frame(width: 52, height: 30)
-            } else {
-                CustomToggle(isOn: isApplied, disabled: false) { nv in
-                    onToggle(nv)
+            // Row 2: note chip
+            if !note.isEmpty {
+                HStack(alignment: .top, spacing: 7) {
+                    Image(systemName: "note.text")
+                        .font(.system(size: 9, weight: .bold))
+                        .foregroundStyle(.white.opacity(0.42))
+                        .padding(.top, 3)
+                    Text(note)
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(.white.opacity(0.68))
+                        .lineLimit(3)
+                        .multilineTextAlignment(.leading)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                 }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 9)
+                .background(
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .fill(Color.white.opacity(0.035))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .strokeBorder(
+                            .white.opacity(0.14),
+                            style: StrokeStyle(lineWidth: 1, dash: [3, 3])
+                        )
+                )
             }
         }
         .padding(14)
@@ -638,8 +830,10 @@ private struct PatchCard: View {
                 .fill(
                     LinearGradient(
                         colors: isApplied
-                            ? [Color.white.opacity(0.09), Color.white.opacity(0.03)]
-                            : [Color.white.opacity(0.03), Color.white.opacity(0.012)],
+                            ? [Color.white.opacity(0.09),
+                               Color.white.opacity(0.03)]
+                            : [Color.white.opacity(0.028),
+                               Color.white.opacity(0.01)],
                         startPoint: .topLeading,
                         endPoint: .bottomTrailing
                     )
@@ -650,13 +844,15 @@ private struct PatchCard: View {
                 .strokeBorder(
                     isApplied
                         ? Color.white
-                        : Color.white.opacity(0.28),
+                        : Color.white.opacity(0.24),
                     lineWidth: isApplied ? 1.7 : 1.1
                 )
         )
-        .shadow(color: isApplied ? .white.opacity(0.35) : .black.opacity(0.35),
-                radius: isApplied ? 18 : 8,
-                y: 4)
+        .shadow(
+            color: isApplied ? .white.opacity(0.35) : .black.opacity(0.4),
+            radius: isApplied ? 18 : 8,
+            y: 4
+        )
         .contextMenu {
             Button(action: onRename) {
                 Label("Đổi tên", systemImage: "pencil")
@@ -669,26 +865,53 @@ private struct PatchCard: View {
             }
         }
     }
+
+    private var iconBox: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 13, style: .continuous)
+                .fill(isVIP ? Theme.gold.opacity(0.14)
+                            : Color.white.opacity(0.06))
+                .frame(width: 48, height: 48)
+            RoundedRectangle(cornerRadius: 13, style: .continuous)
+                .strokeBorder(
+                    isVIP ? Theme.gold : Color.white.opacity(0.5),
+                    lineWidth: 1.5
+                )
+                .frame(width: 48, height: 48)
+            Image(systemName: isVIP ? "crown.fill"
+                                    : "shield.lefthalf.filled")
+                .font(.system(size: 19, weight: .bold))
+                .foregroundStyle(isVIP ? Theme.gold : .white)
+                .shadow(color: isVIP ? Theme.gold.opacity(0.7) : .clear,
+                        radius: 10)
+        }
+    }
 }
 
+// ═══════════════════════════════════════════════════════════════
+// MARK: - EMPTY STATE
+// ═══════════════════════════════════════════════════════════════
 private struct EmptyStateView: View {
     let message: String
     var body: some View {
-        VStack(spacing: 14) {
+        VStack(spacing: 16) {
             ZStack {
                 Circle()
                     .strokeBorder(
-                        .white.opacity(0.25),
+                        .white.opacity(0.22),
                         style: StrokeStyle(lineWidth: 1.4, dash: [3, 5])
                     )
-                    .frame(width: 74, height: 74)
+                    .frame(width: 84, height: 84)
+                Circle()
+                    .strokeBorder(.white.opacity(0.35), lineWidth: 1)
+                    .frame(width: 60, height: 60)
                 Image(systemName: "tray")
-                    .font(.system(size: 26, weight: .light))
-                    .foregroundStyle(.white.opacity(0.5))
+                    .font(.system(size: 24, weight: .light))
+                    .foregroundStyle(.white.opacity(0.55))
             }
             Text(message)
                 .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(.white.opacity(0.55))
+                .foregroundStyle(.white.opacity(0.5))
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 40)
         }
@@ -698,7 +921,7 @@ private struct EmptyStateView: View {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// MARK: - NOTE SHEET (hiện cả khi THÀNH CÔNG — để copy note)
+// MARK: - NOTE SHEET (chỉ khi có note — success hoặc lỗi)
 // ═══════════════════════════════════════════════════════════════
 struct ActivationNoteSheet: View {
     let info: ActivationInfo
@@ -722,23 +945,57 @@ struct ActivationNoteSheet: View {
                 VStack(spacing: 22) {
                     Spacer(minLength: 40)
 
-                    // ─── ICON ───
                     topIcon
 
-                    // ─── TITLE ───
-                    titleBlock
+                    // Title block
+                    VStack(spacing: 10) {
+                        Text("HEADLOCK ZENIS")
+                            .font(.system(size: 11, weight: .heavy))
+                            .tracking(4.5)
+                            .foregroundStyle(.white.opacity(0.55))
 
-                    // ─── ERROR REASON (chỉ khi lỗi) ───
-                    if isError, let errMsg = info.errorMessage, !errMsg.isEmpty {
+                        if isError {
+                            Text("KHÔNG KÍCH HOẠT ĐƯỢC")
+                                .font(.system(size: 20, weight: .heavy))
+                                .tracking(2)
+                                .foregroundStyle(accent)
+                                .multilineTextAlignment(.center)
+                                .shadow(color: accent.opacity(0.8),
+                                        radius: 18)
+                                .padding(.horizontal, 20)
+                        } else {
+                            Text("KÍCH HOẠT THÀNH CÔNG")
+                                .font(.system(size: 16, weight: .heavy))
+                                .tracking(3)
+                                .foregroundStyle(.white.opacity(0.9))
+                                .multilineTextAlignment(.center)
+                                .padding(.horizontal, 20)
+                        }
+
+                        Text(info.patchName)
+                            .font(.system(size: isError ? 15 : 18,
+                                          weight: .heavy))
+                            .tracking(isError ? 0.5 : 1)
+                            .foregroundStyle(.white)
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal, 28)
+                            .padding(.top, 2)
+
+                        if !info.tag.isEmpty {
+                            TagPill(tag: info.tag)
+                        }
+                    }
+
+                    if isError,
+                       let errMsg = info.errorMessage,
+                       !errMsg.isEmpty {
                         errorBlock(errMsg)
                     }
 
-                    // ─── NOTE + COPY ───
                     if hasNote {
                         noteBlock
                     }
 
-                    // ─── CLOSE ───
                     Button {
                         SoundFX.tap()
                         onDismiss()
@@ -750,7 +1007,8 @@ struct ActivationNoteSheet: View {
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 16)
                             .background(
-                                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                RoundedRectangle(cornerRadius: 14,
+                                                 style: .continuous)
                                     .fill(.white)
                             )
                             .shadow(color: .white.opacity(0.7), radius: 18)
@@ -763,18 +1021,19 @@ struct ActivationNoteSheet: View {
         }
     }
 
-    // Icon: khi lỗi = triangle đỏ, khi thành công = checkmark nhỏ gọn
     private var topIcon: some View {
         Group {
             if isError {
                 ZStack {
                     Circle()
                         .strokeBorder(accent.opacity(0.25), lineWidth: 1.5)
-                        .frame(width: pulse ? 128 : 106, height: pulse ? 128 : 106)
+                        .frame(width: pulse ? 128 : 106,
+                               height: pulse ? 128 : 106)
                     Circle()
                         .fill(accent)
                         .frame(width: 88, height: 88)
-                        .shadow(color: accent.opacity(0.6), radius: 24, y: 6)
+                        .shadow(color: accent.opacity(0.6),
+                                radius: 24, y: 6)
                     Image(systemName: "exclamationmark.triangle.fill")
                         .font(.system(size: 36, weight: .heavy))
                         .foregroundStyle(.white)
@@ -788,44 +1047,18 @@ struct ActivationNoteSheet: View {
             } else {
                 ZStack {
                     Circle()
-                        .fill(Color.white)
+                        .strokeBorder(.white.opacity(0.25),
+                                      lineWidth: 1.5)
+                        .frame(width: 108, height: 108)
+                    Circle()
+                        .fill(.white)
                         .frame(width: 76, height: 76)
-                        .shadow(color: .white.opacity(0.65), radius: 24, y: 8)
+                        .shadow(color: .white.opacity(0.65),
+                                radius: 24, y: 8)
                     Image(systemName: "checkmark")
                         .font(.system(size: 32, weight: .heavy))
                         .foregroundStyle(.black)
                 }
-            }
-        }
-    }
-
-    private var titleBlock: some View {
-        VStack(spacing: 10) {
-            Text("HEADLOCK ZENIS")
-                .font(.system(size: 11, weight: .heavy))
-                .tracking(4.5)
-                .foregroundStyle(.white.opacity(0.55))
-
-            if isError {
-                Text("KHÔNG KÍCH HOẠT ĐƯỢC")
-                    .font(.system(size: 20, weight: .heavy))
-                    .tracking(2)
-                    .foregroundStyle(accent)
-                    .multilineTextAlignment(.center)
-                    .shadow(color: accent.opacity(0.8), radius: 18)
-                    .padding(.horizontal, 20)
-            }
-
-            Text(info.patchName)
-                .font(.system(size: isError ? 15 : 18, weight: .heavy))
-                .tracking(isError ? 0.5 : 1)
-                .foregroundStyle(.white)
-                .multilineTextAlignment(.center)
-                .padding(.horizontal, 28)
-                .padding(.top, 2)
-
-            if !info.tag.isEmpty {
-                TagPill(tag: info.tag)
             }
         }
     }
@@ -888,26 +1121,32 @@ struct ActivationNoteSheet: View {
                     RoundedRectangle(cornerRadius: 12, style: .continuous)
                         .strokeBorder(
                             .white.opacity(0.25),
-                            style: StrokeStyle(lineWidth: 1, dash: [4, 4])
+                            style: StrokeStyle(lineWidth: 1,
+                                               dash: [4, 4])
                         )
                 )
 
             Button {
                 SoundFX.tap()
                 UIPasteboard.general.string = info.note
-                withAnimation(.spring(response: 0.3, dampingFraction: 0.72)) {
+                withAnimation(.spring(response: 0.3,
+                                     dampingFraction: 0.72)) {
                     copied = true
                 }
                 DispatchQueue.main.asyncAfter(deadline: .now() + 1.6) {
-                    withAnimation(.spring(response: 0.3, dampingFraction: 0.72)) {
+                    withAnimation(.spring(response: 0.3,
+                                         dampingFraction: 0.72)) {
                         copied = false
                     }
                 }
             } label: {
                 HStack(spacing: 8) {
-                    Image(systemName: copied ? "checkmark" : "doc.on.doc.fill")
+                    Image(systemName: copied
+                          ? "checkmark"
+                          : "doc.on.doc.fill")
                         .font(.system(size: 12, weight: .heavy))
-                    Text(copied ? "ĐÃ COPY VÀO CLIPBOARD" : "COPY GHI CHÚ")
+                    Text(copied ? "ĐÃ COPY VÀO CLIPBOARD"
+                                : "COPY GHI CHÚ")
                         .font(.system(size: 11.5, weight: .heavy))
                         .tracking(1.8)
                 }
@@ -916,13 +1155,15 @@ struct ActivationNoteSheet: View {
                 .padding(.vertical, 13)
                 .background(
                     RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .fill(copied ? Color.white : Color.white.opacity(0.06))
+                        .fill(copied ? Color.white
+                                     : Color.white.opacity(0.06))
                 )
                 .overlay(
                     RoundedRectangle(cornerRadius: 12, style: .continuous)
                         .strokeBorder(.white, lineWidth: 1.4)
                 )
-                .shadow(color: copied ? .white.opacity(0.65) : .clear, radius: 14)
+                .shadow(color: copied ? .white.opacity(0.65) : .clear,
+                        radius: 14)
             }
             .buttonStyle(.plain)
         }
@@ -962,7 +1203,8 @@ struct PatchProjectsView: View {
     @State private var lastSyncDate: Date = .distantPast
     @State private var syncGuard = false
 
-    private let autoTimer = Timer.publish(every: 6, on: .main, in: .common).autoconnect()
+    private let autoTimer = Timer.publish(every: 8, on: .main,
+                                          in: .common).autoconnect()
 
     let onOpenSettings: () -> Void
     let onOpenLogs: () -> Void
@@ -978,7 +1220,7 @@ struct PatchProjectsView: View {
             ZStack {
                 NeonBackgroundView()
                 VStack(spacing: 0) {
-                    header
+                    HeroHeader(isSyncing: isSyncing)
                     content
                 }
             }
@@ -988,7 +1230,7 @@ struct PatchProjectsView: View {
                 triggerSync(force: true)
             }
             .onReceive(autoTimer) { _ in
-                if Date().timeIntervalSince(lastSyncDate) > 12 {
+                if Date().timeIntervalSince(lastSyncDate) > 15 {
                     triggerSync(force: false)
                 }
             }
@@ -1016,82 +1258,37 @@ struct PatchProjectsView: View {
         }
     }
 
-    private var header: some View {
-        VStack(spacing: 0) {
-            HStack {
-                Spacer()
-                syncPill
-            }
-            .padding(.horizontal, 20)
-            .padding(.top, 10)
-            .padding(.bottom, 4)
-
-            AvatarView()
-                .padding(.top, 2)
-
-            Text("ZENITH SOLITUDE")
-                .font(.system(size: 21, weight: .black, design: .serif))
-                .tracking(3.5)
-                .foregroundStyle(.white)
-                .shadow(color: .white.opacity(0.75), radius: 18)
-                .padding(.top, 12)
-
-            HStack(spacing: 10) {
-                Rectangle().fill(.white.opacity(0.35)).frame(width: 26, height: 1)
-                Text("HEADLOCK ZENIS")
-                    .font(.system(size: 9.5, weight: .heavy))
-                    .tracking(4.2)
-                    .foregroundStyle(.white.opacity(0.55))
-                Rectangle().fill(.white.opacity(0.35)).frame(width: 26, height: 1)
-            }
-            .padding(.top, 8)
-            .padding(.bottom, 22)
-        }
-    }
-
-    private var syncPill: some View {
-        HStack(spacing: 7) {
-            ZStack {
-                Circle()
-                    .fill((isSyncing ? Color.yellow : Color.green).opacity(0.18))
-                    .frame(width: 14, height: 14)
-                Circle()
-                    .fill(isSyncing ? Color.yellow : Color.green)
-                    .frame(width: 7, height: 7)
-                    .shadow(
-                        color: (isSyncing ? Color.yellow : Color.green).opacity(0.9),
-                        radius: 6
-                    )
-            }
-            Text(isSyncing ? "ĐANG CẬP NHẬT" : "ĐÃ KẾT NỐI")
-                .font(.system(size: 9, weight: .heavy))
-                .tracking(1.6)
-                .foregroundStyle(.white.opacity(0.75))
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 7)
-        .background(Capsule().fill(Color.white.opacity(0.05)))
-        .overlay(Capsule().strokeBorder(.white.opacity(0.28), lineWidth: 1))
-        .animation(.easeInOut(duration: 0.25), value: isSyncing)
-    }
-
     private var content: some View {
         ScrollView(showsIndicators: false) {
-            VStack(spacing: 14) {
-                gameCard(title: "Free Fire Max", subtitle: "PREMIUM EDITION", prefix: "ffmax")
-                gameCard(title: "Free Fire Thường", subtitle: "CLASSIC EDITION", prefix: "ffnormal")
-
-                HStack(spacing: 8) {
-                    Rectangle().fill(.white.opacity(0.2)).frame(height: 1)
-                    Text("BY ZENITH SOLITUDE")
-                        .font(.system(size: 9, weight: .heavy))
-                        .tracking(3)
-                        .foregroundStyle(.white.opacity(0.5))
-                        .fixedSize()
-                    Rectangle().fill(.white.opacity(0.2)).frame(height: 1)
+            VStack(spacing: 12) {
+                GameCard(
+                    title: "Free Fire Max",
+                    subtitle: "PREMIUM EDITION",
+                    prefix: "ffmax",
+                    count: countFor(prefix: "ffmax")
+                ) {
+                    SoundFX.menu()
+                    selectedGame = GameSelection(
+                        title: "Free Fire Max",
+                        prefix: "ffmax"
+                    )
                 }
-                .padding(.horizontal, 40)
-                .padding(.top, 22)
+
+                GameCard(
+                    title: "Free Fire Thường",
+                    subtitle: "CLASSIC EDITION",
+                    prefix: "ffnormal",
+                    count: countFor(prefix: "ffnormal")
+                ) {
+                    SoundFX.menu()
+                    selectedGame = GameSelection(
+                        title: "Free Fire Thường",
+                        prefix: "ffnormal"
+                    )
+                }
+
+                footerNote
+                    .padding(.top, 12)
             }
             .padding(.horizontal, 16)
             .padding(.bottom, 50)
@@ -1099,31 +1296,36 @@ struct PatchProjectsView: View {
         .refreshable { triggerSync(force: true) }
     }
 
-    private func gameCard(title: String, subtitle: String, prefix: String) -> some View {
-        Button {
-            SoundFX.menu()
-            selectedGame = GameSelection(title: title, prefix: prefix)
-        } label: {
-            NeonCard {
-                HStack(spacing: 14) {
-                    FFLogoView()
-                    VStack(alignment: .leading, spacing: 5) {
-                        Text(title)
-                            .font(.system(size: 16.5, weight: .heavy, design: .rounded))
-                            .foregroundStyle(.white)
-                        Text(subtitle)
-                            .font(.system(size: 9.5, weight: .heavy))
-                            .tracking(2)
-                            .foregroundStyle(.white.opacity(0.5))
-                    }
-                    Spacer()
-                    ChevronCircle()
-                }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 15)
-            }
+    private var footerNote: some View {
+        HStack(spacing: 12) {
+            Rectangle()
+                .fill(.white.opacity(0.18))
+                .frame(width: 24, height: 1)
+            Text("ZENITH SOLITUDE")
+                .font(.system(size: 9.5, weight: .heavy))
+                .tracking(3.5)
+                .foregroundStyle(.white.opacity(0.4))
+            Rectangle()
+                .fill(.white.opacity(0.18))
+                .frame(width: 24, height: 1)
         }
-        .buttonStyle(.plain)
+        .frame(maxWidth: .infinity)
+    }
+
+    private func countFor(prefix: String) -> Int {
+        store.items.filter { item in
+            let name = item.packageURL.lastPathComponent
+            if let meta = PatchMetaStore.lookup(localName: name),
+               !meta.gameType.isEmpty {
+                if meta.orphaned { return false }
+                return meta.gameType == prefix
+            }
+            let isMax = name.hasPrefix("ffmax_")
+            let isNormal = name.hasPrefix("ffnormal_")
+            let isPlain = !isMax && !isNormal
+            if prefix == "ffmax" { return isMax }
+            return isNormal || isPlain
+        }.count
     }
 
     private func triggerSync(force: Bool) {
@@ -1315,10 +1517,12 @@ struct PatchGameDetailView: View {
     @State private var tagPickerItem: PatchLibraryItem?
     @State private var noteItem: PatchLibraryItem?
     @State private var noteText: String = ""
+    @State private var searchText: String = ""
     @State private var refreshTick: Int = 0
     @State private var didInitialSync = false
 
-    private let refreshTimer = Timer.publish(every: 5, on: .main, in: .common).autoconnect()
+    private let refreshTimer = Timer.publish(every: 5, on: .main,
+                                             in: .common).autoconnect()
 
     var body: some View {
         NavigationStack {
@@ -1326,6 +1530,7 @@ struct PatchGameDetailView: View {
                 NeonBackgroundView()
                 VStack(spacing: 0) {
                     topBar
+                    searchRow
                     folderBar
                     listContent
                 }
@@ -1430,16 +1635,22 @@ struct PatchGameDetailView: View {
         .padding(.bottom, 12)
     }
 
-    // ⭐ Ẩn folder bar khi chỉ có 1 folder
+    private var searchRow: some View {
+        SearchBar(text: $searchText)
+            .padding(.horizontal, 16)
+            .padding(.bottom, 10)
+    }
+
     @ViewBuilder
     private var folderBar: some View {
         if folders.count > 1 {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
                     ForEach(folders, id: \.self) { f in
-                        FolderPill(
+                        FolderSegment(
                             title: f,
-                            count: gameItems.filter { folderName(for: $0) == f }.count,
+                            count: gameItems
+                                .filter { folderName(for: $0) == f }.count,
                             isActive: selectedFolder == f
                         ) {
                             SoundFX.tap()
@@ -1452,7 +1663,7 @@ struct PatchGameDetailView: View {
                 }
                 .padding(.horizontal, 18)
             }
-            .padding(.bottom, 14)
+            .padding(.bottom, 12)
         }
     }
 
@@ -1499,32 +1710,36 @@ struct PatchGameDetailView: View {
     }
 
     private var displayedItems: [PatchLibraryItem] {
+        var base: [PatchLibraryItem]
+
         if folders.count <= 1 {
-            return gameItems
+            base = gameItems
+        } else {
+            guard let sel = selectedFolder else { return [] }
+            base = gameItems.filter { folderName(for: $0) == sel }
         }
-        guard let sel = selectedFolder else { return [] }
-        return gameItems.filter { folderName(for: $0) == sel }
+
+        let q = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+        if q.isEmpty { return base }
+        return base.filter { item in
+            let dn = displayName(for: item).lowercased()
+            let nt = currentNote(for: item).lowercased()
+            return dn.contains(q) || nt.contains(q)
+        }
     }
 
     private var renameBinding: Binding<Bool> {
-        Binding(
-            get: { renameItem != nil },
-            set: { if !$0 { renameItem = nil } }
-        )
+        Binding(get: { renameItem != nil },
+                set: { if !$0 { renameItem = nil } })
     }
-
     private var tagBinding: Binding<Bool> {
-        Binding(
-            get: { tagPickerItem != nil },
-            set: { if !$0 { tagPickerItem = nil } }
-        )
+        Binding(get: { tagPickerItem != nil },
+                set: { if !$0 { tagPickerItem = nil } })
     }
-
     private var noteBinding: Binding<Bool> {
-        Binding(
-            get: { noteItem != nil },
-            set: { if !$0 { noteItem = nil } }
-        )
+        Binding(get: { noteItem != nil },
+                set: { if !$0 { noteItem = nil } })
     }
 
     private var listContent: some View {
@@ -1533,7 +1748,9 @@ struct PatchGameDetailView: View {
                 EmptyStateView(
                     message: folders.isEmpty
                         ? "Chưa có folder nào.\nĐang đồng bộ dữ liệu từ server..."
-                        : "Folder này chưa có patch nào."
+                        : (searchText.isEmpty
+                           ? "Folder này chưa có patch nào."
+                           : "Không tìm thấy patch phù hợp.")
                 )
             } else {
                 LazyVStack(spacing: 10) {
@@ -1559,11 +1776,7 @@ struct PatchGameDetailView: View {
             tag: currentTag(for: item),
             note: currentNote(for: item),
             onToggle: { nv in
-                if nv {
-                    SoundFX.tingTing()
-                } else {
-                    SoundFX.tap()
-                }
+                if nv { SoundFX.tingTing() } else { SoundFX.tap() }
                 togglePatch(item: item, activate: nv)
             },
             onTapTag: {
@@ -1595,9 +1808,7 @@ struct PatchGameDetailView: View {
         if let m = meta(for: item), !m.displayName.isEmpty {
             return m.displayName
         }
-        if let n = item.project?.name, !n.isEmpty {
-            return n
-        }
+        if let n = item.project?.name, !n.isEmpty { return n }
         return item.packageURL.deletingPathExtension().lastPathComponent
             .replacingOccurrences(of: "_VIP", with: "")
             .replacingOccurrences(of: "_FREE", with: "")
@@ -1606,9 +1817,7 @@ struct PatchGameDetailView: View {
     }
 
     private func currentTag(for item: PatchLibraryItem) -> String {
-        if let m = meta(for: item), !m.tag.isEmpty {
-            return m.tag
-        }
+        if let m = meta(for: item), !m.tag.isEmpty { return m.tag }
         return item.packageURL.deletingPathExtension().lastPathComponent
             .hasSuffix("_VIP") ? "VIP" : "FREE"
     }
@@ -1618,15 +1827,11 @@ struct PatchGameDetailView: View {
     }
 
     private func folderName(for item: PatchLibraryItem) -> String {
-        if let m = meta(for: item), !m.folder.isEmpty {
-            return m.folder
-        }
+        if let m = meta(for: item), !m.folder.isEmpty { return m.folder }
 
         let fname = item.packageURL.lastPathComponent
-        if let range = fname.range(
-            of: #"^ZENITH_([a-zA-Z0-9]+)_"#,
-            options: .regularExpression
-        ) {
+        if let range = fname.range(of: #"^ZENITH_([a-zA-Z0-9]+)_"#,
+                                    options: .regularExpression) {
             let matched = String(fname[range])
                 .replacingOccurrences(of: "ZENITH_", with: "")
                 .trimmingCharacters(in: CharacterSet(charactersIn: "_"))
@@ -1634,8 +1839,9 @@ struct PatchGameDetailView: View {
         }
 
         let comps = item.packageURL.pathComponents.filter { $0 != "/" }
-        if let idx = comps.firstIndex(where: { $0 == "ffmax" || $0 == "ffnormal" }),
-           idx + 2 < comps.count {
+        if let idx = comps.firstIndex(where: {
+            $0 == "ffmax" || $0 == "ffnormal"
+        }), idx + 2 < comps.count {
             return comps[idx + 1]
         }
 
@@ -1645,15 +1851,11 @@ struct PatchGameDetailView: View {
     private func commitRename() {
         guard let item = renameItem else { return }
         let t = renameText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !t.isEmpty else {
-            renameItem = nil
-            return
-        }
+        guard !t.isEmpty else { renameItem = nil; return }
         let localName = localKey(for: item)
         guard let uid = LocalMapStore.uid(forLocal: localName),
               var m = PatchMetaStore.get(uid: uid) else {
-            renameItem = nil
-            return
+            renameItem = nil; return
         }
         m.displayName = t
         m.nameOverride = true
@@ -1667,8 +1869,7 @@ struct PatchGameDetailView: View {
         let localName = localKey(for: item)
         guard let uid = LocalMapStore.uid(forLocal: localName),
               var m = PatchMetaStore.get(uid: uid) else {
-            tagPickerItem = nil
-            return
+            tagPickerItem = nil; return
         }
         m.tag = tag
         m.tagOverride = true
@@ -1683,8 +1884,7 @@ struct PatchGameDetailView: View {
         let localName = localKey(for: item)
         guard let uid = LocalMapStore.uid(forLocal: localName),
               var m = PatchMetaStore.get(uid: uid) else {
-            noteItem = nil
-            return
+            noteItem = nil; return
         }
         m.note = t
         m.noteOverride = true
@@ -1693,7 +1893,8 @@ struct PatchGameDetailView: View {
         noteItem = nil
     }
 
-    // ⭐ Toggle: HIỆN SHEET note khi bật thành công để user copy
+    // ⭐ TOGGLE: Bật thành công → KHÔNG alert "đã đặt gói"
+    //           Chỉ hiện sheet nếu có note để user copy
     private func togglePatch(item: PatchLibraryItem, activate: Bool) {
         workingFileID = item.id.uuidString
         let nameSnap = displayName(for: item)
@@ -1703,7 +1904,9 @@ struct PatchGameDetailView: View {
         Task.detached(priority: .userInitiated) {
             if !activate {
                 do {
-                    if let r = DevicePatchService.latestReceipt(projectID: item.id) {
+                    if let r = DevicePatchService.latestReceipt(
+                        projectID: item.id
+                    ) {
                         try DevicePatchService.restore(receipt: r)
                     }
                     await MainActor.run {
@@ -1734,13 +1937,13 @@ struct PatchGameDetailView: View {
                 }
                 _ = try DevicePatchService.apply(project: p)
 
-                // ⭐ THÀNH CÔNG → hiện sheet có note + copy
+                // ⭐ THÀNH CÔNG: reload im lặng
+                // Chỉ show sheet nếu có note để user copy
                 await MainActor.run {
                     store.reload()
                     workingFileID = nil
                     SoundFX.success()
 
-                    // Chỉ hiện sheet khi có note để copy
                     if !noteSnap.trimmingCharacters(in: .whitespaces).isEmpty {
                         activationInfo = ActivationInfo(
                             patchName: nameSnap,
@@ -1783,7 +1986,8 @@ struct PatchUnlockView: View {
         NavigationStack {
             Form {
                 Section {
-                    SecureField(language.text("patch.password"), text: $password)
+                    SecureField(language.text("patch.password"),
+                                text: $password)
                         .textContentType(.password)
                         .submitLabel(.done)
                         .onSubmit(unlock)
@@ -1801,9 +2005,7 @@ struct PatchUnlockView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button(language.text("common.cancel")) {
-                        dismiss()
-                    }
+                    Button(language.text("common.cancel")) { dismiss() }
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button(language.text("patch.unlock"), action: unlock)
@@ -1834,10 +2036,8 @@ private struct PatchStorePresentationModifier: ViewModifier {
 
     func body(content: Content) -> some View {
         content
-            .sheet(
-                item: $store.passwordRequest,
-                onDismiss: store.cancelUnlock
-            ) { request in
+            .sheet(item: $store.passwordRequest,
+                   onDismiss: store.cancelUnlock) { request in
                 PatchUnlockView(store: store, request: request)
             }
     }
