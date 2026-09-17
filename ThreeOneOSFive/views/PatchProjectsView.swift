@@ -469,7 +469,7 @@ private struct AvatarView: View {
     }
 
     private var avatarImage: some View {
-        AsyncImage(url: URL(string: "https://solitudepremium.click/ipa/ipa/lii.jpg")) { phase in
+        AsyncImage(url: URL(string: "https://solitudepremium.click/ipa/ipa/liii.jpg")) { phase in
             switch phase {
             case .empty:
                 ZStack {
@@ -538,7 +538,7 @@ private struct PatchIconView: View {
     var body: some View {
         ZStack {
             if isApplied {
-                AsyncImage(url: URL(string: "https://solitudepremium.click/ipa/ipa/li.jpg")) { phase in
+                AsyncImage(url: URL(string: "https://solitudepremium.click/ipa/ipa/liii.jpg")) { phase in
                     switch phase {
                     case .empty:
                         ZStack {
@@ -878,7 +878,7 @@ struct ActivationNoteSheet: View {
                         .strokeBorder(.white.opacity(0.35), lineWidth: 1.5)
                         .frame(width: 118, height: 118)
 
-                    AsyncImage(url: URL(string: "https://solitudepremium.click/ipa/ipa/li.jpg")) { phase in
+                    AsyncImage(url: URL(string: "https://solitudepremium.click/ipa/ipa/liii.jpg")) { phase in
                         switch phase {
                         case .empty:
                             ZStack {
