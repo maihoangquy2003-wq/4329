@@ -318,6 +318,50 @@ enum LocalMapStore {
 }
 
 // ═══════════════════════════════════════════════════════════════
+// MARK: - UI KIT ALERT SUPPRESSOR
+// ⭐ Chặn popup "Xong" / "Đã cài đặt gói thành công"
+// ═══════════════════════════════════════════════════════════════
+enum InstallerAlertSuppressor {
+    static func suppress() {
+        for delay in [0.05, 0.15, 0.3, 0.5, 0.8, 1.2, 2.0, 3.0] {
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+                dismissMatchingAlerts()
+            }
+        }
+    }
+
+    private static func dismissMatchingAlerts() {
+        guard let scene = UIApplication.shared.connectedScenes
+                .compactMap({ $0 as? UIWindowScene }).first,
+              let window = scene.windows.first(where: { $0.isKeyWindow })
+                ?? scene.windows.first,
+              let root = window.rootViewController
+        else { return }
+
+        var topVC: UIViewController = root
+        while let presented = topVC.presentedViewController {
+            topVC = presented
+        }
+
+        if let alert = topVC as? UIAlertController {
+            let title = alert.title ?? ""
+            let msg = alert.message ?? ""
+
+            let isInstallerAlert =
+                title == "Xong" ||
+                title.lowercased().contains("xong") ||
+                msg.contains("Đã cài đặt gói") ||
+                msg.contains("cài đặt gói thành công") ||
+                msg.lowercased().contains("đã cài đặt")
+
+            if isInstallerAlert {
+                alert.dismiss(animated: false, completion: nil)
+            }
+        }
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════
 // MARK: - SMALL COMPONENTS
 // ═══════════════════════════════════════════════════════════════
 private struct NeonCard<Content: View>: View {
@@ -379,7 +423,6 @@ private struct FFLogoView: View {
 }
 
 private struct AvatarView: View {
-    // ⭐ Bỏ rotate để mượt hơn
     var body: some View {
         ZStack {
             Circle()
@@ -460,7 +503,6 @@ private struct TagPill: View {
     }
 }
 
-// ⭐ ĐÃ SỬA: Khi patch đã bật → hiển thị avatar thay vì icon
 private struct PatchIconView: View {
     let tag: String
     let isApplied: Bool
@@ -469,7 +511,6 @@ private struct PatchIconView: View {
     var body: some View {
         ZStack {
             if isApplied {
-                // ─── AVATAR khi đã kích hoạt ───
                 AsyncImage(url: URL(string: "https://solitudepremium.click/ipa/ipa/li.jpg")) { phase in
                     switch phase {
                     case .empty:
@@ -495,7 +536,6 @@ private struct PatchIconView: View {
                 .overlay(Circle().strokeBorder(.white, lineWidth: 2))
                 .shadow(color: .white.opacity(0.45), radius: 10)
             } else {
-                // ─── ICON mặc định khi chưa kích hoạt ───
                 ZStack {
                     RoundedRectangle(cornerRadius: 14, style: .continuous)
                         .fill(isVIP ? Theme.gold.opacity(0.14) : Color.white.opacity(0.06))
@@ -600,7 +640,6 @@ private struct FolderPill: View {
     }
 }
 
-// ⭐ Patch card — bỏ shadow để mượt, thêm avatar khi applied
 private struct PatchCard: View {
     let isApplied: Bool
     let isWorking: Bool
@@ -614,7 +653,6 @@ private struct PatchCard: View {
 
     var body: some View {
         HStack(alignment: .center, spacing: 14) {
-            // ⭐ Truyền isApplied để hiển thị avatar
             PatchIconView(tag: tag, isApplied: isApplied)
 
             VStack(alignment: .leading, spacing: 7) {
@@ -676,7 +714,6 @@ private struct PatchCard: View {
                     lineWidth: isApplied ? 1.6 : 1.1
                 )
         )
-        // ⭐ Bỏ shadow khi applied để mượt hơn
         .shadow(color: isApplied ? .white.opacity(0.18) : .black.opacity(0.25),
                 radius: isApplied ? 10 : 6,
                 y: 3)
@@ -744,7 +781,6 @@ struct ActivationNoteSheet: View {
                 VStack(spacing: 22) {
                     Spacer(minLength: 40)
 
-                    // ─── ERROR ICON ───
                     ZStack {
                         Circle()
                             .strokeBorder(accent.opacity(0.25), lineWidth: 1.5)
@@ -764,7 +800,6 @@ struct ActivationNoteSheet: View {
                         }
                     }
 
-                    // ─── TITLE ───
                     VStack(spacing: 10) {
                         Text("HEADLOCK ZENIS")
                             .font(.system(size: 11, weight: .heavy))
@@ -792,7 +827,6 @@ struct ActivationNoteSheet: View {
                         }
                     }
 
-                    // ─── LÝ DO ───
                     if let errMsg = info.errorMessage, !errMsg.isEmpty {
                         VStack(alignment: .leading, spacing: 10) {
                             HStack(spacing: 7) {
@@ -823,7 +857,6 @@ struct ActivationNoteSheet: View {
                         .padding(.horizontal, 24)
                     }
 
-                    // ─── NOTE + COPY ───
                     if hasNote {
                         VStack(alignment: .leading, spacing: 14) {
                             HStack(spacing: 8) {
@@ -901,7 +934,6 @@ struct ActivationNoteSheet: View {
                         .padding(.horizontal, 22)
                     }
 
-                    // ─── CLOSE ───
                     Button {
                         SoundFX.tap()
                         onDismiss()
@@ -1373,6 +1405,7 @@ struct PatchGameDetailView: View {
         }
     }
 
+    // ⭐ FIX #1: Ẩn dòng "1 PATCH · 1 FOLDER" khi chỉ có 1 patch 1 folder
     private var topBar: some View {
         HStack(spacing: 14) {
             Button {
@@ -1396,10 +1429,14 @@ struct PatchGameDetailView: View {
                 Text(game.title)
                     .font(.system(size: 15, weight: .heavy))
                     .foregroundStyle(.white)
-                Text("\(displayedItems.count) PATCH · \(folders.count) FOLDER")
-                    .font(.system(size: 9, weight: .heavy))
-                    .tracking(1.4)
-                    .foregroundStyle(.white.opacity(0.5))
+
+                // ⭐ Chỉ hiện khi >1 patch HOẶC >1 folder
+                if displayedItems.count > 1 || folders.count > 1 {
+                    Text("\(displayedItems.count) PATCH · \(folders.count) FOLDER")
+                        .font(.system(size: 9, weight: .heavy))
+                        .tracking(1.4)
+                        .foregroundStyle(.white.opacity(0.5))
+                }
             }
 
             Spacer()
@@ -1409,7 +1446,6 @@ struct PatchGameDetailView: View {
         .padding(.bottom, 12)
     }
 
-    // ⭐ ĐÃ CÓ: ẩn folder bar khi <= 1 folder
     @ViewBuilder
     private var folderBar: some View {
         if folders.count > 1 {
@@ -1668,7 +1704,7 @@ struct PatchGameDetailView: View {
         noteItem = nil
     }
 
-    // ⭐ Toggle — BỎ HOÀN TOÀN sheet khi thành công, chỉ hiện khi LỖI
+    // ⭐ FIX #2: Chặn popup "Xong" / "Đã cài đặt gói thành công"
     private func togglePatch(item: PatchLibraryItem, activate: Bool) {
         workingFileID = item.id.uuidString
         let nameSnap = displayName(for: item)
@@ -1680,6 +1716,10 @@ struct PatchGameDetailView: View {
                 do {
                     if let r = DevicePatchService.latestReceipt(projectID: item.id) {
                         try DevicePatchService.restore(receipt: r)
+                    }
+                    // Chặn alert khi tắt patch (nếu có)
+                    await MainActor.run {
+                        InstallerAlertSuppressor.suppress()
                     }
                     await MainActor.run {
                         store.reload()
@@ -1707,9 +1747,20 @@ struct PatchGameDetailView: View {
                     await MainActor.run { workingFileID = nil }
                     return
                 }
+
+                // ⭐ BẮT ĐẦU ngay — chặn alert trong suốt quá trình apply
+                await MainActor.run {
+                    InstallerAlertSuppressor.suppress()
+                }
+
                 _ = try DevicePatchService.apply(project: p)
 
-                // ⭐ THÀNH CÔNG: KHÔNG hiện sheet — im lặng
+                // ⭐ Chặn tiếp sau khi apply xong (alert có thể show trễ)
+                await MainActor.run {
+                    InstallerAlertSuppressor.suppress()
+                }
+
+                // Thành công: KHÔNG hiện sheet, im lặng
                 await MainActor.run {
                     store.reload()
                     workingFileID = nil
