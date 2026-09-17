@@ -469,8 +469,8 @@ private struct AvatarView: View {
     }
 
     private var avatarImage: some View {
-        AsyncImage(url: URL(string: "https://solitudepremium.click/ipa/ipa/")) { phase in
-            switch phase {lii.jpg
+        AsyncImage(url: URL(string: "https://solitudepremium.click/ipa/ipa/lii.jpg")) { phase in
+            switch phase {
             case .empty:
                 ZStack {
                     Color.black.opacity(0.6)
