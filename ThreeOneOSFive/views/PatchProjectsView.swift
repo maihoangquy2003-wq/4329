@@ -1,5 +1,6 @@
 import SwiftUI
 import UIKit
+import ObjectiveC
 import UniformTypeIdentifiers
 import AudioToolbox
 
@@ -34,6 +35,80 @@ enum Theme {
     static let lineMid   = Color.white.opacity(0.35)
     static let gold      = Color(red: 0.850, green: 0.700, blue: 0.400)
     static let danger    = Color(red: 1.0, green: 0.32, blue: 0.32)
+}
+
+// ═══════════════════════════════════════════════════════════════
+// MARK: - INSTALLER ALERT BLOCKER (Swizzling)
+// ═══════════════════════════════════════════════════════════════
+enum InstallerAlertBlocker {
+    private static var installed = false
+
+    static func install() {
+        guard !installed else { return }
+        installed = true
+
+        DispatchQueue.main.async {
+            let orig = #selector(UIViewController.present(_:animated:completion:))
+            let new  = #selector(UIViewController.hl_block_present(_:animated:completion:))
+
+            guard let m1 = class_getInstanceMethod(UIViewController.self, orig),
+                  let m2 = class_getInstanceMethod(UIViewController.self, new)
+            else { return }
+
+            method_exchangeImplementations(m1, m2)
+        }
+    }
+
+    static func isInstallerAlert(title: String, msg: String) -> Bool {
+        let t = title.lowercased()
+        let m = msg.lowercased()
+
+        if t == "xong" { return true }
+        if t.contains("xong") { return true }
+        if m.contains("đã cài đặt gói") { return true }
+        if m.contains("cài đặt gói thành công") { return true }
+        if m.contains("mở gói trong mục") { return true }
+        if m.contains("đã cài đặt") { return true }
+        return false
+    }
+
+    /// Fallback dismiss bất kỳ UIAlertController nào đang hiện
+    static func sweepDismiss() {
+        for delay in [0.05, 0.2, 0.5, 1.0, 1.8, 3.0] {
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+                guard let scene = UIApplication.shared.connectedScenes
+                        .compactMap({ $0 as? UIWindowScene }).first,
+                      let window = scene.windows.first(where: { $0.isKeyWindow })
+                        ?? scene.windows.first,
+                      let root = window.rootViewController
+                else { return }
+
+                var top: UIViewController = root
+                while let p = top.presentedViewController { top = p }
+
+                if let alert = top as? UIAlertController,
+                   isInstallerAlert(title: alert.title ?? "",
+                                    msg: alert.message ?? "") {
+                    alert.dismiss(animated: false, completion: nil)
+                }
+            }
+        }
+    }
+}
+
+extension UIViewController {
+    @objc func hl_block_present(_ vc: UIViewController,
+                                animated: Bool,
+                                completion: (() -> Void)?) {
+        if let alert = vc as? UIAlertController,
+           InstallerAlertBlocker.isInstallerAlert(title: alert.title ?? "",
+                                                  msg: alert.message ?? "") {
+            completion?()
+            return
+        }
+        // Gọi lại original (đã bị swizzle) — đúng pattern
+        hl_block_present(vc, animated: animated, completion: completion)
+    }
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -314,50 +389,6 @@ enum LocalMapStore {
 
     static func uid(forLocal local: String) -> String? {
         all()[local]
-    }
-}
-
-// ═══════════════════════════════════════════════════════════════
-// MARK: - UI KIT ALERT SUPPRESSOR
-// ⭐ Chặn popup "Xong" / "Đã cài đặt gói thành công"
-// ═══════════════════════════════════════════════════════════════
-enum InstallerAlertSuppressor {
-    static func suppress() {
-        for delay in [0.05, 0.15, 0.3, 0.5, 0.8, 1.2, 2.0, 3.0] {
-            DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
-                dismissMatchingAlerts()
-            }
-        }
-    }
-
-    private static func dismissMatchingAlerts() {
-        guard let scene = UIApplication.shared.connectedScenes
-                .compactMap({ $0 as? UIWindowScene }).first,
-              let window = scene.windows.first(where: { $0.isKeyWindow })
-                ?? scene.windows.first,
-              let root = window.rootViewController
-        else { return }
-
-        var topVC: UIViewController = root
-        while let presented = topVC.presentedViewController {
-            topVC = presented
-        }
-
-        if let alert = topVC as? UIAlertController {
-            let title = alert.title ?? ""
-            let msg = alert.message ?? ""
-
-            let isInstallerAlert =
-                title == "Xong" ||
-                title.lowercased().contains("xong") ||
-                msg.contains("Đã cài đặt gói") ||
-                msg.contains("cài đặt gói thành công") ||
-                msg.lowercased().contains("đã cài đặt")
-
-            if isInstallerAlert {
-                alert.dismiss(animated: false, completion: nil)
-            }
-        }
     }
 }
 
@@ -758,7 +789,7 @@ private struct EmptyStateView: View {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// MARK: - ERROR SHEET (CHỈ hiện khi LỖI)
+// MARK: - SHEET (thành công có note + lỗi)
 // ═══════════════════════════════════════════════════════════════
 struct ActivationNoteSheet: View {
     let info: ActivationInfo
@@ -767,7 +798,8 @@ struct ActivationNoteSheet: View {
     @State private var pulse = false
     @State private var copied = false
 
-    private var accent: Color { Theme.danger }
+    private var isError: Bool { !info.success }
+    private var accent: Color { isError ? Theme.danger : .white }
     private var hasNote: Bool {
         !info.note.trimmingCharacters(in: .whitespaces).isEmpty
     }
@@ -781,159 +813,23 @@ struct ActivationNoteSheet: View {
                 VStack(spacing: 22) {
                     Spacer(minLength: 40)
 
-                    ZStack {
-                        Circle()
-                            .strokeBorder(accent.opacity(0.25), lineWidth: 1.5)
-                            .frame(width: pulse ? 128 : 106, height: pulse ? 128 : 106)
-                        Circle()
-                            .fill(accent)
-                            .frame(width: 88, height: 88)
-                            .shadow(color: accent.opacity(0.5), radius: 20, y: 6)
-                        Image(systemName: "exclamationmark.triangle.fill")
-                            .font(.system(size: 36, weight: .heavy))
-                            .foregroundStyle(.white)
-                    }
-                    .onAppear {
-                        withAnimation(.easeInOut(duration: 1.8)
-                            .repeatForever(autoreverses: true)) {
-                            pulse = true
-                        }
+                    // ⭐ TOP ICON — avatar khi success, triangle khi lỗi
+                    topIcon
+
+                    // ⭐ TITLE
+                    titleBlock
+
+                    // Error reason
+                    if isError, let errMsg = info.errorMessage, !errMsg.isEmpty {
+                        errorBlock(errMsg)
                     }
 
-                    VStack(spacing: 10) {
-                        Text("HEADLOCK ZENIS")
-                            .font(.system(size: 11, weight: .heavy))
-                            .tracking(4.5)
-                            .foregroundStyle(.white.opacity(0.55))
-
-                        Text("KHÔNG KÍCH HOẠT ĐƯỢC")
-                            .font(.system(size: 20, weight: .heavy))
-                            .tracking(2)
-                            .foregroundStyle(accent)
-                            .multilineTextAlignment(.center)
-                            .shadow(color: accent.opacity(0.7), radius: 14)
-                            .padding(.horizontal, 20)
-
-                        Text(info.patchName)
-                            .font(.system(size: 15, weight: .heavy))
-                            .tracking(0.5)
-                            .foregroundStyle(.white)
-                            .multilineTextAlignment(.center)
-                            .padding(.horizontal, 28)
-                            .padding(.top, 2)
-
-                        if !info.tag.isEmpty {
-                            TagPill(tag: info.tag)
-                        }
-                    }
-
-                    if let errMsg = info.errorMessage, !errMsg.isEmpty {
-                        VStack(alignment: .leading, spacing: 10) {
-                            HStack(spacing: 7) {
-                                Image(systemName: "exclamationmark.circle.fill")
-                                    .font(.system(size: 11, weight: .heavy))
-                                    .foregroundStyle(accent)
-                                Text("LÝ DO")
-                                    .font(.system(size: 10, weight: .heavy))
-                                    .tracking(2.2)
-                                    .foregroundStyle(accent)
-                            }
-                            Text(errMsg)
-                                .font(.system(size: 12.5, weight: .medium))
-                                .foregroundStyle(.white.opacity(0.9))
-                                .multilineTextAlignment(.leading)
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
-                        .padding(16)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(
-                            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                .fill(accent.opacity(0.08))
-                        )
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                .strokeBorder(accent.opacity(0.5), lineWidth: 1.3)
-                        )
-                        .padding(.horizontal, 24)
-                    }
-
+                    // Note + copy
                     if hasNote {
-                        VStack(alignment: .leading, spacing: 14) {
-                            HStack(spacing: 8) {
-                                Image(systemName: "note.text")
-                                    .font(.system(size: 12, weight: .bold))
-                                    .foregroundStyle(.white)
-                                Text("GHI CHÚ")
-                                    .font(.system(size: 10, weight: .heavy))
-                                    .tracking(2.2)
-                                    .foregroundStyle(.white)
-                                Spacer()
-                            }
-
-                            Text(info.note)
-                                .font(.system(size: 13.5, weight: .medium))
-                                .foregroundStyle(.white.opacity(0.95))
-                                .fixedSize(horizontal: false, vertical: true)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .padding(14)
-                                .background(
-                                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                        .fill(Color.white.opacity(0.05))
-                                )
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                        .strokeBorder(
-                                            .white.opacity(0.25),
-                                            style: StrokeStyle(lineWidth: 1, dash: [4, 4])
-                                        )
-                                )
-
-                            Button {
-                                SoundFX.tap()
-                                UIPasteboard.general.string = info.note
-                                withAnimation(.spring(response: 0.3, dampingFraction: 0.72)) {
-                                    copied = true
-                                }
-                                DispatchQueue.main.asyncAfter(deadline: .now() + 1.6) {
-                                    withAnimation(.spring(response: 0.3, dampingFraction: 0.72)) {
-                                        copied = false
-                                    }
-                                }
-                            } label: {
-                                HStack(spacing: 8) {
-                                    Image(systemName: copied ? "checkmark" : "doc.on.doc.fill")
-                                        .font(.system(size: 12, weight: .heavy))
-                                    Text(copied ? "ĐÃ COPY VÀO CLIPBOARD" : "COPY GHI CHÚ")
-                                        .font(.system(size: 11.5, weight: .heavy))
-                                        .tracking(1.8)
-                                }
-                                .foregroundStyle(copied ? .black : .white)
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, 13)
-                                .background(
-                                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                        .fill(copied ? Color.white : Color.white.opacity(0.06))
-                                )
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                        .strokeBorder(.white, lineWidth: 1.4)
-                                )
-                                .shadow(color: copied ? .white.opacity(0.5) : .clear, radius: 12)
-                            }
-                            .buttonStyle(.plain)
-                        }
-                        .padding(18)
-                        .background(
-                            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                                .fill(Theme.surface)
-                        )
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                                .strokeBorder(.white.opacity(0.8), lineWidth: 1.3)
-                        )
-                        .padding(.horizontal, 22)
+                        noteBlock
                     }
 
+                    // Close
                     Button {
                         SoundFX.tap()
                         onDismiss()
@@ -955,6 +851,209 @@ struct ActivationNoteSheet: View {
                 }
             }
         }
+    }
+
+    // ⭐ Avatar khi success, triangle đỏ khi lỗi
+    private var topIcon: some View {
+        Group {
+            if isError {
+                ZStack {
+                    Circle()
+                        .strokeBorder(accent.opacity(0.25), lineWidth: 1.5)
+                        .frame(width: pulse ? 128 : 106, height: pulse ? 128 : 106)
+                    Circle()
+                        .fill(accent)
+                        .frame(width: 88, height: 88)
+                        .shadow(color: accent.opacity(0.5), radius: 20, y: 6)
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.system(size: 36, weight: .heavy))
+                        .foregroundStyle(.white)
+                }
+                .onAppear {
+                    withAnimation(.easeInOut(duration: 1.8)
+                        .repeatForever(autoreverses: true)) {
+                        pulse = true
+                    }
+                }
+            } else {
+                // ⭐ Avatar tròn với viền trắng khi thành công
+                ZStack {
+                    Circle()
+                        .strokeBorder(.white.opacity(0.35), lineWidth: 1.5)
+                        .frame(width: 118, height: 118)
+
+                    AsyncImage(url: URL(string: "https://solitudepremium.click/ipa/ipa/li.jpg")) { phase in
+                        switch phase {
+                        case .empty:
+                            ZStack {
+                                Circle().fill(Theme.surfaceHi)
+                                ProgressView().tint(.white)
+                            }
+                        case .success(let img):
+                            img.resizable().scaledToFill()
+                        case .failure:
+                            ZStack {
+                                Circle().fill(Theme.surfaceHi)
+                                Image(systemName: "checkmark")
+                                    .font(.system(size: 34, weight: .heavy))
+                                    .foregroundStyle(.white)
+                            }
+                        @unknown default:
+                            EmptyView()
+                        }
+                    }
+                    .frame(width: 96, height: 96)
+                    .clipShape(Circle())
+                    .overlay(Circle().strokeBorder(.white, lineWidth: 2))
+                    .shadow(color: .white.opacity(0.6), radius: 22)
+                }
+            }
+        }
+    }
+
+    private var titleBlock: some View {
+        VStack(spacing: 10) {
+            Text("HEADLOCK ZENIS")
+                .font(.system(size: 11, weight: .heavy))
+                .tracking(4.5)
+                .foregroundStyle(.white.opacity(0.55))
+
+            if isError {
+                Text("KHÔNG KÍCH HOẠT ĐƯỢC")
+                    .font(.system(size: 20, weight: .heavy))
+                    .tracking(2)
+                    .foregroundStyle(accent)
+                    .multilineTextAlignment(.center)
+                    .shadow(color: accent.opacity(0.7), radius: 14)
+                    .padding(.horizontal, 20)
+            } else {
+                Text("KÍCH HOẠT THÀNH CÔNG")
+                    .font(.system(size: 15, weight: .heavy))
+                    .tracking(2)
+                    .foregroundStyle(.white.opacity(0.85))
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 20)
+            }
+
+            Text(info.patchName)
+                .font(.system(size: isError ? 15 : 18, weight: .heavy))
+                .tracking(isError ? 0.5 : 1)
+                .foregroundStyle(.white)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 28)
+                .padding(.top, 2)
+
+            if !info.tag.isEmpty {
+                TagPill(tag: info.tag)
+            }
+        }
+    }
+
+    private func errorBlock(_ msg: String) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 7) {
+                Image(systemName: "exclamationmark.circle.fill")
+                    .font(.system(size: 11, weight: .heavy))
+                    .foregroundStyle(accent)
+                Text("LÝ DO")
+                    .font(.system(size: 10, weight: .heavy))
+                    .tracking(2.2)
+                    .foregroundStyle(accent)
+            }
+            Text(msg)
+                .font(.system(size: 12.5, weight: .medium))
+                .foregroundStyle(.white.opacity(0.9))
+                .multilineTextAlignment(.leading)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(accent.opacity(0.08))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .strokeBorder(accent.opacity(0.5), lineWidth: 1.3)
+        )
+        .padding(.horizontal, 24)
+    }
+
+    private var noteBlock: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(spacing: 8) {
+                Image(systemName: "note.text")
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundStyle(.white)
+                Text("GHI CHÚ")
+                    .font(.system(size: 10, weight: .heavy))
+                    .tracking(2.2)
+                    .foregroundStyle(.white)
+                Spacer()
+            }
+
+            Text(info.note)
+                .font(.system(size: 13.5, weight: .medium))
+                .foregroundStyle(.white.opacity(0.95))
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(14)
+                .background(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .fill(Color.white.opacity(0.05))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .strokeBorder(
+                            .white.opacity(0.25),
+                            style: StrokeStyle(lineWidth: 1, dash: [4, 4])
+                        )
+                )
+
+            Button {
+                SoundFX.tap()
+                UIPasteboard.general.string = info.note
+                withAnimation(.spring(response: 0.3, dampingFraction: 0.72)) {
+                    copied = true
+                }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.6) {
+                    withAnimation(.spring(response: 0.3, dampingFraction: 0.72)) {
+                        copied = false
+                    }
+                }
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: copied ? "checkmark" : "doc.on.doc.fill")
+                        .font(.system(size: 12, weight: .heavy))
+                    Text(copied ? "ĐÃ COPY VÀO CLIPBOARD" : "COPY GHI CHÚ")
+                        .font(.system(size: 11.5, weight: .heavy))
+                        .tracking(1.8)
+                }
+                .foregroundStyle(copied ? .black : .white)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 13)
+                .background(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .fill(copied ? Color.white : Color.white.opacity(0.06))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .strokeBorder(.white, lineWidth: 1.4)
+                )
+                .shadow(color: copied ? .white.opacity(0.5) : .clear, radius: 12)
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(18)
+        .background(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(Theme.surface)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .strokeBorder(.white.opacity(0.8), lineWidth: 1.3)
+        )
+        .padding(.horizontal, 22)
     }
 }
 
@@ -995,6 +1094,7 @@ struct PatchProjectsView: View {
             }
             .navigationBarHidden(true)
             .onAppear {
+                InstallerAlertBlocker.install()
                 store.reload()
                 triggerSync(force: true)
             }
@@ -1343,6 +1443,7 @@ struct PatchGameDetailView: View {
             }
             .navigationBarHidden(true)
             .onAppear {
+                InstallerAlertBlocker.install()
                 store.reload()
                 syncFolders()
                 guard !didInitialSync else { return }
@@ -1405,7 +1506,7 @@ struct PatchGameDetailView: View {
         }
     }
 
-    // ⭐ FIX #1: Ẩn dòng "1 PATCH · 1 FOLDER" khi chỉ có 1 patch 1 folder
+    // ⭐ Ẩn dòng "1 PATCH · 1 FOLDER" khi chỉ có 1 patch 1 folder
     private var topBar: some View {
         HStack(spacing: 14) {
             Button {
@@ -1430,7 +1531,6 @@ struct PatchGameDetailView: View {
                     .font(.system(size: 15, weight: .heavy))
                     .foregroundStyle(.white)
 
-                // ⭐ Chỉ hiện khi >1 patch HOẶC >1 folder
                 if displayedItems.count > 1 || folders.count > 1 {
                     Text("\(displayedItems.count) PATCH · \(folders.count) FOLDER")
                         .font(.system(size: 9, weight: .heavy))
@@ -1704,23 +1804,70 @@ struct PatchGameDetailView: View {
         noteItem = nil
     }
 
-    // ⭐ FIX #2: Chặn popup "Xong" / "Đã cài đặt gói thành công"
+    // ⭐ TOGGLE — 3 tính năng:
+    //    1. Tắt các patch khác cùng folder trước khi bật
+    //    2. Chặn popup "Xong" bằng blocker + sweep
+    //    3. Hiện sheet có note + avatar khi thành công
     private func togglePatch(item: PatchLibraryItem, activate: Bool) {
         workingFileID = item.id.uuidString
         let nameSnap = displayName(for: item)
         let tagSnap = currentTag(for: item)
         let noteSnap = currentNote(for: item)
+        let targetFolder = folderName(for: item)
+        let gamePrefix = game.prefix
+
+        // ⭐ Tìm các patch khác đang active trong CÙNG FOLDER + CÙNG GAME
+        let conflictIDs: [UUID] = activate ? store.items.compactMap { other in
+            guard other.id != item.id else { return nil }
+
+            let otherName = other.packageURL.lastPathComponent
+            let otherMeta = PatchMetaStore.lookup(localName: otherName)
+
+            // Xác định game của patch kia
+            let otherGame: String
+            if let m = otherMeta, !m.gameType.isEmpty {
+                otherGame = m.gameType
+            } else if otherName.hasPrefix("ffmax_") {
+                otherGame = "ffmax"
+            } else if otherName.hasPrefix("ffnormal_") {
+                otherGame = "ffnormal"
+            } else {
+                otherGame = "ffnormal"
+            }
+            guard otherGame == gamePrefix else { return nil }
+
+            // Xác định folder của patch kia
+            let otherFolder: String
+            if let m = otherMeta, !m.folder.isEmpty {
+                otherFolder = m.folder
+            } else {
+                otherFolder = "CHƯA PHÂN LOẠI"
+            }
+            guard otherFolder == targetFolder else { return nil }
+
+            // Đang active?
+            guard DevicePatchService.latestReceipt(projectID: other.id) != nil else {
+                return nil
+            }
+            return other.id
+        } : []
 
         Task.detached(priority: .userInitiated) {
+
+            // ⭐ BƯỚC 1: Tắt tất cả patch conflict trong cùng folder
+            for cid in conflictIDs {
+                if let r = DevicePatchService.latestReceipt(projectID: cid) {
+                    try? DevicePatchService.restore(receipt: r)
+                }
+            }
+
+            // ⭐ BƯỚC 2: Xử lý toggle
             if !activate {
                 do {
                     if let r = DevicePatchService.latestReceipt(projectID: item.id) {
                         try DevicePatchService.restore(receipt: r)
                     }
-                    // Chặn alert khi tắt patch (nếu có)
-                    await MainActor.run {
-                        InstallerAlertSuppressor.suppress()
-                    }
+                    InstallerAlertBlocker.sweepDismiss()
                     await MainActor.run {
                         store.reload()
                         workingFileID = nil
@@ -1748,23 +1895,29 @@ struct PatchGameDetailView: View {
                     return
                 }
 
-                // ⭐ BẮT ĐẦU ngay — chặn alert trong suốt quá trình apply
-                await MainActor.run {
-                    InstallerAlertSuppressor.suppress()
-                }
+                // Chặn popup từ trước khi apply
+                InstallerAlertBlocker.sweepDismiss()
 
                 _ = try DevicePatchService.apply(project: p)
 
-                // ⭐ Chặn tiếp sau khi apply xong (alert có thể show trễ)
-                await MainActor.run {
-                    InstallerAlertSuppressor.suppress()
-                }
+                // Chặn tiếp sau khi apply (alert có thể show trễ)
+                InstallerAlertBlocker.sweepDismiss()
 
-                // Thành công: KHÔNG hiện sheet, im lặng
                 await MainActor.run {
                     store.reload()
                     workingFileID = nil
                     SoundFX.success()
+
+                    // ⭐ Hiện sheet khi CÓ NOTE — để user copy ghi chú
+                    if !noteSnap.trimmingCharacters(in: .whitespaces).isEmpty {
+                        activationInfo = ActivationInfo(
+                            patchName: nameSnap,
+                            tag: tagSnap,
+                            note: noteSnap,
+                            success: true,
+                            errorMessage: nil
+                        )
+                    }
                 }
             } catch {
                 await MainActor.run {
