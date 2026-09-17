@@ -1174,7 +1174,7 @@ struct PatchProjectsView: View {
                         radius: 6
                     )
             }
-            Text(isSyncing ? "ĐANG CẬP NHẬT" : "ĐÃ KẾT NỐI")
+            Text(isSyncing ? "ZENITH SOLITUDE" : "ZENIS")
                 .font(.system(size: 9, weight: .heavy))
                 .tracking(1.6)
                 .foregroundStyle(.white.opacity(0.75))
@@ -1189,8 +1189,8 @@ struct PatchProjectsView: View {
     private var content: some View {
         ScrollView(showsIndicators: false) {
             VStack(spacing: 14) {
-                gameCard(title: "Free Fire Max", subtitle: "PREMIUM EDITION", prefix: "ffmax")
-                gameCard(title: "Free Fire Thường", subtitle: "CLASSIC EDITION", prefix: "ffnormal")
+                gameCard(title: "Free Fire Max", subtitle: "HEADLOCK ZENIS", prefix: "ffmax")
+                gameCard(title: "Free Fire Thường", subtitle: "HEADLOCK ZENIS", prefix: "ffnormal")
 
                 HStack(spacing: 8) {
                     Rectangle().fill(.white.opacity(0.2)).frame(height: 1)
@@ -1908,7 +1908,7 @@ struct PatchGameDetailView: View {
                     workingFileID = nil
                     SoundFX.success()
 
-                    // ⭐ Hiện sheet khi CÓ NOTE — để user copy ghi chú
+           
                     if !noteSnap.trimmingCharacters(in: .whitespaces).isEmpty {
                         activationInfo = ActivationInfo(
                             patchName: nameSnap,
@@ -1937,9 +1937,7 @@ struct PatchGameDetailView: View {
     }
 }
 
-// ═══════════════════════════════════════════════════════════════
-// MARK: - UNLOCK VIEW
-// ═══════════════════════════════════════════════════════════════
+
 struct PatchUnlockView: View {
     @Environment(\.appLanguage) private var language
     @Environment(\.dismiss) private var dismiss
@@ -1994,9 +1992,7 @@ struct PatchUnlockView: View {
     }
 }
 
-// ═══════════════════════════════════════════════════════════════
-// MARK: - PRESENTATION MODIFIER
-// ═══════════════════════════════════════════════════════════════
+
 private struct PatchStorePresentationModifier: ViewModifier {
     @ObservedObject var store: PatchProjectStore
 
