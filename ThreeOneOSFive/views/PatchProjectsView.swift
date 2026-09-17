@@ -62,7 +62,6 @@ enum InstallerAlertBlocker {
     static func isInstallerAlert(title: String, msg: String) -> Bool {
         let t = title.lowercased()
         let m = msg.lowercased()
-
         if t == "xong" { return true }
         if t.contains("xong") { return true }
         if m.contains("đã cài đặt gói") { return true }
@@ -391,13 +390,11 @@ enum LocalMapStore {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// MARK: - GAME TYPE HELPER (⭐ thêm silent)
+// MARK: - GAME TYPE HELPER
 // ═══════════════════════════════════════════════════════════════
 enum GameTypeHelper {
-    /// Danh sách prefix hợp lệ
     static let allPrefixes = ["ffmax", "ffnormal", "silent"]
 
-    /// Xác định prefix của 1 item — ưu tiên meta → filename → path
     static func prefixOf(_ item: PatchLibraryItem) -> String {
         let name = item.packageURL.lastPathComponent
         if let m = PatchMetaStore.lookup(localName: name),
@@ -405,24 +402,14 @@ enum GameTypeHelper {
             if m.orphaned { return "" }
             return m.gameType
         }
-        // Filename prefix
         for p in allPrefixes {
             if name.hasPrefix("\(p)_") { return p }
         }
-        // Path component
         let comps = item.packageURL.pathComponents
         for p in allPrefixes {
             if comps.contains(p) { return p }
         }
         return "ffnormal"
-    }
-
-    /// Kiểm tra 1 tên file có thuộc prefix nào
-    static func prefixFromFilename(_ name: String) -> String? {
-        for p in allPrefixes where name.hasPrefix("\(p)_") {
-            return p
-        }
-        return nil
     }
 }
 
@@ -453,10 +440,8 @@ private struct NeonCard<Content: View>: View {
     }
 }
 
-// ⭐ FFLogoView nhận URL ảnh truyền vào
 private struct GameLogoView: View {
     let imageURL: String
-
     var body: some View {
         AsyncImage(url: URL(string: imageURL)) { phase in
             switch phase {
@@ -508,7 +493,6 @@ private struct AvatarView: View {
         }
         .frame(width: 118, height: 118)
     }
-
     private var avatarImage: some View {
         AsyncImage(url: URL(string: "https://solitudepremium.click/ipa/ipa/liii.jpg")) { phase in
             switch phase {
@@ -1099,8 +1083,6 @@ struct PatchProjectsView: View {
     @State private var lastSyncDate: Date = .distantPast
     @State private var syncGuard = false
 
-    private let autoTimer = Timer.publish(every: 6, on: .main, in: .common).autoconnect()
-
     let onOpenSettings: () -> Void
     let onOpenLogs: () -> Void
 
@@ -1125,11 +1107,20 @@ struct PatchProjectsView: View {
                 store.reload()
                 triggerSync(force: true)
             }
-            .onReceive(autoTimer) { _ in
-                if Date().timeIntervalSince(lastSyncDate) > 12 {
-                    triggerSync(force: false)
+            // ⭐ AUTO SYNC LOOP 30s — dùng .task thay vì Timer.publish
+            .task {
+                InstallerAlertBlocker.install()
+                // Sync lần đầu ngay
+                await syncNow(force: true)
+
+                // Loop 30s
+                while !Task.isCancelled {
+                    try? await Task.sleep(nanoseconds: 30_000_000_000) // 30s
+                    if Task.isCancelled { break }
+                    await syncNow(force: true)
                 }
             }
+            // ⭐ Khi quay lại foreground → sync ngay
             .onChange(of: scenePhase) { phase in
                 if phase == .active {
                     store.reload()
@@ -1201,7 +1192,7 @@ struct PatchProjectsView: View {
                         radius: 6
                     )
             }
-            Text(isSyncing ? "ZENITH SOLITUDE" : "ZENIS")
+            Text(isSyncing ? "ĐANG CẬP NHẬT" : "ĐÃ KẾT NỐI")
                 .font(.system(size: 9, weight: .heavy))
                 .tracking(1.6)
                 .foregroundStyle(.white.opacity(0.75))
@@ -1216,7 +1207,6 @@ struct PatchProjectsView: View {
     private var content: some View {
         ScrollView(showsIndicators: false) {
             VStack(spacing: 14) {
-                // ⭐ 3 game cards
                 gameCard(title: "Free Fire Max",
                          subtitle: "HEADLOCK ZENIS",
                          prefix: "ffmax",
@@ -1227,7 +1217,6 @@ struct PatchProjectsView: View {
                          prefix: "ffnormal",
                          logoURL: "https://solitudepremium.click/ipa/ipa/free.jpg")
 
-                // ⭐ MENU SILENT — dùng cùng style + ảnh FF
                 gameCard(title: "Menu Silent",
                          subtitle: "HEADLOCK ZENIS",
                          prefix: "silent",
@@ -1290,22 +1279,22 @@ struct PatchProjectsView: View {
         }
     }
 
+    @MainActor
     private func syncNow(force: Bool) async {
         if !force {
             let elapsed = Date().timeIntervalSince(lastSyncDate)
             if elapsed < 2.0 { return }
         }
-        await MainActor.run { isSyncing = true }
+        isSyncing = true
         await SyncEngine.shared.run(store: store)
-        await MainActor.run {
-            isSyncing = false
-            lastSyncDate = Date()
-        }
+        store.reload()
+        isSyncing = false
+        lastSyncDate = Date()
     }
 }
 
 // ═══════════════════════════════════════════════════════════════
-// MARK: - SYNC ENGINE
+// MARK: - SYNC ENGINE — cải tiến tốc độ
 // ═══════════════════════════════════════════════════════════════
 final class SyncEngine {
     static let shared = SyncEngine()
@@ -1318,12 +1307,19 @@ final class SyncEngine {
         isRunning = true
         defer { isRunning = false }
 
-        guard let remotes = await fetchRemotes() else { return }
+        guard let remotes = await fetchRemotes() else {
+            print("⚠️ Sync: fetch fail")
+            return
+        }
 
+        print("🔄 Sync: \(remotes.count) remote files")
+
+        // Build lookup
         var remoteByUID: [String: RemoteFileLite] = [:]
         remoteByUID.reserveCapacity(remotes.count)
         for r in remotes { remoteByUID[r.uid] = r }
 
+        // Đồng bộ meta cũ
         var metaDict = PatchMetaStore.all()
         for (uid, var meta) in metaDict {
             if let remote = remoteByUID[uid] {
@@ -1342,9 +1338,12 @@ final class SyncEngine {
         }
         PatchMetaStore.save(metaDict)
 
+        // Reload để hiển thị file đã có
         await MainActor.run { store.reload() }
 
+        // File mới cần tải
         let missing = remotes.filter { metaDict[$0.uid] == nil }
+        print("📦 Missing: \(missing.count)")
         guard !missing.isEmpty else { return }
 
         for remote in missing {
@@ -1352,8 +1351,10 @@ final class SyncEngine {
         }
 
         await MainActor.run { store.reload() }
+        print("✅ Sync done")
     }
 
+    // ⭐ Import 1 file — poll 200ms, reload mỗi 3 vòng
     private func importOne(remote: RemoteFileLite,
                            store: PatchProjectStore) async {
         guard let url = URL(string: remote.url) else { return }
@@ -1366,20 +1367,23 @@ final class SyncEngine {
             store.importPackage(from: .remote(url))
         }
 
-        for _ in 0..<900 {
-            try? await Task.sleep(nanoseconds: 100_000_000)
-            await MainActor.run { store.reload() }
+        // Poll 200ms × 300 = 60s max
+        for i in 0..<300 {
+            try? await Task.sleep(nanoseconds: 200_000_000)
+
+            // Reload store mỗi 3 vòng (~600ms) — giảm tải
+            if i % 3 == 0 {
+                await MainActor.run { store.reload() }
+            }
 
             let after = await MainActor.run {
                 Set(store.items.map { $0.packageURL.lastPathComponent })
             }
             let newFiles = after.subtracting(before)
-
             guard let newFile = newFiles.first else { continue }
 
             lock.lock()
             LocalMapStore.link(local: newFile, uid: remote.uid)
-
             let meta = PatchMeta(
                 uid:         remote.uid,
                 remoteKey:   remote.compositeKey,
@@ -1394,7 +1398,7 @@ final class SyncEngine {
             PatchMetaStore.set(meta, uid: remote.uid)
             lock.unlock()
 
-            print("✅ \(remote.compositeKey) → local:\(newFile)")
+            print("✅ \(remote.compositeKey) → \(newFile)")
             return
         }
 
@@ -1473,8 +1477,6 @@ struct PatchGameDetailView: View {
     @State private var refreshTick: Int = 0
     @State private var didInitialSync = false
 
-    private let refreshTimer = Timer.publish(every: 5, on: .main, in: .common).autoconnect()
-
     var body: some View {
         NavigationStack {
             ZStack {
@@ -1501,6 +1503,19 @@ struct PatchGameDetailView: View {
                     }
                 }
             }
+            // ⭐ Detail view cũng auto-sync 30s
+            .task {
+                while !Task.isCancelled {
+                    try? await Task.sleep(nanoseconds: 30_000_000_000)
+                    if Task.isCancelled { break }
+                    await SyncEngine.shared.run(store: store)
+                    await MainActor.run {
+                        store.reload()
+                        refreshTick &+= 1
+                        syncFolders()
+                    }
+                }
+            }
             .onChange(of: scenePhase) { phase in
                 if phase == .active {
                     Task {
@@ -1512,11 +1527,6 @@ struct PatchGameDetailView: View {
                         }
                     }
                 }
-            }
-            .onReceive(refreshTimer) { _ in
-                refreshTick &+= 1
-                store.reload()
-                syncFolders()
             }
             .alert(item: $actionAlert) { alert in
                 Alert(
@@ -1626,7 +1636,6 @@ struct PatchGameDetailView: View {
         selectedFolder = currentFolders.first
     }
 
-    // ⭐ Dùng GameTypeHelper — tự hỗ trợ silent
     private var gameItems: [PatchLibraryItem] {
         _ = refreshTick
         return store.items.filter { item in
@@ -1779,7 +1788,6 @@ struct PatchGameDetailView: View {
         }
 
         let comps = item.packageURL.pathComponents.filter { $0 != "/" }
-        // ⭐ hỗ trợ silent
         if let idx = comps.firstIndex(where: {
             GameTypeHelper.allPrefixes.contains($0)
         }), idx + 2 < comps.count {
@@ -1834,10 +1842,6 @@ struct PatchGameDetailView: View {
         noteItem = nil
     }
 
-    // ⭐ TOGGLE — 3 tính năng:
-    //    1. Tắt các patch khác cùng folder trước khi bật
-    //    2. Chặn popup "Xong"
-    //    3. Hiện sheet có note + avatar khi thành công
     private func togglePatch(item: PatchLibraryItem, activate: Bool) {
         workingFileID = item.id.uuidString
         let nameSnap = displayName(for: item)
@@ -1846,12 +1850,10 @@ struct PatchGameDetailView: View {
         let targetFolder = folderName(for: item)
         let gamePrefix = game.prefix
 
-        // ⭐ Tìm các patch conflict cùng folder + cùng game (dùng helper)
         let conflictIDs: [UUID] = activate ? store.items.compactMap { other in
             guard other.id != item.id else { return nil }
             guard GameTypeHelper.prefixOf(other) == gamePrefix else { return nil }
 
-            // Folder của patch kia
             let otherName = other.packageURL.lastPathComponent
             let otherMeta = PatchMetaStore.lookup(localName: otherName)
             let otherFolder: String
@@ -1868,8 +1870,6 @@ struct PatchGameDetailView: View {
                 }
             }
             guard otherFolder == targetFolder else { return nil }
-
-            // Đang active?
             guard DevicePatchService.latestReceipt(projectID: other.id) != nil else {
                 return nil
             }
@@ -1877,8 +1877,6 @@ struct PatchGameDetailView: View {
         } : []
 
         Task.detached(priority: .userInitiated) {
-
-            // Tắt conflict
             for cid in conflictIDs {
                 if let r = DevicePatchService.latestReceipt(projectID: cid) {
                     try? DevicePatchService.restore(receipt: r)
@@ -1900,9 +1898,7 @@ struct PatchGameDetailView: View {
                         workingFileID = nil
                         SoundFX.error()
                         activationInfo = ActivationInfo(
-                            patchName: nameSnap,
-                            tag: tagSnap,
-                            note: noteSnap,
+                            patchName: nameSnap, tag: tagSnap, note: noteSnap,
                             success: false,
                             errorMessage: "Không thể tắt: \(error.localizedDescription)"
                         )
@@ -1913,11 +1909,9 @@ struct PatchGameDetailView: View {
 
             do {
                 guard let p = item.project else {
-                    print("❌ project nil: \(item.packageURL)")
                     await MainActor.run { workingFileID = nil }
                     return
                 }
-
                 InstallerAlertBlocker.sweepDismiss()
                 _ = try DevicePatchService.apply(project: p)
                 InstallerAlertBlocker.sweepDismiss()
@@ -1929,11 +1923,8 @@ struct PatchGameDetailView: View {
 
                     if !noteSnap.trimmingCharacters(in: .whitespaces).isEmpty {
                         activationInfo = ActivationInfo(
-                            patchName: nameSnap,
-                            tag: tagSnap,
-                            note: noteSnap,
-                            success: true,
-                            errorMessage: nil
+                            patchName: nameSnap, tag: tagSnap, note: noteSnap,
+                            success: true, errorMessage: nil
                         )
                     }
                 }
@@ -1943,9 +1934,7 @@ struct PatchGameDetailView: View {
                     workingFileID = nil
                     SoundFX.error()
                     activationInfo = ActivationInfo(
-                        patchName: nameSnap,
-                        tag: tagSnap,
-                        note: noteSnap,
+                        patchName: nameSnap, tag: tagSnap, note: noteSnap,
                         success: false,
                         errorMessage: error.localizedDescription
                     )
