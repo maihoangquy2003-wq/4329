@@ -325,7 +325,7 @@ struct ActivationInfo: Identifiable {
 // MARK: - META STORE
 // ═══════════════════════════════════════════════════════════════
 enum PatchMetaStore {
-    private static let key = "patch_meta_v22"
+    private static let key = "patch_meta_v23"
 
     static func all() -> [String: PatchMeta] {
         guard let data = UserDefaults.standard.data(forKey: key),
@@ -368,7 +368,7 @@ enum PatchMetaStore {
 }
 
 enum LocalMapStore {
-    private static let key = "patch_localmap_v22"
+    private static let key = "patch_localmap_v23"
 
     static func all() -> [String: String] {
         (UserDefaults.standard.dictionary(forKey: key) as? [String: String]) ?? [:]
@@ -390,31 +390,26 @@ enum LocalMapStore {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// MARK: - GAME TYPE HELPER (4 prefix)
+// MARK: - GAME TYPE HELPER
 // ═══════════════════════════════════════════════════════════════
 enum GameTypeHelper {
-    /// 4 prefix hợp lệ
     static let allPrefixes = ["ffmax", "ffnormal", "silent_ffmax", "silent_ffnormal"]
 
     static func prefixOf(_ item: PatchLibraryItem) -> String {
         let name = item.packageURL.lastPathComponent
 
-        // 1. Meta
         if let m = PatchMetaStore.lookup(localName: name),
            !m.gameType.isEmpty {
             if m.orphaned { return "" }
             return m.gameType
         }
 
-        // 2. Filename prefix (kiểm tra theo thứ tự dài trước ngắn)
         let sorted = allPrefixes.sorted { $0.count > $1.count }
         for p in sorted {
             if name.hasPrefix("\(p)_") { return p }
         }
 
-        // 3. Path components
         let comps = item.packageURL.pathComponents
-        // silent/ffmax/... hoặc silent/ffnormal/...
         if comps.contains("silent") {
             if comps.contains("ffmax") { return "silent_ffmax" }
             if comps.contains("ffnormal") { return "silent_ffnormal" }
@@ -426,7 +421,6 @@ enum GameTypeHelper {
         return "ffnormal"
     }
 
-    /// Check xem prefix có phải silent không
     static func isSilent(_ prefix: String) -> Bool {
         return prefix.hasPrefix("silent")
     }
@@ -494,22 +488,27 @@ private struct GameLogoView: View {
     }
 }
 
-// ⭐ Avatar server với cache-busting
+// ⭐ Avatar server — hỗ trợ cả tròn và vuông
+enum AvatarShape { case circle, roundedSquare }
+
 private struct ServerAvatarView: View {
     let size: CGFloat
+    var shape: AvatarShape = .circle
+    var corner: CGFloat = 14
+
     var body: some View {
         AsyncImage(url: URL(string: "https://solitudepremium.click/ipa/ipa/liii.jpg")) { phase in
             switch phase {
             case .empty:
                 ZStack {
-                    Circle().fill(Theme.surfaceHi)
+                    shapeFill
                     ProgressView().tint(.white).scaleEffect(0.8)
                 }
             case .success(let img):
                 img.resizable().scaledToFill()
             case .failure:
                 ZStack {
-                    Theme.surfaceHi
+                    shapeFill
                     Image(systemName: "person.fill")
                         .font(.system(size: size * 0.42, weight: .medium))
                         .foregroundStyle(.white.opacity(0.5))
@@ -519,8 +518,49 @@ private struct ServerAvatarView: View {
             }
         }
         .frame(width: size, height: size)
-        .clipShape(Circle())
-        .overlay(Circle().strokeBorder(.white, lineWidth: 1.5))
+        .clipShape(clipShape)
+        .overlay(clipShape.strokeBorder(.white, lineWidth: 1.5))
+    }
+
+    private var clipShape: AnyShape {
+        switch shape {
+        case .circle:
+            return AnyShape(Circle())
+        case .roundedSquare:
+            return AnyShape(RoundedRectangle(cornerRadius: corner, style: .continuous))
+        }
+    }
+
+    @ViewBuilder
+    private var shapeFill: some View {
+        switch shape {
+        case .circle:
+            Circle().fill(Theme.surfaceHi)
+        case .roundedSquare:
+            RoundedRectangle(cornerRadius: corner, style: .continuous)
+                .fill(Theme.surfaceHi)
+        }
+    }
+}
+
+// Helper để dùng chung clipShape cho 2 loại
+private extension Shape {
+    func strokeBorder(_ color: Color, lineWidth: CGFloat) -> some View {
+        self.stroke(color, lineWidth: lineWidth)
+    }
+}
+
+private struct AnyShape: Shape {
+    private let pathMaker: (CGRect) -> Path
+
+    init<S: Shape>(_ shape: S) {
+        self.pathMaker = { rect in
+            shape.path(in: rect)
+        }
+    }
+
+    func path(in rect: CGRect) -> Path {
+        pathMaker(rect)
     }
 }
 
@@ -535,7 +575,7 @@ private struct AvatarView: View {
                 .strokeBorder(.white, lineWidth: 2)
                 .frame(width: 92, height: 92)
                 .shadow(color: .white.opacity(0.5), radius: 10)
-            ServerAvatarView(size: 78)
+            ServerAvatarView(size: 78, shape: .circle)
         }
         .frame(width: 118, height: 118)
     }
@@ -587,8 +627,7 @@ private struct PatchIconView: View {
     var body: some View {
         ZStack {
             if isApplied {
-                ServerAvatarView(size: 52)
-                    .overlay(Circle().strokeBorder(.white, lineWidth: 2))
+                ServerAvatarView(size: 52, shape: .circle)
                     .shadow(color: .white.opacity(0.45), radius: 10)
             } else {
                 ZStack {
@@ -813,10 +852,10 @@ private struct EmptyStateView: View {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// MARK: - SILENT SUB-MENU SHEET (chọn FF Max / FF Thường)
+// MARK: - SILENT SUB-MENU SHEET
 // ═══════════════════════════════════════════════════════════════
 struct SilentSubMenuSheet: View {
-    let onSelect: (String) -> Void   // "silent_ffmax" | "silent_ffnormal"
+    let onSelect: (String) -> Void
     let onCancel: () -> Void
 
     var body: some View {
@@ -826,14 +865,12 @@ struct SilentSubMenuSheet: View {
             VStack(spacing: 24) {
                 Spacer(minLength: 30)
 
-                // Header
                 VStack(spacing: 12) {
-                    ZStack {
-                        Circle()
-                            .strokeBorder(.white.opacity(0.35), lineWidth: 1.4)
-                            .frame(width: 92, height: 92)
-                        ServerAvatarView(size: 76)
-                    }
+                    ServerAvatarView(size: 92, shape: .roundedSquare, corner: 20)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                                .strokeBorder(.white, lineWidth: 1.6)
+                        )
 
                     Text("MENU SILENT")
                         .font(.system(size: 20, weight: .heavy))
@@ -848,7 +885,6 @@ struct SilentSubMenuSheet: View {
                 }
                 .padding(.bottom, 6)
 
-                // 2 lựa chọn
                 VStack(spacing: 14) {
                     optionCard(
                         title: "Free Fire Max",
@@ -900,13 +936,11 @@ struct SilentSubMenuSheet: View {
         } label: {
             NeonCard {
                 HStack(spacing: 16) {
-                    // ⭐ Avatar cho mỗi option
-                    ZStack {
-                        Circle()
-                            .strokeBorder(.white.opacity(0.4), lineWidth: 1.5)
-                            .frame(width: 68, height: 68)
-                        ServerAvatarView(size: 56)
-                    }
+                    ServerAvatarView(size: 62, shape: .roundedSquare, corner: 14)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                .strokeBorder(.white, lineWidth: 1.5)
+                        )
 
                     VStack(alignment: .leading, spacing: 5) {
                         Text(title)
@@ -1013,8 +1047,7 @@ struct ActivationNoteSheet: View {
                     Circle()
                         .strokeBorder(.white.opacity(0.35), lineWidth: 1.5)
                         .frame(width: 118, height: 118)
-                    ServerAvatarView(size: 96)
-                        .overlay(Circle().strokeBorder(.white, lineWidth: 2))
+                    ServerAvatarView(size: 96, shape: .circle)
                         .shadow(color: .white.opacity(0.6), radius: 22)
                 }
             }
@@ -1182,7 +1215,6 @@ struct PatchProjectsView: View {
     @State private var isSyncing = false
     @State private var lastSyncDate: Date = .distantPast
     @State private var syncGuard = false
-    @State private var hasSyncedOnLaunch = false
 
     let onOpenSettings: () -> Void
     let onOpenLogs: () -> Void
@@ -1207,31 +1239,27 @@ struct PatchProjectsView: View {
                 InstallerAlertBlocker.install()
                 store.reload()
             }
-            // ⭐ AUTO SYNC — tải ngay khi vào app, sau đó loop 30s
+            // ⭐ SYNC NGAY khi vào + loop 15s
             .task {
                 InstallerAlertBlocker.install()
 
-                // ⭐ Tải ngay khi vào app (bỏ qua delay 30s đầu)
-                if !hasSyncedOnLaunch {
-                    hasSyncedOnLaunch = true
-                    await syncNow(force: true)
-                }
+                // Sync lần đầu ngay lập tức
+                await syncNow(force: true)
 
-                // Loop 30s
+                // Loop 15s
                 while !Task.isCancelled {
-                    try? await Task.sleep(nanoseconds: 30_000_000_000)
+                    try? await Task.sleep(nanoseconds: 15_000_000_000)
                     if Task.isCancelled { break }
                     await syncNow(force: true)
                 }
             }
-            // Khi quay lại foreground → sync ngay
+            // Sync khi quay lại foreground
             .onChange(of: scenePhase) { phase in
                 if phase == .active {
                     store.reload()
                     triggerSync(force: true)
                 }
             }
-            // Detail game
             .sheet(item: $selectedGame) { game in
                 PatchGameDetailView(
                     game: game,
@@ -1240,7 +1268,6 @@ struct PatchProjectsView: View {
                     language: language
                 )
             }
-            // ⭐ Sub-menu cho Menu Silent
             .sheet(isPresented: $showSilentSubmenu) {
                 SilentSubMenuSheet(
                     onSelect: { prefix in
@@ -1341,7 +1368,6 @@ struct PatchProjectsView: View {
                          prefix: "ffnormal",
                          logoURL: "https://solitudepremium.click/ipa/ipa/free.jpg")
 
-                // ⭐ Menu Silent — bấm vào → hiện sub-menu
                 silentCard()
 
                 HStack(spacing: 8) {
@@ -1392,7 +1418,7 @@ struct PatchProjectsView: View {
         .buttonStyle(.plain)
     }
 
-    // ⭐ Card Menu Silent — hiện avatar server
+    // ⭐ Menu Silent — avatar vuông
     private func silentCard() -> some View {
         Button {
             SoundFX.menu()
@@ -1400,17 +1426,12 @@ struct PatchProjectsView: View {
         } label: {
             NeonCard {
                 HStack(spacing: 14) {
-                    ZStack {
-                        RoundedRectangle(cornerRadius: 14, style: .continuous)
-                            .fill(Theme.surfaceHi)
-                            .frame(width: 58, height: 58)
-                        ServerAvatarView(size: 50)
-                    }
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 14, style: .continuous)
-                            .strokeBorder(.white, lineWidth: 1.5)
-                    )
-                    .shadow(color: .white.opacity(0.3), radius: 10)
+                    ServerAvatarView(size: 58, shape: .roundedSquare, corner: 14)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                .strokeBorder(.white, lineWidth: 1.5)
+                        )
+                        .shadow(color: .white.opacity(0.3), radius: 10)
 
                     VStack(alignment: .leading, spacing: 5) {
                         Text("Menu Silent")
@@ -1449,6 +1470,9 @@ struct PatchProjectsView: View {
         isSyncing = true
         await SyncEngine.shared.run(store: store)
         store.reload()
+        // Reload lần 2 để chắc chắn các view con cập nhật
+        try? await Task.sleep(nanoseconds: 200_000_000)
+        store.reload()
         isSyncing = false
         lastSyncDate = Date()
     }
@@ -1464,7 +1488,10 @@ final class SyncEngine {
     private init() {}
 
     func run(store: PatchProjectStore) async {
-        if isRunning { return }
+        if isRunning {
+            print("⏭️ Sync already running, skip")
+            return
+        }
         isRunning = true
         defer { isRunning = false }
 
@@ -1501,16 +1528,23 @@ final class SyncEngine {
 
         let missing = remotes.filter { metaDict[$0.uid] == nil }
         print("📦 Missing: \(missing.count)")
-        guard !missing.isEmpty else { return }
+        guard !missing.isEmpty else {
+            print("✅ Sync done (no missing)")
+            return
+        }
 
         for remote in missing {
             await importOne(remote: remote, store: store)
         }
 
+        // Reload cuối + chờ 1 nhịp cho store ổn định
+        await MainActor.run { store.reload() }
+        try? await Task.sleep(nanoseconds: 300_000_000)
         await MainActor.run { store.reload() }
         print("✅ Sync done")
     }
 
+    // ⭐ Import 1 file — poll 150ms, reload mỗi 2 vòng
     private func importOne(remote: RemoteFileLite,
                            store: PatchProjectStore) async {
         guard let url = URL(string: remote.url) else { return }
@@ -1523,9 +1557,12 @@ final class SyncEngine {
             store.importPackage(from: .remote(url))
         }
 
-        for i in 0..<300 {
-            try? await Task.sleep(nanoseconds: 200_000_000)
-            if i % 3 == 0 {
+        // Poll 150ms × 400 = 60s max
+        for i in 0..<400 {
+            try? await Task.sleep(nanoseconds: 150_000_000)
+
+            // Reload store mỗi 2 vòng (~300ms)
+            if i % 2 == 0 {
                 await MainActor.run { store.reload() }
             }
 
@@ -1551,6 +1588,8 @@ final class SyncEngine {
             PatchMetaStore.set(meta, uid: remote.uid)
             lock.unlock()
 
+            // Force reload ngay sau khi gán meta
+            await MainActor.run { store.reload() }
             print("✅ \(remote.compositeKey) → \(newFile)")
             return
         }
@@ -1645,9 +1684,11 @@ struct PatchGameDetailView: View {
                 InstallerAlertBlocker.install()
                 store.reload()
                 syncFolders()
-                guard !didInitialSync else { return }
-                didInitialSync = true
-                Task {
+            }
+            // ⭐ Sync ngay khi mở detail + loop 15s
+            .task {
+                if !didInitialSync {
+                    didInitialSync = true
                     await SyncEngine.shared.run(store: store)
                     await MainActor.run {
                         store.reload()
@@ -1655,10 +1696,8 @@ struct PatchGameDetailView: View {
                         syncFolders()
                     }
                 }
-            }
-            .task {
                 while !Task.isCancelled {
-                    try? await Task.sleep(nanoseconds: 30_000_000_000)
+                    try? await Task.sleep(nanoseconds: 15_000_000_000)
                     if Task.isCancelled { break }
                     await SyncEngine.shared.run(store: store)
                     await MainActor.run {
@@ -1941,12 +1980,9 @@ struct PatchGameDetailView: View {
         }
 
         let comps = item.packageURL.pathComponents.filter { $0 != "/" }
-        // Tìm vị trí gameType — sau đó folder là component tiếp theo
         if let idx = comps.firstIndex(where: {
-            GameTypeHelper.allPrefixes.contains($0) ||
-            $0 == "silent"
+            GameTypeHelper.allPrefixes.contains($0) || $0 == "silent"
         }) {
-            // Nếu là silent và có sub (ffmax/ffnormal), folder ở idx+2
             if comps[idx] == "silent",
                idx + 1 < comps.count,
                (comps[idx + 1] == "ffmax" || comps[idx + 1] == "ffnormal") {
