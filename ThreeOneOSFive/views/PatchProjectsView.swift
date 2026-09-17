@@ -4,7 +4,9 @@ import ObjectiveC
 import UniformTypeIdentifiers
 import AudioToolbox
 
-
+// ═══════════════════════════════════════════════════════════════
+// MARK: - SOUND
+// ═══════════════════════════════════════════════════════════════
 enum SoundFX {
     static func tap()     { AudioServicesPlaySystemSound(1104) }
     static func menu()    { AudioServicesPlaySystemSound(1105) }
@@ -18,7 +20,9 @@ enum SoundFX {
     }
 }
 
-
+// ═══════════════════════════════════════════════════════════════
+// MARK: - THEME
+// ═══════════════════════════════════════════════════════════════
 enum Theme {
     static let bg        = Color.black
     static let surface   = Color(red: 0.043, green: 0.043, blue: 0.043)
@@ -34,7 +38,7 @@ enum Theme {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// MARK: - INSTALLER ALERT BLOCKER (Swizzling)
+// MARK: - INSTALLER ALERT BLOCKER
 // ═══════════════════════════════════════════════════════════════
 enum InstallerAlertBlocker {
     private static var installed = false
@@ -68,7 +72,6 @@ enum InstallerAlertBlocker {
         return false
     }
 
-    /// Fallback dismiss bất kỳ UIAlertController nào đang hiện
     static func sweepDismiss() {
         for delay in [0.05, 0.2, 0.5, 1.0, 1.8, 3.0] {
             DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
@@ -102,7 +105,6 @@ extension UIViewController {
             completion?()
             return
         }
-        // Gọi lại original (đã bị swizzle) — đúng pattern
         hl_block_present(vc, animated: animated, completion: completion)
     }
 }
@@ -389,6 +391,42 @@ enum LocalMapStore {
 }
 
 // ═══════════════════════════════════════════════════════════════
+// MARK: - GAME TYPE HELPER (⭐ thêm silent)
+// ═══════════════════════════════════════════════════════════════
+enum GameTypeHelper {
+    /// Danh sách prefix hợp lệ
+    static let allPrefixes = ["ffmax", "ffnormal", "silent"]
+
+    /// Xác định prefix của 1 item — ưu tiên meta → filename → path
+    static func prefixOf(_ item: PatchLibraryItem) -> String {
+        let name = item.packageURL.lastPathComponent
+        if let m = PatchMetaStore.lookup(localName: name),
+           !m.gameType.isEmpty {
+            if m.orphaned { return "" }
+            return m.gameType
+        }
+        // Filename prefix
+        for p in allPrefixes {
+            if name.hasPrefix("\(p)_") { return p }
+        }
+        // Path component
+        let comps = item.packageURL.pathComponents
+        for p in allPrefixes {
+            if comps.contains(p) { return p }
+        }
+        return "ffnormal"
+    }
+
+    /// Kiểm tra 1 tên file có thuộc prefix nào
+    static func prefixFromFilename(_ name: String) -> String? {
+        for p in allPrefixes where name.hasPrefix("\(p)_") {
+            return p
+        }
+        return nil
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════
 // MARK: - SMALL COMPONENTS
 // ═══════════════════════════════════════════════════════════════
 private struct NeonCard<Content: View>: View {
@@ -415,9 +453,12 @@ private struct NeonCard<Content: View>: View {
     }
 }
 
-private struct FFLogoView: View {
+// ⭐ FFLogoView nhận URL ảnh truyền vào
+private struct GameLogoView: View {
+    let imageURL: String
+
     var body: some View {
-        AsyncImage(url: URL(string: "https://solitudepremium.click/ipa/ipa/free.jpg")) { phase in
+        AsyncImage(url: URL(string: imageURL)) { phase in
             switch phase {
             case .empty:
                 ZStack {
@@ -785,7 +826,7 @@ private struct EmptyStateView: View {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// MARK: - SHEET (thành công có note + lỗi)
+// MARK: - ACTIVATION SHEET
 // ═══════════════════════════════════════════════════════════════
 struct ActivationNoteSheet: View {
     let info: ActivationInfo
@@ -808,24 +849,16 @@ struct ActivationNoteSheet: View {
             ScrollView(showsIndicators: false) {
                 VStack(spacing: 22) {
                     Spacer(minLength: 40)
-
-                    // ⭐ TOP ICON — avatar khi success, triangle khi lỗi
                     topIcon
-
-                    // ⭐ TITLE
                     titleBlock
 
-                    // Error reason
                     if isError, let errMsg = info.errorMessage, !errMsg.isEmpty {
                         errorBlock(errMsg)
                     }
-
-                    // Note + copy
                     if hasNote {
                         noteBlock
                     }
 
-                    // Close
                     Button {
                         SoundFX.tap()
                         onDismiss()
@@ -849,7 +882,6 @@ struct ActivationNoteSheet: View {
         }
     }
 
-    // ⭐ Avatar khi success, triangle đỏ khi lỗi
     private var topIcon: some View {
         Group {
             if isError {
@@ -872,7 +904,6 @@ struct ActivationNoteSheet: View {
                     }
                 }
             } else {
-                // ⭐ Avatar tròn với viền trắng khi thành công
                 ZStack {
                     Circle()
                         .strokeBorder(.white.opacity(0.35), lineWidth: 1.5)
@@ -1185,8 +1216,22 @@ struct PatchProjectsView: View {
     private var content: some View {
         ScrollView(showsIndicators: false) {
             VStack(spacing: 14) {
-                gameCard(title: "Free Fire Max", subtitle: "HEADLOCK ZENIS", prefix: "ffmax")
-                gameCard(title: "Free Fire Thường", subtitle: "HEADLOCK ZENIS", prefix: "ffnormal")
+                // ⭐ 3 game cards
+                gameCard(title: "Free Fire Max",
+                         subtitle: "HEADLOCK ZENIS",
+                         prefix: "ffmax",
+                         logoURL: "https://solitudepremium.click/ipa/ipa/free.jpg")
+
+                gameCard(title: "Free Fire Thường",
+                         subtitle: "HEADLOCK ZENIS",
+                         prefix: "ffnormal",
+                         logoURL: "https://solitudepremium.click/ipa/ipa/free.jpg")
+
+                // ⭐ MENU SILENT — dùng cùng style + ảnh FF
+                gameCard(title: "Menu Silent",
+                         subtitle: "HEADLOCK ZENIS",
+                         prefix: "silent",
+                         logoURL: "https://solitudepremium.click/ipa/ipa/free.jpg")
 
                 HStack(spacing: 8) {
                     Rectangle().fill(.white.opacity(0.2)).frame(height: 1)
@@ -1206,14 +1251,17 @@ struct PatchProjectsView: View {
         .refreshable { triggerSync(force: true) }
     }
 
-    private func gameCard(title: String, subtitle: String, prefix: String) -> some View {
+    private func gameCard(title: String,
+                          subtitle: String,
+                          prefix: String,
+                          logoURL: String) -> some View {
         Button {
             SoundFX.menu()
             selectedGame = GameSelection(title: title, prefix: prefix)
         } label: {
             NeonCard {
                 HStack(spacing: 14) {
-                    FFLogoView()
+                    GameLogoView(imageURL: logoURL)
                     VStack(alignment: .leading, spacing: 5) {
                         Text(title)
                             .font(.system(size: 16.5, weight: .heavy, design: .rounded))
@@ -1502,7 +1550,6 @@ struct PatchGameDetailView: View {
         }
     }
 
-    // ⭐ Ẩn dòng "1 PATCH · 1 FOLDER" khi chỉ có 1 patch 1 folder
     private var topBar: some View {
         HStack(spacing: 14) {
             Button {
@@ -1579,22 +1626,11 @@ struct PatchGameDetailView: View {
         selectedFolder = currentFolders.first
     }
 
+    // ⭐ Dùng GameTypeHelper — tự hỗ trợ silent
     private var gameItems: [PatchLibraryItem] {
         _ = refreshTick
         return store.items.filter { item in
-            let name = item.packageURL.lastPathComponent
-            let meta = PatchMetaStore.lookup(localName: name)
-
-            if let m = meta, !m.gameType.isEmpty {
-                if m.orphaned { return false }
-                return m.gameType == game.prefix
-            }
-
-            let isMax = name.hasPrefix("ffmax_")
-            let isNormal = name.hasPrefix("ffnormal_")
-            let isPlain = !isMax && !isNormal
-            if game.prefix == "ffmax" { return isMax }
-            return isNormal || isPlain
+            GameTypeHelper.prefixOf(item) == game.prefix
         }
     }
 
@@ -1705,11 +1741,13 @@ struct PatchGameDetailView: View {
         if let n = item.project?.name, !n.isEmpty {
             return n
         }
-        return item.packageURL.deletingPathExtension().lastPathComponent
-            .replacingOccurrences(of: "_VIP", with: "")
-            .replacingOccurrences(of: "_FREE", with: "")
-            .replacingOccurrences(of: "ffmax_", with: "")
-            .replacingOccurrences(of: "ffnormal_", with: "")
+        var base = item.packageURL.deletingPathExtension().lastPathComponent
+        base = base.replacingOccurrences(of: "_VIP", with: "")
+        base = base.replacingOccurrences(of: "_FREE", with: "")
+        for p in GameTypeHelper.allPrefixes {
+            base = base.replacingOccurrences(of: "\(p)_", with: "")
+        }
+        return base
     }
 
     private func currentTag(for item: PatchLibraryItem) -> String {
@@ -1741,8 +1779,10 @@ struct PatchGameDetailView: View {
         }
 
         let comps = item.packageURL.pathComponents.filter { $0 != "/" }
-        if let idx = comps.firstIndex(where: { $0 == "ffmax" || $0 == "ffnormal" }),
-           idx + 2 < comps.count {
+        // ⭐ hỗ trợ silent
+        if let idx = comps.firstIndex(where: {
+            GameTypeHelper.allPrefixes.contains($0)
+        }), idx + 2 < comps.count {
             return comps[idx + 1]
         }
 
@@ -1752,15 +1792,11 @@ struct PatchGameDetailView: View {
     private func commitRename() {
         guard let item = renameItem else { return }
         let t = renameText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !t.isEmpty else {
-            renameItem = nil
-            return
-        }
+        guard !t.isEmpty else { renameItem = nil; return }
         let localName = localKey(for: item)
         guard let uid = LocalMapStore.uid(forLocal: localName),
               var m = PatchMetaStore.get(uid: uid) else {
-            renameItem = nil
-            return
+            renameItem = nil; return
         }
         m.displayName = t
         m.nameOverride = true
@@ -1774,8 +1810,7 @@ struct PatchGameDetailView: View {
         let localName = localKey(for: item)
         guard let uid = LocalMapStore.uid(forLocal: localName),
               var m = PatchMetaStore.get(uid: uid) else {
-            tagPickerItem = nil
-            return
+            tagPickerItem = nil; return
         }
         m.tag = tag
         m.tagOverride = true
@@ -1790,8 +1825,7 @@ struct PatchGameDetailView: View {
         let localName = localKey(for: item)
         guard let uid = LocalMapStore.uid(forLocal: localName),
               var m = PatchMetaStore.get(uid: uid) else {
-            noteItem = nil
-            return
+            noteItem = nil; return
         }
         m.note = t
         m.noteOverride = true
@@ -1802,7 +1836,7 @@ struct PatchGameDetailView: View {
 
     // ⭐ TOGGLE — 3 tính năng:
     //    1. Tắt các patch khác cùng folder trước khi bật
-    //    2. Chặn popup "Xong" bằng blocker + sweep
+    //    2. Chặn popup "Xong"
     //    3. Hiện sheet có note + avatar khi thành công
     private func togglePatch(item: PatchLibraryItem, activate: Bool) {
         workingFileID = item.id.uuidString
@@ -1812,32 +1846,26 @@ struct PatchGameDetailView: View {
         let targetFolder = folderName(for: item)
         let gamePrefix = game.prefix
 
-        // ⭐ Tìm các patch khác đang active trong CÙNG FOLDER + CÙNG GAME
+        // ⭐ Tìm các patch conflict cùng folder + cùng game (dùng helper)
         let conflictIDs: [UUID] = activate ? store.items.compactMap { other in
             guard other.id != item.id else { return nil }
+            guard GameTypeHelper.prefixOf(other) == gamePrefix else { return nil }
 
+            // Folder của patch kia
             let otherName = other.packageURL.lastPathComponent
             let otherMeta = PatchMetaStore.lookup(localName: otherName)
-
-            // Xác định game của patch kia
-            let otherGame: String
-            if let m = otherMeta, !m.gameType.isEmpty {
-                otherGame = m.gameType
-            } else if otherName.hasPrefix("ffmax_") {
-                otherGame = "ffmax"
-            } else if otherName.hasPrefix("ffnormal_") {
-                otherGame = "ffnormal"
-            } else {
-                otherGame = "ffnormal"
-            }
-            guard otherGame == gamePrefix else { return nil }
-
-            // Xác định folder của patch kia
             let otherFolder: String
             if let m = otherMeta, !m.folder.isEmpty {
                 otherFolder = m.folder
             } else {
-                otherFolder = "CHƯA PHÂN LOẠI"
+                let comps = other.packageURL.pathComponents.filter { $0 != "/" }
+                if let idx = comps.firstIndex(where: {
+                    GameTypeHelper.allPrefixes.contains($0)
+                }), idx + 2 < comps.count {
+                    otherFolder = comps[idx + 1]
+                } else {
+                    otherFolder = "CHƯA PHÂN LOẠI"
+                }
             }
             guard otherFolder == targetFolder else { return nil }
 
@@ -1850,14 +1878,13 @@ struct PatchGameDetailView: View {
 
         Task.detached(priority: .userInitiated) {
 
-            // ⭐ BƯỚC 1: Tắt tất cả patch conflict trong cùng folder
+            // Tắt conflict
             for cid in conflictIDs {
                 if let r = DevicePatchService.latestReceipt(projectID: cid) {
                     try? DevicePatchService.restore(receipt: r)
                 }
             }
 
-            // ⭐ BƯỚC 2: Xử lý toggle
             if !activate {
                 do {
                     if let r = DevicePatchService.latestReceipt(projectID: item.id) {
@@ -1891,12 +1918,8 @@ struct PatchGameDetailView: View {
                     return
                 }
 
-                // Chặn popup từ trước khi apply
                 InstallerAlertBlocker.sweepDismiss()
-
                 _ = try DevicePatchService.apply(project: p)
-
-                // Chặn tiếp sau khi apply (alert có thể show trễ)
                 InstallerAlertBlocker.sweepDismiss()
 
                 await MainActor.run {
@@ -1904,7 +1927,6 @@ struct PatchGameDetailView: View {
                     workingFileID = nil
                     SoundFX.success()
 
-           
                     if !noteSnap.trimmingCharacters(in: .whitespaces).isEmpty {
                         activationInfo = ActivationInfo(
                             patchName: nameSnap,
@@ -1933,7 +1955,9 @@ struct PatchGameDetailView: View {
     }
 }
 
-
+// ═══════════════════════════════════════════════════════════════
+// MARK: - UNLOCK VIEW
+// ═══════════════════════════════════════════════════════════════
 struct PatchUnlockView: View {
     @Environment(\.appLanguage) private var language
     @Environment(\.dismiss) private var dismiss
@@ -1988,7 +2012,9 @@ struct PatchUnlockView: View {
     }
 }
 
-
+// ═══════════════════════════════════════════════════════════════
+// MARK: - PRESENTATION MODIFIER
+// ═══════════════════════════════════════════════════════════════
 private struct PatchStorePresentationModifier: ViewModifier {
     @ObservedObject var store: PatchProjectStore
 
