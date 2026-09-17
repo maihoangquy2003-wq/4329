@@ -325,7 +325,7 @@ struct ActivationInfo: Identifiable {
 // MARK: - META STORE
 // ═══════════════════════════════════════════════════════════════
 enum PatchMetaStore {
-    private static let key = "patch_meta_v21"
+    private static let key = "patch_meta_v22"
 
     static func all() -> [String: PatchMeta] {
         guard let data = UserDefaults.standard.data(forKey: key),
@@ -368,7 +368,7 @@ enum PatchMetaStore {
 }
 
 enum LocalMapStore {
-    private static let key = "patch_localmap_v21"
+    private static let key = "patch_localmap_v22"
 
     static func all() -> [String: String] {
         (UserDefaults.standard.dictionary(forKey: key) as? [String: String]) ?? [:]
@@ -390,26 +390,45 @@ enum LocalMapStore {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// MARK: - GAME TYPE HELPER
+// MARK: - GAME TYPE HELPER (4 prefix)
 // ═══════════════════════════════════════════════════════════════
 enum GameTypeHelper {
-    static let allPrefixes = ["ffmax", "ffnormal", "silent"]
+    /// 4 prefix hợp lệ
+    static let allPrefixes = ["ffmax", "ffnormal", "silent_ffmax", "silent_ffnormal"]
 
     static func prefixOf(_ item: PatchLibraryItem) -> String {
         let name = item.packageURL.lastPathComponent
+
+        // 1. Meta
         if let m = PatchMetaStore.lookup(localName: name),
            !m.gameType.isEmpty {
             if m.orphaned { return "" }
             return m.gameType
         }
-        for p in allPrefixes {
+
+        // 2. Filename prefix (kiểm tra theo thứ tự dài trước ngắn)
+        let sorted = allPrefixes.sorted { $0.count > $1.count }
+        for p in sorted {
             if name.hasPrefix("\(p)_") { return p }
         }
+
+        // 3. Path components
         let comps = item.packageURL.pathComponents
-        for p in allPrefixes {
-            if comps.contains(p) { return p }
+        // silent/ffmax/... hoặc silent/ffnormal/...
+        if comps.contains("silent") {
+            if comps.contains("ffmax") { return "silent_ffmax" }
+            if comps.contains("ffnormal") { return "silent_ffnormal" }
+            return "silent_ffnormal"
         }
+        if comps.contains("ffmax") { return "ffmax" }
+        if comps.contains("ffnormal") { return "ffnormal" }
+
         return "ffnormal"
+    }
+
+    /// Check xem prefix có phải silent không
+    static func isSilent(_ prefix: String) -> Bool {
+        return prefix.hasPrefix("silent")
     }
 }
 
@@ -475,6 +494,36 @@ private struct GameLogoView: View {
     }
 }
 
+// ⭐ Avatar server với cache-busting
+private struct ServerAvatarView: View {
+    let size: CGFloat
+    var body: some View {
+        AsyncImage(url: URL(string: "https://solitudepremium.click/ipa/ipa/liii.jpg")) { phase in
+            switch phase {
+            case .empty:
+                ZStack {
+                    Circle().fill(Theme.surfaceHi)
+                    ProgressView().tint(.white).scaleEffect(0.8)
+                }
+            case .success(let img):
+                img.resizable().scaledToFill()
+            case .failure:
+                ZStack {
+                    Theme.surfaceHi
+                    Image(systemName: "person.fill")
+                        .font(.system(size: size * 0.42, weight: .medium))
+                        .foregroundStyle(.white.opacity(0.5))
+                }
+            @unknown default:
+                EmptyView()
+            }
+        }
+        .frame(width: size, height: size)
+        .clipShape(Circle())
+        .overlay(Circle().strokeBorder(.white, lineWidth: 1.5))
+    }
+}
+
 private struct AvatarView: View {
     var body: some View {
         ZStack {
@@ -486,34 +535,9 @@ private struct AvatarView: View {
                 .strokeBorder(.white, lineWidth: 2)
                 .frame(width: 92, height: 92)
                 .shadow(color: .white.opacity(0.5), radius: 10)
-            avatarImage
-                .frame(width: 78, height: 78)
-                .clipShape(Circle())
-                .overlay(Circle().strokeBorder(.white, lineWidth: 1.5))
+            ServerAvatarView(size: 78)
         }
         .frame(width: 118, height: 118)
-    }
-    private var avatarImage: some View {
-        AsyncImage(url: URL(string: "https://solitudepremium.click/ipa/ipa/liii.jpg")) { phase in
-            switch phase {
-            case .empty:
-                ZStack {
-                    Color.black.opacity(0.6)
-                    ProgressView().tint(.white)
-                }
-            case .success(let img):
-                img.resizable().scaledToFill()
-            case .failure:
-                ZStack {
-                    Theme.surfaceHi
-                    Image(systemName: "person.fill")
-                        .font(.system(size: 38, weight: .medium))
-                        .foregroundStyle(.white.opacity(0.5))
-                }
-            @unknown default:
-                EmptyView()
-            }
-        }
     }
 }
 
@@ -563,30 +587,9 @@ private struct PatchIconView: View {
     var body: some View {
         ZStack {
             if isApplied {
-                AsyncImage(url: URL(string: "https://solitudepremium.click/ipa/ipa/liii.jpg")) { phase in
-                    switch phase {
-                    case .empty:
-                        ZStack {
-                            Circle().fill(Theme.surfaceHi)
-                            ProgressView().tint(.white).scaleEffect(0.7)
-                        }
-                    case .success(let img):
-                        img.resizable().scaledToFill()
-                    case .failure:
-                        ZStack {
-                            Circle().fill(Theme.surfaceHi)
-                            Image(systemName: "person.fill")
-                                .font(.system(size: 20))
-                                .foregroundStyle(.white.opacity(0.5))
-                        }
-                    @unknown default:
-                        EmptyView()
-                    }
-                }
-                .frame(width: 52, height: 52)
-                .clipShape(Circle())
-                .overlay(Circle().strokeBorder(.white, lineWidth: 2))
-                .shadow(color: .white.opacity(0.45), radius: 10)
+                ServerAvatarView(size: 52)
+                    .overlay(Circle().strokeBorder(.white, lineWidth: 2))
+                    .shadow(color: .white.opacity(0.45), radius: 10)
             } else {
                 ZStack {
                     RoundedRectangle(cornerRadius: 14, style: .continuous)
@@ -810,6 +813,124 @@ private struct EmptyStateView: View {
 }
 
 // ═══════════════════════════════════════════════════════════════
+// MARK: - SILENT SUB-MENU SHEET (chọn FF Max / FF Thường)
+// ═══════════════════════════════════════════════════════════════
+struct SilentSubMenuSheet: View {
+    let onSelect: (String) -> Void   // "silent_ffmax" | "silent_ffnormal"
+    let onCancel: () -> Void
+
+    var body: some View {
+        ZStack {
+            Color.black.ignoresSafeArea()
+
+            VStack(spacing: 24) {
+                Spacer(minLength: 30)
+
+                // Header
+                VStack(spacing: 12) {
+                    ZStack {
+                        Circle()
+                            .strokeBorder(.white.opacity(0.35), lineWidth: 1.4)
+                            .frame(width: 92, height: 92)
+                        ServerAvatarView(size: 76)
+                    }
+
+                    Text("MENU SILENT")
+                        .font(.system(size: 20, weight: .heavy))
+                        .tracking(3)
+                        .foregroundStyle(.white)
+                        .shadow(color: .white.opacity(0.6), radius: 14)
+
+                    Text("CHỌN PHIÊN BẢN GAME")
+                        .font(.system(size: 10, weight: .heavy))
+                        .tracking(3.5)
+                        .foregroundStyle(.white.opacity(0.5))
+                }
+                .padding(.bottom, 6)
+
+                // 2 lựa chọn
+                VStack(spacing: 14) {
+                    optionCard(
+                        title: "Free Fire Max",
+                        subtitle: "PREMIUM EDITION",
+                        prefix: "silent_ffmax"
+                    )
+                    optionCard(
+                        title: "Free Fire Thường",
+                        subtitle: "CLASSIC EDITION",
+                        prefix: "silent_ffnormal"
+                    )
+                }
+                .padding(.horizontal, 22)
+
+                Spacer()
+
+                Button {
+                    SoundFX.tap()
+                    onCancel()
+                } label: {
+                    Text("HUỶ")
+                        .font(.system(size: 13, weight: .heavy))
+                        .tracking(2.5)
+                        .foregroundStyle(.white)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 15)
+                        .background(
+                            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                .fill(Color.white.opacity(0.06))
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                .strokeBorder(.white.opacity(0.4), lineWidth: 1.3)
+                        )
+                        .padding(.horizontal, 40)
+                }
+                .buttonStyle(.plain)
+                .padding(.bottom, 40)
+            }
+        }
+    }
+
+    private func optionCard(title: String,
+                            subtitle: String,
+                            prefix: String) -> some View {
+        Button {
+            SoundFX.menu()
+            onSelect(prefix)
+        } label: {
+            NeonCard {
+                HStack(spacing: 16) {
+                    // ⭐ Avatar cho mỗi option
+                    ZStack {
+                        Circle()
+                            .strokeBorder(.white.opacity(0.4), lineWidth: 1.5)
+                            .frame(width: 68, height: 68)
+                        ServerAvatarView(size: 56)
+                    }
+
+                    VStack(alignment: .leading, spacing: 5) {
+                        Text(title)
+                            .font(.system(size: 16, weight: .heavy, design: .rounded))
+                            .foregroundStyle(.white)
+                        Text(subtitle)
+                            .font(.system(size: 9.5, weight: .heavy))
+                            .tracking(2)
+                            .foregroundStyle(.white.opacity(0.5))
+                    }
+
+                    Spacer()
+
+                    ChevronCircle()
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 14)
+            }
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════
 // MARK: - ACTIVATION SHEET
 // ═══════════════════════════════════════════════════════════════
 struct ActivationNoteSheet: View {
@@ -892,31 +1013,9 @@ struct ActivationNoteSheet: View {
                     Circle()
                         .strokeBorder(.white.opacity(0.35), lineWidth: 1.5)
                         .frame(width: 118, height: 118)
-
-                    AsyncImage(url: URL(string: "https://solitudepremium.click/ipa/ipa/liii.jpg")) { phase in
-                        switch phase {
-                        case .empty:
-                            ZStack {
-                                Circle().fill(Theme.surfaceHi)
-                                ProgressView().tint(.white)
-                            }
-                        case .success(let img):
-                            img.resizable().scaledToFill()
-                        case .failure:
-                            ZStack {
-                                Circle().fill(Theme.surfaceHi)
-                                Image(systemName: "checkmark")
-                                    .font(.system(size: 34, weight: .heavy))
-                                    .foregroundStyle(.white)
-                            }
-                        @unknown default:
-                            EmptyView()
-                        }
-                    }
-                    .frame(width: 96, height: 96)
-                    .clipShape(Circle())
-                    .overlay(Circle().strokeBorder(.white, lineWidth: 2))
-                    .shadow(color: .white.opacity(0.6), radius: 22)
+                    ServerAvatarView(size: 96)
+                        .overlay(Circle().strokeBorder(.white, lineWidth: 2))
+                        .shadow(color: .white.opacity(0.6), radius: 22)
                 }
             }
         }
@@ -1079,9 +1178,11 @@ struct PatchProjectsView: View {
 
     @State private var actionAlert: PatchStoreAlert?
     @State private var selectedGame: GameSelection?
+    @State private var showSilentSubmenu = false
     @State private var isSyncing = false
     @State private var lastSyncDate: Date = .distantPast
     @State private var syncGuard = false
+    @State private var hasSyncedOnLaunch = false
 
     let onOpenSettings: () -> Void
     let onOpenLogs: () -> Void
@@ -1105,34 +1206,57 @@ struct PatchProjectsView: View {
             .onAppear {
                 InstallerAlertBlocker.install()
                 store.reload()
-                triggerSync(force: true)
             }
-            // ⭐ AUTO SYNC LOOP 30s — dùng .task thay vì Timer.publish
+            // ⭐ AUTO SYNC — tải ngay khi vào app, sau đó loop 30s
             .task {
                 InstallerAlertBlocker.install()
-                // Sync lần đầu ngay
-                await syncNow(force: true)
+
+                // ⭐ Tải ngay khi vào app (bỏ qua delay 30s đầu)
+                if !hasSyncedOnLaunch {
+                    hasSyncedOnLaunch = true
+                    await syncNow(force: true)
+                }
 
                 // Loop 30s
                 while !Task.isCancelled {
-                    try? await Task.sleep(nanoseconds: 30_000_000_000) // 30s
+                    try? await Task.sleep(nanoseconds: 30_000_000_000)
                     if Task.isCancelled { break }
                     await syncNow(force: true)
                 }
             }
-            // ⭐ Khi quay lại foreground → sync ngay
+            // Khi quay lại foreground → sync ngay
             .onChange(of: scenePhase) { phase in
                 if phase == .active {
                     store.reload()
                     triggerSync(force: true)
                 }
             }
+            // Detail game
             .sheet(item: $selectedGame) { game in
                 PatchGameDetailView(
                     game: game,
                     store: store,
                     actionAlert: $actionAlert,
                     language: language
+                )
+            }
+            // ⭐ Sub-menu cho Menu Silent
+            .sheet(isPresented: $showSilentSubmenu) {
+                SilentSubMenuSheet(
+                    onSelect: { prefix in
+                        showSilentSubmenu = false
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                            selectedGame = GameSelection(
+                                title: prefix == "silent_ffmax"
+                                    ? "Menu Silent · FF Max"
+                                    : "Menu Silent · FF Thường",
+                                prefix: prefix
+                            )
+                        }
+                    },
+                    onCancel: {
+                        showSilentSubmenu = false
+                    }
                 )
             }
             .alert(item: $actionAlert) { alert in
@@ -1217,10 +1341,8 @@ struct PatchProjectsView: View {
                          prefix: "ffnormal",
                          logoURL: "https://solitudepremium.click/ipa/ipa/free.jpg")
 
-                gameCard(title: "Menu Silent",
-                         subtitle: "HEADLOCK ZENIS",
-                         prefix: "silent",
-                         logoURL: "https://solitudepremium.click/ipa/ipa/free.jpg")
+                // ⭐ Menu Silent — bấm vào → hiện sub-menu
+                silentCard()
 
                 HStack(spacing: 8) {
                     Rectangle().fill(.white.opacity(0.2)).frame(height: 1)
@@ -1270,6 +1392,45 @@ struct PatchProjectsView: View {
         .buttonStyle(.plain)
     }
 
+    // ⭐ Card Menu Silent — hiện avatar server
+    private func silentCard() -> some View {
+        Button {
+            SoundFX.menu()
+            showSilentSubmenu = true
+        } label: {
+            NeonCard {
+                HStack(spacing: 14) {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 14, style: .continuous)
+                            .fill(Theme.surfaceHi)
+                            .frame(width: 58, height: 58)
+                        ServerAvatarView(size: 50)
+                    }
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 14, style: .continuous)
+                            .strokeBorder(.white, lineWidth: 1.5)
+                    )
+                    .shadow(color: .white.opacity(0.3), radius: 10)
+
+                    VStack(alignment: .leading, spacing: 5) {
+                        Text("Menu Silent")
+                            .font(.system(size: 16.5, weight: .heavy, design: .rounded))
+                            .foregroundStyle(.white)
+                        Text("CHỌN PHIÊN BẢN")
+                            .font(.system(size: 9.5, weight: .heavy))
+                            .tracking(2)
+                            .foregroundStyle(.white.opacity(0.5))
+                    }
+                    Spacer()
+                    ChevronCircle()
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 15)
+            }
+        }
+        .buttonStyle(.plain)
+    }
+
     private func triggerSync(force: Bool) {
         guard !syncGuard else { return }
         syncGuard = true
@@ -1294,7 +1455,7 @@ struct PatchProjectsView: View {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// MARK: - SYNC ENGINE — cải tiến tốc độ
+// MARK: - SYNC ENGINE
 // ═══════════════════════════════════════════════════════════════
 final class SyncEngine {
     static let shared = SyncEngine()
@@ -1314,12 +1475,10 @@ final class SyncEngine {
 
         print("🔄 Sync: \(remotes.count) remote files")
 
-        // Build lookup
         var remoteByUID: [String: RemoteFileLite] = [:]
         remoteByUID.reserveCapacity(remotes.count)
         for r in remotes { remoteByUID[r.uid] = r }
 
-        // Đồng bộ meta cũ
         var metaDict = PatchMetaStore.all()
         for (uid, var meta) in metaDict {
             if let remote = remoteByUID[uid] {
@@ -1338,10 +1497,8 @@ final class SyncEngine {
         }
         PatchMetaStore.save(metaDict)
 
-        // Reload để hiển thị file đã có
         await MainActor.run { store.reload() }
 
-        // File mới cần tải
         let missing = remotes.filter { metaDict[$0.uid] == nil }
         print("📦 Missing: \(missing.count)")
         guard !missing.isEmpty else { return }
@@ -1354,7 +1511,6 @@ final class SyncEngine {
         print("✅ Sync done")
     }
 
-    // ⭐ Import 1 file — poll 200ms, reload mỗi 3 vòng
     private func importOne(remote: RemoteFileLite,
                            store: PatchProjectStore) async {
         guard let url = URL(string: remote.url) else { return }
@@ -1367,11 +1523,8 @@ final class SyncEngine {
             store.importPackage(from: .remote(url))
         }
 
-        // Poll 200ms × 300 = 60s max
         for i in 0..<300 {
             try? await Task.sleep(nanoseconds: 200_000_000)
-
-            // Reload store mỗi 3 vòng (~600ms) — giảm tải
             if i % 3 == 0 {
                 await MainActor.run { store.reload() }
             }
@@ -1503,7 +1656,6 @@ struct PatchGameDetailView: View {
                     }
                 }
             }
-            // ⭐ Detail view cũng auto-sync 30s
             .task {
                 while !Task.isCancelled {
                     try? await Task.sleep(nanoseconds: 30_000_000_000)
@@ -1753,7 +1905,8 @@ struct PatchGameDetailView: View {
         var base = item.packageURL.deletingPathExtension().lastPathComponent
         base = base.replacingOccurrences(of: "_VIP", with: "")
         base = base.replacingOccurrences(of: "_FREE", with: "")
-        for p in GameTypeHelper.allPrefixes {
+        let sorted = GameTypeHelper.allPrefixes.sorted { $0.count > $1.count }
+        for p in sorted {
             base = base.replacingOccurrences(of: "\(p)_", with: "")
         }
         return base
@@ -1788,10 +1941,19 @@ struct PatchGameDetailView: View {
         }
 
         let comps = item.packageURL.pathComponents.filter { $0 != "/" }
+        // Tìm vị trí gameType — sau đó folder là component tiếp theo
         if let idx = comps.firstIndex(where: {
-            GameTypeHelper.allPrefixes.contains($0)
-        }), idx + 2 < comps.count {
-            return comps[idx + 1]
+            GameTypeHelper.allPrefixes.contains($0) ||
+            $0 == "silent"
+        }) {
+            // Nếu là silent và có sub (ffmax/ffnormal), folder ở idx+2
+            if comps[idx] == "silent",
+               idx + 1 < comps.count,
+               (comps[idx + 1] == "ffmax" || comps[idx + 1] == "ffnormal") {
+                if idx + 2 < comps.count { return comps[idx + 2] }
+            } else if idx + 1 < comps.count {
+                return comps[idx + 1]
+            }
         }
 
         return "CHƯA PHÂN LOẠI"
@@ -1862,9 +2024,15 @@ struct PatchGameDetailView: View {
             } else {
                 let comps = other.packageURL.pathComponents.filter { $0 != "/" }
                 if let idx = comps.firstIndex(where: {
-                    GameTypeHelper.allPrefixes.contains($0)
-                }), idx + 2 < comps.count {
-                    otherFolder = comps[idx + 1]
+                    GameTypeHelper.allPrefixes.contains($0) || $0 == "silent"
+                }) {
+                    if comps[idx] == "silent",
+                       idx + 1 < comps.count,
+                       (comps[idx + 1] == "ffmax" || comps[idx + 1] == "ffnormal") {
+                        otherFolder = idx + 2 < comps.count ? comps[idx + 2] : "CHƯA PHÂN LOẠI"
+                    } else {
+                        otherFolder = idx + 1 < comps.count ? comps[idx + 1] : "CHƯA PHÂN LOẠI"
+                    }
                 } else {
                     otherFolder = "CHƯA PHÂN LOẠI"
                 }
