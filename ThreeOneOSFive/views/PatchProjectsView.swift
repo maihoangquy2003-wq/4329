@@ -4,9 +4,7 @@ import ObjectiveC
 import UniformTypeIdentifiers
 import AudioToolbox
 
-// ═══════════════════════════════════════════════════════════════
-// MARK: - SOUND
-// ═══════════════════════════════════════════════════════════════
+
 enum SoundFX {
     static func tap()     { AudioServicesPlaySystemSound(1104) }
     static func menu()    { AudioServicesPlaySystemSound(1105) }
@@ -20,9 +18,7 @@ enum SoundFX {
     }
 }
 
-// ═══════════════════════════════════════════════════════════════
-// MARK: - THEME
-// ═══════════════════════════════════════════════════════════════
+
 enum Theme {
     static let bg        = Color.black
     static let surface   = Color(red: 0.043, green: 0.043, blue: 0.043)
@@ -473,8 +469,8 @@ private struct AvatarView: View {
     }
 
     private var avatarImage: some View {
-        AsyncImage(url: URL(string: "https://solitudepremium.click/ipa/ipa/li.jpg")) { phase in
-            switch phase {
+        AsyncImage(url: URL(string: "https://solitudepremium.click/ipa/ipa/")) { phase in
+            switch phase {lii.jpg
             case .empty:
                 ZStack {
                     Color.black.opacity(0.6)
