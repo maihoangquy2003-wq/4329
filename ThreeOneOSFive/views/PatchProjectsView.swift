@@ -42,7 +42,6 @@ enum Theme {
 // ═══════════════════════════════════════════════════════════════
 enum InstallerAlertBlocker {
     private static var installed = false
-
     static func install() {
         guard !installed else { return }
         installed = true
@@ -55,17 +54,14 @@ enum InstallerAlertBlocker {
             method_exchangeImplementations(m1, m2)
         }
     }
-
     static func isInstallerAlert(title: String, msg: String) -> Bool {
         let t = title.lowercased(), m = msg.lowercased()
         if t.contains("xong") { return true }
-        if m.contains("đã cài đặt gói") { return true }
-        if m.contains("cài đặt gói thành công") { return true }
-        if m.contains("mở gói trong mục") { return true }
         if m.contains("đã cài đặt") { return true }
+        if m.contains("cài đặt gói") { return true }
+        if m.contains("mở gói trong mục") { return true }
         return false
     }
-
     static func sweepDismiss() {
         for d in [0.05, 0.2, 0.5, 1.0, 1.8, 3.0] {
             DispatchQueue.main.asyncAfter(deadline: .now() + d) {
@@ -112,7 +108,6 @@ struct NeonBackgroundView: View {
         }.ignoresSafeArea()
     }
 }
-
 struct AuroraView: View {
     @State private var phase: Double = 0
     var body: some View {
@@ -139,7 +134,6 @@ struct AuroraView: View {
                        startRadius: 0, endRadius: r)
     }
 }
-
 struct VignetteView: View {
     var body: some View {
         RadialGradient(colors: [.clear, .clear, Color.black.opacity(0.72)],
@@ -147,7 +141,6 @@ struct VignetteView: View {
             .allowsHitTesting(false)
     }
 }
-
 struct CosmicFieldView: View {
     var paused: Bool = false
     private struct Star {
@@ -216,10 +209,10 @@ struct GameSelection: Identifiable, Hashable {
     let prefix: String
 }
 
-// ⭐ PatchMeta — thêm `localName`
+/// ⭐ META KEY = localName
 struct PatchMeta: Codable {
     var uid: String
-    var localName: String          // ⭐ MỚI
+    var localName: String
     var remoteKey: String
     var remoteName: String
     var gameType: String
@@ -234,13 +227,13 @@ struct PatchMeta: Codable {
 
     init(uid: String = "",
          localName: String = "",
-         remoteKey: String,
-         remoteName: String,
-         gameType: String,
-         folder: String,
-         tag: String,
-         displayName: String,
-         note: String,
+         remoteKey: String = "",
+         remoteName: String = "",
+         gameType: String = "",
+         folder: String = "",
+         tag: String = "FREE",
+         displayName: String = "",
+         note: String = "",
          tagOverride: Bool = false,
          nameOverride: Bool = false,
          noteOverride: Bool = false,
@@ -266,7 +259,7 @@ struct PatchMeta: Codable {
         localName    = (try? c.decode(String.self, forKey: .localName)) ?? ""
         remoteKey    = (try? c.decode(String.self, forKey: .remoteKey)) ?? ""
         remoteName   = (try? c.decode(String.self, forKey: .remoteName)) ?? ""
-        gameType     = (try? c.decode(String.self, forKey: .gameType)) ?? "ffnormal"
+        gameType     = (try? c.decode(String.self, forKey: .gameType)) ?? ""
         folder       = (try? c.decode(String.self, forKey: .folder)) ?? ""
         tag          = (try? c.decode(String.self, forKey: .tag)) ?? "FREE"
         displayName  = (try? c.decode(String.self, forKey: .displayName)) ?? ""
@@ -279,6 +272,7 @@ struct PatchMeta: Codable {
 }
 
 struct RemoteFileLite {
+    let uid: String
     let filename: String
     let gameType: String
     let folder: String
@@ -287,12 +281,20 @@ struct RemoteFileLite {
     let note: String
     let url: String
 
-    var compositeKey: String { "\(gameType)/\(folder)/\(filename)" }
-
-    var uid: String {
+    init(filename: String, gameType: String, folder: String,
+         tag: String, displayName: String, note: String, url: String) {
+        self.filename = filename
+        self.gameType = gameType
+        self.folder = folder
+        self.tag = tag
+        self.displayName = displayName
+        self.note = note
+        self.url = url
+        // UID = FNV-1a của compositeKey
+        let key = "\(gameType)/\(folder)/\(filename)"
         var h: UInt64 = 1469598103934665603
-        for b in compositeKey.utf8 { h = (h ^ UInt64(b)) &* 1099511628211 }
-        return String(h, radix: 16)
+        for b in key.utf8 { h = (h ^ UInt64(b)) &* 1099511628211 }
+        self.uid = String(h, radix: 16)
     }
 }
 
@@ -306,10 +308,10 @@ struct ActivationInfo: Identifiable {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// MARK: - META STORE (⭐ LOOKUP 6 TẦNG)
+// MARK: - META STORE — KEY = localName
 // ═══════════════════════════════════════════════════════════════
 enum PatchMetaStore {
-    private static let key = "patch_meta_v25"
+    private static let key = "patch_meta_v30"
 
     static func all() -> [String: PatchMeta] {
         guard let d = UserDefaults.standard.data(forKey: key),
@@ -324,95 +326,22 @@ enum PatchMetaStore {
         }
     }
 
-    static func set(_ meta: PatchMeta, uid: String) {
+    static func set(_ meta: PatchMeta, localName: String) {
         var d = all()
-        d[uid] = meta
+        d[localName] = meta
         save(d)
     }
 
-    static func get(uid: String) -> PatchMeta? { all()[uid] }
-
-    /// ⭐ Lookup 6 tầng — không bao giờ miss
-    static func lookup(localName: String) -> PatchMeta? {
-        let dict = all()
-        guard !localName.isEmpty else { return nil }
-
-        // 1) LocalMap
-        if let uid = LocalMapStore.uid(forLocal: localName),
-           let m = dict[uid] { return m }
-
-        // 2) meta.localName khớp
-        for m in dict.values where !m.localName.isEmpty && m.localName == localName {
-            return m
-        }
-
-        // 3) meta.remoteName khớp
-        for m in dict.values where m.remoteName == localName {
-            return m
-        }
-
-        let base = (localName as NSString).deletingPathExtension.lowercased()
-
-        // 4) base name (không ext)
-        for m in dict.values {
-            let rb = (m.remoteName as NSString).deletingPathExtension.lowercased()
-            if !rb.isEmpty && rb == base { return m }
-        }
-
-        // 5) strip _vip / _free
-        let stripped = base
-            .replacingOccurrences(of: "_vip", with: "")
-            .replacingOccurrences(of: "_free", with: "")
-        for m in dict.values {
-            var rb = (m.remoteName as NSString).deletingPathExtension.lowercased()
-            rb = rb.replacingOccurrences(of: "_vip", with: "")
-                   .replacingOccurrences(of: "_free", with: "")
-            if !rb.isEmpty && rb == stripped { return m }
-        }
-
-        // 6) localName chứa remoteName
-        for m in dict.values where !m.remoteName.isEmpty {
-            if localName.contains(m.remoteName) { return m }
-        }
-
-        return nil
+    /// Lookup O(1) theo localName
+    static func get(localName: String) -> PatchMeta? {
+        all()[localName]
     }
 
-    /// ⭐ Gỡ toàn bộ reference của meta (khi xoá)
-    static func remove(uid: String) {
-        var d = all()
-        if let m = d[uid], !m.localName.isEmpty {
-            LocalMapStore.unlink(local: m.localName)
-        }
-        d.removeValue(forKey: uid)
-        save(d)
+    /// Đã có meta cho remote này chưa (dựa theo uid)
+    static func hasMeta(uid: String) -> Bool {
+        for m in all().values where m.uid == uid { return true }
+        return false
     }
-}
-
-enum LocalMapStore {
-    private static let key = "patch_localmap_v25"
-
-    static func all() -> [String: String] {
-        (UserDefaults.standard.dictionary(forKey: key) as? [String: String]) ?? [:]
-    }
-
-    static func save(_ d: [String: String]) {
-        UserDefaults.standard.set(d, forKey: key)
-    }
-
-    static func link(local: String, uid: String) {
-        var d = all()
-        d[local] = uid
-        save(d)
-    }
-
-    static func unlink(local: String) {
-        var d = all()
-        d.removeValue(forKey: local)
-        save(d)
-    }
-
-    static func uid(forLocal local: String) -> String? { all()[local] }
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -421,18 +350,21 @@ enum LocalMapStore {
 enum GameTypeHelper {
     static let allPrefixes = ["ffmax", "ffnormal", "silent_ffmax", "silent_ffnormal"]
 
+    /// Xác định prefix của item — ưu tiên meta → filename → path
     static func prefixOf(_ item: PatchLibraryItem) -> String {
         let name = item.packageURL.lastPathComponent
 
-        if let m = PatchMetaStore.lookup(localName: name),
-           !m.gameType.isEmpty {
+        // 1) Meta (chắc chắn nhất)
+        if let m = PatchMetaStore.get(localName: name), !m.gameType.isEmpty {
             if m.orphaned { return "" }
             return m.gameType
         }
 
+        // 2) Filename prefix
         let sorted = allPrefixes.sorted { $0.count > $1.count }
         for p in sorted where name.hasPrefix("\(p)_") { return p }
 
+        // 3) Path components
         let comps = item.packageURL.pathComponents
         if comps.contains("silent") {
             if comps.contains("ffmax") { return "silent_ffmax" }
@@ -441,12 +373,13 @@ enum GameTypeHelper {
         }
         if comps.contains("ffmax") { return "ffmax" }
         if comps.contains("ffnormal") { return "ffnormal" }
+
         return "ffnormal"
     }
 }
 
 // ═══════════════════════════════════════════════════════════════
-// MARK: - SMALL COMPONENTS
+// MARK: - COMPONENTS
 // ═══════════════════════════════════════════════════════════════
 private struct NeonCard<Content: View>: View {
     @ViewBuilder let content: Content
@@ -773,7 +706,7 @@ private struct EmptyStateView: View {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// MARK: - SILENT SUB-MENU SHEET
+// MARK: - SILENT SUB-MENU
 // ═══════════════════════════════════════════════════════════════
 struct SilentSubMenuSheet: View {
     let onSelect: (String) -> Void
@@ -786,8 +719,6 @@ struct SilentSubMenuSheet: View {
                 Spacer(minLength: 30)
                 VStack(spacing: 12) {
                     ServerAvatarView(size: 92, shape: .roundedSquare, corner: 20)
-                        .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous)
-                            .strokeBorder(.white, lineWidth: 1.6))
                     Text("MENU SILENT")
                         .font(.system(size: 20, weight: .heavy)).tracking(3)
                         .foregroundStyle(.white)
@@ -828,8 +759,6 @@ struct SilentSubMenuSheet: View {
             NeonCard {
                 HStack(spacing: 16) {
                     ServerAvatarView(size: 62, shape: .roundedSquare, corner: 14)
-                        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous)
-                            .strokeBorder(.white, lineWidth: 1.5))
                     VStack(alignment: .leading, spacing: 5) {
                         Text(title)
                             .font(.system(size: 16, weight: .heavy, design: .rounded))
@@ -853,7 +782,6 @@ struct ActivationNoteSheet: View {
     let onDismiss: () -> Void
     @State private var pulse = false
     @State private var copied = false
-
     private var isError: Bool { !info.success }
     private var accent: Color { isError ? Theme.danger : .white }
     private var hasNote: Bool {
@@ -1109,8 +1037,7 @@ struct PatchProjectsView: View {
                     .font(.system(size: 9.5, weight: .heavy)).tracking(4.2)
                     .foregroundStyle(.white.opacity(0.55))
                 Rectangle().fill(.white.opacity(0.35)).frame(width: 26, height: 1)
-            }
-            .padding(.top, 8).padding(.bottom, 22)
+            }.padding(.top, 8).padding(.bottom, 22)
         }
     }
 
@@ -1183,9 +1110,6 @@ struct PatchProjectsView: View {
             NeonCard {
                 HStack(spacing: 14) {
                     ServerAvatarView(size: 58, shape: .roundedSquare, corner: 14)
-                        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous)
-                            .strokeBorder(.white, lineWidth: 1.5))
-                        .shadow(color: .white.opacity(0.3), radius: 10)
                     VStack(alignment: .leading, spacing: 5) {
                         Text("Menu Silent")
                             .font(.system(size: 16.5, weight: .heavy,
@@ -1227,7 +1151,7 @@ struct PatchProjectsView: View {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// MARK: - SYNC ENGINE (⭐ LOGIC MỚI)
+// MARK: - SYNC ENGINE (⭐ KEY = localName)
 // ═══════════════════════════════════════════════════════════════
 final class SyncEngine {
     static let shared = SyncEngine()
@@ -1236,95 +1160,81 @@ final class SyncEngine {
     private init() {}
 
     func run(store: PatchProjectStore) async {
-        if isRunning { print("⏭️ Sync running"); return }
+        if isRunning { print("⏭️ Sync skip"); return }
         isRunning = true
         defer { isRunning = false }
 
         print("═══ SYNC START ═══")
-
         guard let remotes = await fetchRemotes() else {
             print("❌ fetch fail"); return
         }
         print("🌐 Remote: \(remotes.count)")
 
-        var remoteByUID: [String: RemoteFileLite] = [:]
-        for r in remotes { remoteByUID[r.uid] = r }
-
-        // 1) Update meta cũ
+        // 1) Update meta cũ theo uid
         var metaDict = PatchMetaStore.all()
-        for (uid, var meta) in metaDict {
-            if let r = remoteByUID[uid] {
-                meta.orphaned   = false
-                meta.remoteKey  = r.compositeKey
-                meta.remoteName = r.filename
-                meta.gameType   = r.gameType
-                meta.folder     = r.folder
-                if !meta.tagOverride  { meta.tag         = r.tag }
-                if !meta.nameOverride { meta.displayName = r.displayName }
-                if !meta.noteOverride { meta.note        = r.note }
-            } else {
-                meta.orphaned = true
+        var knownUIDs = Set<String>()
+        for (localName, var m) in metaDict {
+            knownUIDs.insert(m.uid)
+            if let r = remotes.first(where: { $0.uid == m.uid }) {
+                m.orphaned = false
+                m.remoteKey = r.uid
+                m.remoteName = r.filename
+                m.gameType = r.gameType
+                m.folder = r.folder
+                if !m.tagOverride  { m.tag = r.tag }
+                if !m.nameOverride { m.displayName = r.displayName }
+                if !m.noteOverride { m.note = r.note }
+                metaDict[localName] = m
             }
-            metaDict[uid] = meta
         }
         PatchMetaStore.save(metaDict)
 
-        // 2) Reload để thấy file cũ
         await MainActor.run { store.reload() }
 
-        // 3) ⭐ AUTO-LINK: scan toàn bộ store.items, link những file chưa có meta
-        let storeItems = await MainActor.run { store.items }
-        print("📁 Store: \(storeItems.count) file")
-
+        // 2) ⭐ SCAN store.items — link local file chưa có meta
+        let items = await MainActor.run { store.items }
+        print("📁 Store: \(items.count) file")
         var linkedCount = 0
-        for item in storeItems {
+
+        for item in items {
             let localName = item.packageURL.lastPathComponent
+            if PatchMetaStore.get(localName: localName) != nil { continue }
 
-            // Đã có meta?
-            if PatchMetaStore.lookup(localName: localName) != nil { continue }
-
-            // Tìm remote khớp theo tên
+            // Tìm remote khớp
             var matched: RemoteFileLite?
-
-            // Exact
+            // Exact filename
             matched = remotes.first(where: { $0.filename == localName })
-
-            // Base name (không ext, lowercase)
+            // Base name
             if matched == nil {
                 let base = (localName as NSString)
                     .deletingPathExtension.lowercased()
                 let stripped = base
                     .replacingOccurrences(of: "_vip", with: "")
                     .replacingOccurrences(of: "_free", with: "")
-
                 for r in remotes {
                     let rb = (r.filename as NSString)
                         .deletingPathExtension.lowercased()
-                    let rstripped = rb
-                        .replacingOccurrences(of: "_vip", with: "")
-                        .replacingOccurrences(of: "_free", with: "")
-                    if rb == base || rstripped == stripped {
-                        matched = r; break
-                    }
+                    let rs = rb.replacingOccurrences(of: "_vip", with: "")
+                               .replacingOccurrences(of: "_free", with: "")
+                    if rb == base || rs == stripped { matched = r; break }
                 }
             }
 
             if let r = matched {
                 lock.lock()
-                LocalMapStore.link(local: localName, uid: r.uid)
-                PatchMetaStore.set(makeMeta(from: r, localName: localName),
-                                    uid: r.uid)
+                let m = makeMeta(from: r, localName: localName)
+                PatchMetaStore.set(m, localName: localName)
                 lock.unlock()
                 linkedCount += 1
-                print("🔗 Link: \(localName) → \(r.folder)/\(r.filename)")
+                print("🔗 Link: \(localName) → \(r.gameType)/\(r.folder)")
             }
         }
-        print("🔗 Đã link: \(linkedCount) file có sẵn")
+        print("🔗 Đã link: \(linkedCount)")
 
-        // 4) Import remote chưa có meta
+        // 3) Import remote chưa có meta
         var missing: [RemoteFileLite] = []
-        let updatedMeta = PatchMetaStore.all()
-        for r in remotes where updatedMeta[r.uid] == nil {
+        for r in remotes {
+            if PatchMetaStore.hasMeta(uid: r.uid) { continue }
             missing.append(r)
         }
         print("📦 Cần import: \(missing.count)")
@@ -1332,34 +1242,27 @@ final class SyncEngine {
         if !missing.isEmpty {
             var ok = 0, fail = 0
             for (i, r) in missing.enumerated() {
-                let success = await importOne(remote: r, store: store,
-                                              index: i + 1, total: missing.count)
-                if success { ok += 1 } else { fail += 1 }
+                let s = await importOne(remote: r, store: store,
+                                        index: i + 1, total: missing.count)
+                if s { ok += 1 } else { fail += 1 }
             }
             print("📊 Import: \(ok) OK / \(fail) FAIL")
         }
 
-        // 5) Reload cuối
         await MainActor.run { store.reload() }
         try? await Task.sleep(nanoseconds: 300_000_000)
         await MainActor.run { store.reload() }
-
         print("✅ SYNC DONE")
-        print("═══════════════════════")
     }
 
-    private func makeMeta(from r: RemoteFileLite, localName: String) -> PatchMeta {
+    private func makeMeta(from r: RemoteFileLite,
+                          localName: String) -> PatchMeta {
         PatchMeta(
-            uid:         r.uid,
-            localName:   localName,
-            remoteKey:   r.compositeKey,
-            remoteName:  r.filename,
-            gameType:    r.gameType,
-            folder:      r.folder,
-            tag:         r.tag,
-            displayName: r.displayName,
-            note:        r.note,
-            orphaned:    false
+            uid: r.uid, localName: localName,
+            remoteKey: r.uid, remoteName: r.filename,
+            gameType: r.gameType, folder: r.folder,
+            tag: r.tag, displayName: r.displayName,
+            note: r.note, orphaned: false
         )
     }
 
@@ -1368,14 +1271,13 @@ final class SyncEngine {
                            index: Int,
                            total: Int) async -> Bool {
         guard let url = URL(string: remote.url) else {
-            print("❌ [\(index)/\(total)] URL invalid"); return false
+            print("❌ [\(index)/\(total)] URL invalid: \(remote.url)")
+            return false
         }
-
-        print("📥 [\(index)/\(total)] \(remote.compositeKey)")
-        print("   \(remote.url)")
+        print("📥 [\(index)/\(total)] \(remote.gameType)/\(remote.folder)/\(remote.filename)")
 
         for attempt in 1...2 {
-            if attempt > 1 { print("   🔄 Retry \(attempt)") }
+            if attempt > 1 { print("   🔄 Retry") }
 
             let before = await MainActor.run {
                 Set(store.items.map { $0.packageURL.lastPathComponent })
@@ -1403,13 +1305,11 @@ final class SyncEngine {
                 if chosen == nil && newFiles.count == 1 {
                     chosen = newFiles.first
                 }
-
                 guard let local = chosen else { continue }
 
                 lock.lock()
-                LocalMapStore.link(local: local, uid: remote.uid)
                 PatchMetaStore.set(makeMeta(from: remote, localName: local),
-                                    uid: remote.uid)
+                                    localName: local)
                 lock.unlock()
 
                 await MainActor.run { store.reload() }
@@ -1418,7 +1318,7 @@ final class SyncEngine {
             }
             print("   ⚠️ Attempt \(attempt) timeout")
         }
-        print("   ❌ FAIL: \(remote.compositeKey)")
+        print("   ❌ FAIL: \(remote.gameType)/\(remote.folder)/\(remote.filename)")
         return false
     }
 
@@ -1453,14 +1353,13 @@ final class SyncEngine {
                 let wire = try JSONDecoder().decode([Wire].self, from: data)
                 return wire.map { w in
                     RemoteFileLite(
-                        filename:    w.filename,
-                        gameType:    w.gameType,
-                        folder:      w.folder      ?? "Chung",
-                        tag:         w.tag         ?? "FREE",
+                        filename: w.filename,
+                        gameType: w.gameType,
+                        folder: w.folder ?? "Chung",
+                        tag: w.tag ?? "FREE",
                         displayName: w.displayName ?? "",
-                        note:        w.note        ?? "",
-                        url:         w.url
-                    )
+                        note: w.note ?? "",
+                        url: w.url)
                 }
             } catch {
                 print("Fetch \(attempt) fail: \(error.localizedDescription)")
@@ -1697,7 +1596,7 @@ struct PatchGameDetailView: View {
         i.packageURL.lastPathComponent
     }
     private func meta(for i: PatchLibraryItem) -> PatchMeta? {
-        PatchMetaStore.lookup(localName: localKey(for: i))
+        PatchMetaStore.get(localName: localKey(for: i))
     }
     private func displayName(for i: PatchLibraryItem) -> String {
         if let m = meta(for: i), !m.displayName.isEmpty { return m.displayName }
@@ -1720,14 +1619,7 @@ struct PatchGameDetailView: View {
 
     private func folderName(for i: PatchLibraryItem) -> String {
         if let m = meta(for: i), !m.folder.isEmpty { return m.folder }
-        let f = i.packageURL.lastPathComponent
-        if let r = f.range(of: #"^ZENITH_([a-zA-Z0-9]+)_"#,
-                           options: .regularExpression) {
-            let m = String(f[r])
-                .replacingOccurrences(of: "ZENITH_", with: "")
-                .trimmingCharacters(in: CharacterSet(charactersIn: "_"))
-            if !m.isEmpty { return m.uppercased() }
-        }
+        // Fallback: parse từ path
         let c = i.packageURL.pathComponents.filter { $0 != "/" }
         if let idx = c.firstIndex(where: {
             GameTypeHelper.allPrefixes.contains($0) || $0 == "silent"
@@ -1748,37 +1640,32 @@ struct PatchGameDetailView: View {
         let t = renameText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !t.isEmpty else { renameItem = nil; return }
         let ln = localKey(for: i)
-        guard let uid = LocalMapStore.uid(forLocal: ln),
-              var m = PatchMetaStore.get(uid: uid) else {
+        guard var m = PatchMetaStore.get(localName: ln) else {
             renameItem = nil; return
         }
         m.displayName = t; m.nameOverride = true
-        PatchMetaStore.set(m, uid: uid)
+        PatchMetaStore.set(m, localName: ln)
         store.reload(); renameItem = nil
     }
-
     private func commitTag(_ tag: String) {
         guard let i = tagPickerItem else { return }
         let ln = localKey(for: i)
-        guard let uid = LocalMapStore.uid(forLocal: ln),
-              var m = PatchMetaStore.get(uid: uid) else {
+        guard var m = PatchMetaStore.get(localName: ln) else {
             tagPickerItem = nil; return
         }
         m.tag = tag; m.tagOverride = true
-        PatchMetaStore.set(m, uid: uid)
+        PatchMetaStore.set(m, localName: ln)
         store.reload(); tagPickerItem = nil
     }
-
     private func commitNote() {
         guard let i = noteItem else { return }
         let t = noteText.trimmingCharacters(in: .whitespacesAndNewlines)
         let ln = localKey(for: i)
-        guard let uid = LocalMapStore.uid(forLocal: ln),
-              var m = PatchMetaStore.get(uid: uid) else {
+        guard var m = PatchMetaStore.get(localName: ln) else {
             noteItem = nil; return
         }
         m.note = t; m.noteOverride = true
-        PatchMetaStore.set(m, uid: uid)
+        PatchMetaStore.set(m, localName: ln)
         store.reload(); noteItem = nil
     }
 
@@ -1793,23 +1680,7 @@ struct PatchGameDetailView: View {
         let conflictIDs: [UUID] = activate ? store.items.compactMap { o in
             guard o.id != item.id else { return nil }
             guard GameTypeHelper.prefixOf(o) == gp else { return nil }
-            let on = o.packageURL.lastPathComponent
-            let om = PatchMetaStore.lookup(localName: on)
-            let of: String
-            if let m = om, !m.folder.isEmpty { of = m.folder }
-            else {
-                let c = o.packageURL.pathComponents.filter { $0 != "/" }
-                if let idx = c.firstIndex(where: {
-                    GameTypeHelper.allPrefixes.contains($0) || $0 == "silent"
-                }) {
-                    if c[idx] == "silent", idx + 1 < c.count,
-                       (c[idx + 1] == "ffmax" || c[idx + 1] == "ffnormal") {
-                        of = idx + 2 < c.count ? c[idx + 2] : "CHƯA PHÂN LOẠI"
-                    } else {
-                        of = idx + 1 < c.count ? c[idx + 1] : "CHƯA PHÂN LOẠI"
-                    }
-                } else { of = "CHƯA PHÂN LOẠI" }
-            }
+            let of = folderName(for: o)
             guard of == targetFolder else { return nil }
             guard DevicePatchService.latestReceipt(projectID: o.id) != nil else {
                 return nil
@@ -1908,7 +1779,6 @@ struct PatchUnlockView: View {
             }
         }
     }
-
     private func errorText(_ k: String) -> String {
         if let a = store.unlockErrorArgument { return language.text(k, a) }
         return language.text(k)
