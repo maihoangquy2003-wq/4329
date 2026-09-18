@@ -325,7 +325,7 @@ struct ActivationInfo: Identifiable {
 // MARK: - META STORE
 // ═══════════════════════════════════════════════════════════════
 enum PatchMetaStore {
-    private static let key = "patch_meta_v23"
+    private static let key = "patch_meta_v24"
 
     static func all() -> [String: PatchMeta] {
         guard let data = UserDefaults.standard.data(forKey: key),
@@ -368,7 +368,7 @@ enum PatchMetaStore {
 }
 
 enum LocalMapStore {
-    private static let key = "patch_localmap_v23"
+    private static let key = "patch_localmap_v24"
 
     static func all() -> [String: String] {
         (UserDefaults.standard.dictionary(forKey: key) as? [String: String]) ?? [:]
@@ -488,7 +488,6 @@ private struct GameLogoView: View {
     }
 }
 
-// ⭐ Avatar server — hỗ trợ cả tròn và vuông
 enum AvatarShape { case circle, roundedSquare }
 
 private struct ServerAvatarView: View {
@@ -543,7 +542,6 @@ private struct ServerAvatarView: View {
     }
 }
 
-// Helper để dùng chung clipShape cho 2 loại
 private extension Shape {
     func strokeBorder(_ color: Color, lineWidth: CGFloat) -> some View {
         self.stroke(color, lineWidth: lineWidth)
@@ -1239,21 +1237,16 @@ struct PatchProjectsView: View {
                 InstallerAlertBlocker.install()
                 store.reload()
             }
-            // ⭐ SYNC NGAY khi vào + loop 15s
             .task {
                 InstallerAlertBlocker.install()
-
-                // Sync lần đầu ngay lập tức
                 await syncNow(force: true)
 
-                // Loop 15s
                 while !Task.isCancelled {
                     try? await Task.sleep(nanoseconds: 15_000_000_000)
                     if Task.isCancelled { break }
                     await syncNow(force: true)
                 }
             }
-            // Sync khi quay lại foreground
             .onChange(of: scenePhase) { phase in
                 if phase == .active {
                     store.reload()
@@ -1418,7 +1411,6 @@ struct PatchProjectsView: View {
         .buttonStyle(.plain)
     }
 
-    // ⭐ Menu Silent — avatar vuông
     private func silentCard() -> some View {
         Button {
             SoundFX.menu()
@@ -1470,7 +1462,6 @@ struct PatchProjectsView: View {
         isSyncing = true
         await SyncEngine.shared.run(store: store)
         store.reload()
-        // Reload lần 2 để chắc chắn các view con cập nhật
         try? await Task.sleep(nanoseconds: 200_000_000)
         store.reload()
         isSyncing = false
@@ -1479,7 +1470,7 @@ struct PatchProjectsView: View {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// MARK: - SYNC ENGINE
+// MARK: - SYNC ENGINE (⭐ LOGIC MỚI CHẮC CHẮN)
 // ═══════════════════════════════════════════════════════════════
 final class SyncEngine {
     static let shared = SyncEngine()
@@ -1489,23 +1480,29 @@ final class SyncEngine {
 
     func run(store: PatchProjectStore) async {
         if isRunning {
-            print("⏭️ Sync already running, skip")
+            print("⏭️ Sync skip (running)")
             return
         }
         isRunning = true
         defer { isRunning = false }
 
+        print("═══════════════════════════════")
+        print("🔄 SYNC START")
+
         guard let remotes = await fetchRemotes() else {
-            print("⚠️ Sync: fetch fail")
+            print("❌ SYNC FAIL: fetchRemotes nil")
+            print("═══════════════════════════════")
             return
         }
 
-        print("🔄 Sync: \(remotes.count) remote files")
+        print("🌐 Remote files: \(remotes.count)")
 
+        // Lookup remote theo uid
         var remoteByUID: [String: RemoteFileLite] = [:]
         remoteByUID.reserveCapacity(remotes.count)
         for r in remotes { remoteByUID[r.uid] = r }
 
+        // Cập nhật meta cũ
         var metaDict = PatchMetaStore.all()
         for (uid, var meta) in metaDict {
             if let remote = remoteByUID[uid] {
@@ -1524,77 +1521,151 @@ final class SyncEngine {
         }
         PatchMetaStore.save(metaDict)
 
+        // Reload để thấy file cũ
         await MainActor.run { store.reload() }
 
-        let missing = remotes.filter { metaDict[$0.uid] == nil }
-        print("📦 Missing: \(missing.count)")
-        guard !missing.isEmpty else {
-            print("✅ Sync done (no missing)")
+        // Lấy danh sách file đang có trong store (không chỉ từ meta)
+        let storeFiles: Set<String> = await MainActor.run {
+            Set(store.items.map { $0.packageURL.lastPathComponent })
+        }
+        print("📁 Store có \(storeFiles.count) file")
+
+        // Xác định file cần import
+        var missing: [RemoteFileLite] = []
+        for r in remotes {
+            // Đã có meta → bỏ qua
+            if metaDict[r.uid] != nil { continue }
+
+            // Đã có file vật lý trong store (khớp tên) → chỉ gán meta
+            if storeFiles.contains(r.filename) {
+                await MainActor.run {
+                    self.linkExistingMeta(remote: r, localName: r.filename)
+                }
+                print("🔗 Link meta cho file có sẵn: \(r.filename)")
+                continue
+            }
+
+            // Cần import
+            missing.append(r)
+        }
+
+        print("📦 Cần import: \(missing.count)")
+
+        if missing.isEmpty {
+            await MainActor.run { store.reload() }
+            print("✅ SYNC DONE (nothing to import)")
+            print("═══════════════════════════════")
             return
         }
 
-        for remote in missing {
-            await importOne(remote: remote, store: store)
+        // Import tuần tự từng file
+        var successCount = 0
+        var failCount = 0
+
+        for (idx, remote) in missing.enumerated() {
+            let ok = await importOne(remote: remote, store: store, index: idx + 1, total: missing.count)
+            if ok { successCount += 1 } else { failCount += 1 }
         }
 
-        // Reload cuối + chờ 1 nhịp cho store ổn định
+        // Reload cuối
         await MainActor.run { store.reload() }
         try? await Task.sleep(nanoseconds: 300_000_000)
         await MainActor.run { store.reload() }
-        print("✅ Sync done")
+
+        print("📊 Kết quả: \(successCount) OK / \(failCount) FAIL")
+        print("✅ SYNC DONE")
+        print("═══════════════════════════════")
     }
 
-    // ⭐ Import 1 file — poll 150ms, reload mỗi 2 vòng
+    /// Gán meta cho file đã có sẵn trong store (không cần download)
+    private func linkExistingMeta(remote: RemoteFileLite, localName: String) {
+        LocalMapStore.link(local: localName, uid: remote.uid)
+        let meta = PatchMeta(
+            uid:         remote.uid,
+            remoteKey:   remote.compositeKey,
+            remoteName:  remote.filename,
+            gameType:    remote.gameType,
+            folder:      remote.folder,
+            tag:         remote.tag,
+            displayName: remote.displayName,
+            note:        remote.note,
+            orphaned:    false
+        )
+        PatchMetaStore.set(meta, uid: remote.uid)
+    }
+
+    /// Import 1 file — có retry
     private func importOne(remote: RemoteFileLite,
-                           store: PatchProjectStore) async {
-        guard let url = URL(string: remote.url) else { return }
-
-        let before = await MainActor.run {
-            Set(store.items.map { $0.packageURL.lastPathComponent })
+                           store: PatchProjectStore,
+                           index: Int,
+                           total: Int) async -> Bool {
+        guard let url = URL(string: remote.url) else {
+            print("❌ [\(index)/\(total)] URL invalid: \(remote.url)")
+            return false
         }
 
-        await MainActor.run {
-            store.importPackage(from: .remote(url))
-        }
+        print("📥 [\(index)/\(total)] \(remote.compositeKey)")
+        print("    URL: \(remote.url)")
 
-        // Poll 150ms × 400 = 60s max
-        for i in 0..<400 {
-            try? await Task.sleep(nanoseconds: 150_000_000)
-
-            // Reload store mỗi 2 vòng (~300ms)
-            if i % 2 == 0 {
-                await MainActor.run { store.reload() }
+        // Retry tối đa 2 lần
+        for attempt in 1...2 {
+            if attempt > 1 {
+                print("    🔄 Retry attempt \(attempt)")
             }
 
-            let after = await MainActor.run {
+            let before = await MainActor.run {
                 Set(store.items.map { $0.packageURL.lastPathComponent })
             }
-            let newFiles = after.subtracting(before)
-            guard let newFile = newFiles.first else { continue }
 
-            lock.lock()
-            LocalMapStore.link(local: newFile, uid: remote.uid)
-            let meta = PatchMeta(
-                uid:         remote.uid,
-                remoteKey:   remote.compositeKey,
-                remoteName:  remote.filename,
-                gameType:    remote.gameType,
-                folder:      remote.folder,
-                tag:         remote.tag,
-                displayName: remote.displayName,
-                note:        remote.note,
-                orphaned:    false
-            )
-            PatchMetaStore.set(meta, uid: remote.uid)
-            lock.unlock()
+            await MainActor.run {
+                store.importPackage(from: .remote(url))
+            }
 
-            // Force reload ngay sau khi gán meta
-            await MainActor.run { store.reload() }
-            print("✅ \(remote.compositeKey) → \(newFile)")
-            return
+            // Poll 300ms × 400 = 120s
+            for i in 0..<400 {
+                try? await Task.sleep(nanoseconds: 300_000_000)
+
+                if i % 3 == 0 {
+                    await MainActor.run { store.reload() }
+                }
+
+                let after = await MainActor.run {
+                    Set(store.items.map { $0.packageURL.lastPathComponent })
+                }
+                let newFiles = after.subtracting(before)
+
+                // Ưu tiên khớp chính xác tên file
+                var chosen: String? = newFiles.first(where: { $0 == remote.filename })
+                if chosen == nil {
+                    // Khớp suffix (iOS có thể thêm prefix)
+                    chosen = newFiles.first(where: {
+                        $0.hasSuffix(remote.filename) || remote.filename.hasSuffix($0)
+                    })
+                }
+                if chosen == nil {
+                    // Chỉ có 1 file mới → chắc chắn là nó
+                    if newFiles.count == 1 {
+                        chosen = newFiles.first
+                    }
+                }
+
+                guard let localName = chosen else { continue }
+
+                // Gán meta
+                lock.lock()
+                linkExistingMeta(remote: remote, localName: localName)
+                lock.unlock()
+
+                await MainActor.run { store.reload() }
+                print("    ✅ → \(localName)")
+                return true
+            }
+
+            print("    ⚠️ Attempt \(attempt) timeout")
         }
 
-        print("⚠️ Timeout: \(remote.compositeKey)")
+        print("    ❌ FAIL sau 2 lần thử: \(remote.compositeKey)")
+        return false
     }
 
     private func fetchRemotes() async -> [RemoteFileLite]? {
@@ -1607,7 +1678,7 @@ final class SyncEngine {
             do {
                 var req = URLRequest(url: url)
                 req.cachePolicy = .reloadIgnoringLocalAndRemoteCacheData
-                req.timeoutInterval = 12
+                req.timeoutInterval = 15
                 req.setValue("no-cache", forHTTPHeaderField: "Cache-Control")
                 req.setValue("no-cache", forHTTPHeaderField: "Pragma")
                 req.setValue("gzip, deflate, br", forHTTPHeaderField: "Accept-Encoding")
@@ -1625,6 +1696,7 @@ final class SyncEngine {
                     let url: String
                 }
                 let wire = try JSONDecoder().decode([Wire].self, from: data)
+                print("    📜 JSON parsed: \(wire.count) items")
                 return wire.map { w in
                     RemoteFileLite(
                         filename:    w.filename,
@@ -1637,7 +1709,7 @@ final class SyncEngine {
                     )
                 }
             } catch {
-                print("Fetch \(attempt) failed: \(error.localizedDescription)")
+                print("    ⚠️ Fetch attempt \(attempt) failed: \(error.localizedDescription)")
                 if attempt == 0 {
                     try? await Task.sleep(nanoseconds: 500_000_000)
                 }
@@ -1685,7 +1757,6 @@ struct PatchGameDetailView: View {
                 store.reload()
                 syncFolders()
             }
-            // ⭐ Sync ngay khi mở detail + loop 15s
             .task {
                 if !didInitialSync {
                     didInitialSync = true
