@@ -286,7 +286,7 @@ private struct ServerAvatarView: View {
     var corner: CGFloat = 16
 
     var body: some View {
-        AsyncImage(url: URL(string: "https://solitudepremium.click/ipa/ipa/liii.jpg")) { p in
+        let imgView = AsyncImage(url: URL(string: "https://solitudepremium.click/ipa/ipa/liii.jpg")) { p in
             switch p {
             case .empty: ZStack { fill; ProgressView().tint(.white).scaleEffect(0.8) }
             case .success(let img): img.resizable().scaledToFill()
@@ -295,30 +295,26 @@ private struct ServerAvatarView: View {
             }
         }
         .frame(width: size, height: size)
-        .clipShape(clip)
-        .overlay(clip.strokeBorder(.white.opacity(0.8), lineWidth: 1.2))
-    }
-    private var clip: AnyShape {
-        switch shape {
-        case .circle: return AnyShape(Circle())
-        case .roundedSquare: return AnyShape(RoundedRectangle(cornerRadius: corner, style: .continuous))
+        
+        // Fixed Swift 6 Concurrency Issue - No longer using AnyShape
+        if shape == .circle {
+            imgView
+                .clipShape(Circle())
+                .overlay(Circle().strokeBorder(.white.opacity(0.8), lineWidth: 1.2))
+        } else {
+            imgView
+                .clipShape(RoundedRectangle(cornerRadius: corner, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: corner, style: .continuous).strokeBorder(.white.opacity(0.8), lineWidth: 1.2))
         }
     }
+    
     @ViewBuilder private var fill: some View {
-        switch shape {
-        case .circle: Circle().fill(Theme.surfaceHi)
-        case .roundedSquare: RoundedRectangle(cornerRadius: corner, style: .continuous).fill(Theme.surfaceHi)
+        if shape == .circle {
+            Circle().fill(Theme.surfaceHi)
+        } else {
+            RoundedRectangle(cornerRadius: corner, style: .continuous).fill(Theme.surfaceHi)
         }
     }
-}
-
-private extension Shape {
-    func strokeBorder(_ c: Color, lineWidth: CGFloat) -> some View { self.stroke(c, lineWidth: lineWidth) }
-}
-private struct AnyShape: Shape {
-    private let make: (CGRect) -> Path
-    init<S: Shape>(_ s: S) { self.make = { s.path(in: $0) } }
-    func path(in rect: CGRect) -> Path { make(rect) }
 }
 
 private struct AvatarView: View {
