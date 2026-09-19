@@ -176,6 +176,15 @@ struct RemoteFileLite: Decodable {
     let url: String
 }
 
+struct ActivationInfo: Identifiable {
+    let id = UUID()
+    let patchName: String
+    let tag: String
+    let note: String
+    let success: Bool
+    let errorMessage: String?
+}
+
 // ═══════════════════════════════════════════════════════════════
 // MARK: - META STORE
 // ═══════════════════════════════════════════════════════════════
@@ -560,6 +569,128 @@ struct SilentSubMenuSheet: View {
 }
 
 // ═══════════════════════════════════════════════════════════════
+// MARK: - ACTIVATION SHEET (BẢNG GHI CHÚ)
+// ═══════════════════════════════════════════════════════════════
+struct ActivationNoteSheet: View {
+    let info: ActivationInfo
+    let onDismiss: () -> Void
+    @State private var copied = false
+
+    private var isError: Bool { !info.success }
+    private var accent: Color { isError ? Theme.danger : .white }
+    private var hasNote: Bool { !info.note.trimmingCharacters(in: .whitespaces).isEmpty }
+
+    var body: some View {
+        ZStack {
+            Color.black.ignoresSafeArea()
+            RadialGradient(colors: [accent.opacity(0.06), .clear],
+                center: .top, startRadius: 0, endRadius: 500).ignoresSafeArea()
+            ScrollView(showsIndicators: false) {
+                VStack(spacing: 22) {
+                    Spacer(minLength: 50)
+                    if isError {
+                        ZStack {
+                            Circle().fill(accent.opacity(0.1)).frame(width: 130, height: 130).blur(radius: 20)
+                            Circle().fill(accent).frame(width: 92, height: 92)
+                                .shadow(color: accent.opacity(0.5), radius: 20)
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .font(.system(size: 38, weight: .heavy)).foregroundStyle(.black)
+                        }
+                    } else {
+                        ZStack {
+                            Circle().fill(Color.white.opacity(0.1)).frame(width: 130, height: 130).blur(radius: 20)
+                            ServerAvatarView(size: 100, shape: .circle)
+                                .shadow(color: .white.opacity(0.4), radius: 20)
+                        }
+                    }
+                    if isError {
+                        VStack(spacing: 10) {
+                            Text("HEADLOCK ZENIS").font(.system(size: 11, weight: .heavy)).tracking(4.5)
+                                .foregroundStyle(.white.opacity(0.5))
+                            Text("KHÔNG KÍCH HOẠT ĐƯỢC").font(.system(size: 20, weight: .heavy)).tracking(2)
+                                .foregroundStyle(accent).multilineTextAlignment(.center).padding(.horizontal, 20)
+                            Text(info.patchName).font(.system(size: 15, weight: .heavy))
+                                .foregroundStyle(.white).multilineTextAlignment(.center).padding(.horizontal, 28)
+                            if !info.tag.isEmpty { TagPill(tag: info.tag) }
+                        }
+                    } else {
+                        VStack(spacing: 12) {
+                            Text("HEADLOCK ZENIS").font(.system(size: 13, weight: .heavy)).tracking(4.5)
+                                .foregroundStyle(.white.opacity(0.8))
+                            Text("ĐÃ CẬP NHẬT THÀNH CÔNG").font(.system(size: 15, weight: .heavy)).tracking(2)
+                                .foregroundStyle(.white).multilineTextAlignment(.center).padding(.horizontal, 20)
+                            Text("BẠN CÓ THỂ SỬ DỤNG").font(.system(size: 13, weight: .heavy)).tracking(2.5)
+                                .foregroundStyle(.white.opacity(0.6)).multilineTextAlignment(.center).padding(.horizontal, 20)
+                            Text(info.patchName).font(.system(size: 18, weight: .heavy))
+                                .foregroundStyle(.white).multilineTextAlignment(.center)
+                                .padding(.horizontal, 28).padding(.top, 4)
+                            if !info.tag.isEmpty { TagPill(tag: info.tag) }
+                        }
+                    }
+                    if isError, let e = info.errorMessage, !e.isEmpty {
+                        VStack(alignment: .leading, spacing: 10) {
+                            Text("LÝ DO").font(.system(size: 10, weight: .heavy)).tracking(2.2).foregroundStyle(accent)
+                            Text(e).font(.system(size: 12.5, weight: .medium))
+                                .foregroundStyle(.white.opacity(0.9)).fixedSize(horizontal: false, vertical: true)
+                        }
+                        .padding(16).frame(maxWidth: .infinity, alignment: .leading)
+                        .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(accent.opacity(0.08)))
+                        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous)
+                            .strokeBorder(accent.opacity(0.4), lineWidth: 1.0))
+                        .padding(.horizontal, 24)
+                    }
+                    if hasNote {
+                        VStack(alignment: .leading, spacing: 14) {
+                            HStack(spacing: 8) {
+                                Image(systemName: "note.text").font(.system(size: 12, weight: .bold)).foregroundStyle(.white)
+                                Text("GHI CHÚ").font(.system(size: 10, weight: .heavy)).tracking(2.2).foregroundStyle(.white)
+                                Spacer()
+                            }
+                            Text(info.note).font(.system(size: 13.5, weight: .medium))
+                                .foregroundStyle(.white.opacity(0.9)).fixedSize(horizontal: false, vertical: true)
+                                .frame(maxWidth: .infinity, alignment: .leading).padding(14)
+                                .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color.white.opacity(0.05)))
+                                .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                    .strokeBorder(.white.opacity(0.2), style: StrokeStyle(lineWidth: 1, dash: [4, 4])))
+                            Button {
+                                SoundFX.tap()
+                                UIPasteboard.general.string = info.note
+                                withAnimation { copied = true }
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 1.6) { withAnimation { copied = false } }
+                            } label: {
+                                HStack(spacing: 8) {
+                                    Image(systemName: copied ? "checkmark" : "doc.on.doc.fill")
+                                        .font(.system(size: 12, weight: .heavy))
+                                    Text(copied ? "ĐÃ COPY" : "COPY GHI CHÚ")
+                                        .font(.system(size: 11.5, weight: .heavy)).tracking(1.8)
+                                }
+                                .foregroundStyle(copied ? .black : .white)
+                                .frame(maxWidth: .infinity).padding(.vertical, 13)
+                                .background(RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                    .fill(copied ? Color.white : Color.white.opacity(0.06)))
+                                .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                    .strokeBorder(.white, lineWidth: 1.0))
+                            }.buttonStyle(.plain)
+                        }
+                        .padding(18)
+                        .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Theme.surface))
+                        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous)
+                            .strokeBorder(.white.opacity(0.2), lineWidth: 1.0))
+                        .padding(.horizontal, 22)
+                    }
+                    Button { SoundFX.tap(); onDismiss() } label: {
+                        Text("ĐÃ HIỂU").font(.system(size: 14, weight: .heavy)).tracking(3)
+                            .foregroundStyle(.black).frame(maxWidth: .infinity).padding(.vertical, 16)
+                            .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(.white))
+                            .padding(.horizontal, 40)
+                    }.buttonStyle(.plain).padding(.bottom, 50)
+                }
+            }
+        }
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════
 // MARK: - MAIN VIEW
 // ═══════════════════════════════════════════════════════════════
 struct PatchProjectsView: View {
@@ -568,7 +699,6 @@ struct PatchProjectsView: View {
     @EnvironmentObject private var draftCoordinator: PatchDraftCoordinator
     @EnvironmentObject private var store: PatchProjectStore
 
-    @State private var actionAlert: PatchStoreAlert?
     @State private var selectedGame: GameSelection?
     @State private var showSilentSubmenu = false
     @State private var isSyncing = false
@@ -595,7 +725,7 @@ struct PatchProjectsView: View {
                 if p == .active { store.reload(); Task { await triggerSync() } }
             }
             .sheet(item: $selectedGame) { g in
-                PatchGameDetailView(game: g, store: store, actionAlert: $actionAlert, language: language)
+                PatchGameDetailView(game: g, store: store, language: language)
             }
             .sheet(isPresented: $showSilentSubmenu) {
                 SilentSubMenuSheet(
@@ -608,10 +738,6 @@ struct PatchProjectsView: View {
                         }
                     },
                     onCancel: { showSilentSubmenu = false })
-            }
-            .alert(item: $actionAlert) { a in
-                Alert(title: Text(a.titleKey), message: Text(a.message(language: language)),
-                      dismissButton: .default(Text("OK")))
             }
         }
     }
@@ -718,7 +844,7 @@ struct PatchProjectsView: View {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// MARK: - SYNC ENGINE (TỐI ƯU HÓA KHÔNG GÂY LOOP)
+// MARK: - SYNC ENGINE (AUTO KILL POPUP "XONG")
 // ═══════════════════════════════════════════════════════════════
 private actor MetaStoreIsolator {
     static let shared = MetaStoreIsolator()
@@ -774,6 +900,28 @@ final class SyncEngine {
         }
         await MainActor.run { store.reload() }
     }
+    
+    // Tự động tìm và đóng Alert hệ thống ("Xong", "Đã cài đặt gói...")
+    @MainActor private func huntAndKillSystemAlert() {
+        for delay in [0.2, 0.5, 0.8, 1.2, 1.5] {
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+                if let scene = UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene }).first,
+                   let win = scene.windows.first(where: \.isKeyWindow),
+                   let root = win.rootViewController {
+                    var top = root
+                    while let p = top.presentedViewController { top = p }
+                    if let alert = top as? UIAlertController {
+                        let title = alert.title ?? ""
+                        let msg = alert.message ?? ""
+                        // Cắt ngang Alert Xong hệ thống
+                        if title == "Xong" || msg.contains("thành công") || msg.contains("Đã cài đặt") {
+                            alert.dismiss(animated: false)
+                        }
+                    }
+                }
+            }
+        }
+    }
 
     private func makeMeta(_ r: RemoteFileLite, localName: String) -> PatchMeta {
         PatchMeta(uid: r.uid, localName: localName, remoteName: r.filename,
@@ -784,7 +932,11 @@ final class SyncEngine {
     private func importOne(remote: RemoteFileLite, store: PatchProjectStore) async -> Bool {
         guard let url = URL(string: remote.url) else { return false }
         let before = await MainActor.run { Set(store.items.map { $0.packageURL.lastPathComponent }) }
-        await MainActor.run { store.importPackage(from: .remote(url)) }
+        
+        await MainActor.run { 
+            store.importPackage(from: .remote(url)) 
+            huntAndKillSystemAlert() // Tiêu diệt popup ngay sau khi import
+        }
 
         for i in 0..<30 {
             try? await Task.sleep(nanoseconds: 300_000_000)
@@ -826,11 +978,11 @@ final class SyncEngine {
 struct PatchGameDetailView: View {
     let game: GameSelection
     @ObservedObject var store: PatchProjectStore
-    @Binding var actionAlert: PatchStoreAlert?
     let language: AppLanguage
 
     @Environment(\.dismiss) private var dismiss
     @Environment(\.scenePhase) private var scenePhase
+    @State private var activationInfo: ActivationInfo? // BẢNG GHI CHÚ ĐÃ TRỞ LẠI
     @State private var selectedFolder: String? = nil
     @State private var workingFileID: String? = nil
     @State private var renameItem: PatchLibraryItem?
@@ -864,9 +1016,6 @@ struct PatchGameDetailView: View {
                     }
                 }
             }
-            .alert(item: $actionAlert) { a in
-                Alert(title: Text(a.titleKey), message: Text(a.message(language: language)), dismissButton: .default(Text("OK")))
-            }
             .alert("Đổi tên", isPresented: renameBinding) {
                 TextField("Tên mới", text: $renameText)
                 Button("Huỷ", role: .cancel) { renameItem = nil }
@@ -881,6 +1030,9 @@ struct PatchGameDetailView: View {
                 Button("VIP 👑") { commitTag("VIP") }
                 Button("FREE 🛡") { commitTag("FREE") }
                 Button("Huỷ", role: .cancel) { tagPickerItem = nil }
+            }
+            .fullScreenCover(item: $activationInfo) { i in
+                ActivationNoteSheet(info: i) { activationInfo = nil }
             }
         }
     }
@@ -1042,6 +1194,9 @@ struct PatchGameDetailView: View {
 
     private func togglePatch(item: PatchLibraryItem, activate: Bool) {
         workingFileID = item.id.uuidString
+        let nameSnap = displayName(for: item)
+        let tagSnap = currentTag(for: item)
+        let noteSnap = currentNote(for: item)
         let targetFolder = folderName(for: item)
         let gp = game.prefix
 
@@ -1064,10 +1219,11 @@ struct PatchGameDetailView: View {
                     if let r = DevicePatchService.latestReceipt(projectID: item.id) {
                         try DevicePatchService.restore(receipt: r)
                     }
-                    await MainActor.run { store.reload(); workingFileID = nil; SoundFX.success() }
+                    await MainActor.run { store.reload(); workingFileID = nil }
                 } catch {
                     await MainActor.run {
                         workingFileID = nil; SoundFX.error()
+                        activationInfo = ActivationInfo(patchName: nameSnap, tag: tagSnap, note: noteSnap, success: false, errorMessage: "Không thể tắt: \(error.localizedDescription)")
                     }
                 }
                 return
@@ -1078,7 +1234,7 @@ struct PatchGameDetailView: View {
 
             do {
                 guard let p = item.project else {
-                    await MainActor.run { MaxShield.shared.deactivate(); workingFileID = nil; SoundFX.error() }
+                    await MainActor.run { MaxShield.shared.deactivate(); workingFileID = nil }
                     return
                 }
                 _ = try DevicePatchService.apply(project: p)
@@ -1089,11 +1245,14 @@ struct PatchGameDetailView: View {
                     store.reload()
                     workingFileID = nil
                     SoundFX.success()
+                    // GỌI BẢNG GHI CHÚ TẠI ĐÂY LÚC BẬT PATCH THÀNH CÔNG
+                    activationInfo = ActivationInfo(patchName: nameSnap, tag: tagSnap, note: noteSnap, success: true, errorMessage: nil)
                 }
             } catch {
                 await MainActor.run {
                     MaxShield.shared.deactivate()
                     store.reload(); workingFileID = nil; SoundFX.error()
+                    activationInfo = ActivationInfo(patchName: nameSnap, tag: tagSnap, note: noteSnap, success: false, errorMessage: error.localizedDescription)
                 }
             }
         }
