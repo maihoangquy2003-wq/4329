@@ -3,9 +3,6 @@ import UIKit
 import UniformTypeIdentifiers
 import AudioToolbox
 
-// ═══════════════════════════════════════════════════════════════
-// MARK: - SOUND
-// ═══════════════════════════════════════════════════════════════
 enum SoundFX {
     static func tap()     { AudioServicesPlaySystemSound(1104) }
     static func menu()    { AudioServicesPlaySystemSound(1105) }
@@ -20,12 +17,12 @@ enum SoundFX {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// MARK: - INSTALL SHIELD — che popup + auto dismiss alert
+// MARK: - MAX SHIELD
 // ═══════════════════════════════════════════════════════════════
-final class InstallShield {
-    static let shared = InstallShield()
-    private var overlayWindow: UIWindow?
-    private var scanTimer: Timer?
+final class MaxShield {
+    static let shared = MaxShield()
+    private var win: UIWindow?
+    private var timer: Timer?
     private var hideTimer: Timer?
 
     private init() {}
@@ -34,27 +31,23 @@ final class InstallShield {
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
             self.deactivate()
+            guard let scene = UIApplication.shared.connectedScenes
+                    .compactMap({ $0 as? UIWindowScene }).first else { return }
+            let w = UIWindow(windowScene: scene)
+            w.windowLevel = UIWindow.Level.alert + 999999
+            w.backgroundColor = .black
+            w.rootViewController = UIHostingController(rootView: ShieldView())
+            w.rootViewController?.view.backgroundColor = .black
+            w.makeKeyAndVisible()
+            self.win = w
 
-            // 1) Overlay window che full-screen
-            if let scene = UIApplication.shared.connectedScenes
-                    .compactMap({ $0 as? UIWindowScene }).first {
-                let w = UIWindow(windowScene: scene)
-                w.windowLevel = UIWindow.Level.alert + 5000
-                w.backgroundColor = .black
-                let host = UIHostingController(rootView: InstallShieldView())
-                host.view.backgroundColor = .black
-                w.rootViewController = host
-                w.makeKeyAndVisible()
-                self.overlayWindow = w
+            // Force giữ trên cùng
+            self.timer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { _ in
+                w.isHidden = false
+                w.alpha = 1
             }
+            if let t = self.timer { RunLoop.main.add(t, forMode: .common) }
 
-            // 2) Auto-dismiss mọi UIAlertController trong app (30ms/lần)
-            self.scanTimer = Timer.scheduledTimer(withTimeInterval: 0.03, repeats: true) { _ in
-                self.scanAndDismiss()
-            }
-            if let t = self.scanTimer { RunLoop.main.add(t, forMode: .common) }
-
-            // 3) Tự tắt sau duration
             self.hideTimer = Timer.scheduledTimer(withTimeInterval: duration, repeats: false) { _ in
                 self.deactivate()
             }
@@ -63,79 +56,45 @@ final class InstallShield {
 
     func deactivate() {
         DispatchQueue.main.async { [weak self] in
-            self?.scanTimer?.invalidate(); self?.scanTimer = nil
+            self?.timer?.invalidate(); self?.timer = nil
             self?.hideTimer?.invalidate(); self?.hideTimer = nil
-            self?.overlayWindow?.isHidden = true
-            self?.overlayWindow = nil
+            self?.win?.isHidden = true
+            self?.win = nil
         }
-    }
-
-    private func scanAndDismiss() {
-        let scenes = UIApplication.shared.connectedScenes
-        for scene in scenes {
-            guard let ws = scene as? UIWindowScene else { continue }
-            for win in ws.windows {
-                guard let root = win.rootViewController else { continue }
-                dismissAlerts(root)
-            }
-        }
-    }
-
-    private func dismissAlerts(_ vc: UIViewController) {
-        if let alert = vc as? UIAlertController {
-            alert.dismiss(animated: false, completion: nil)
-        }
-        for child in vc.children { dismissAlerts(child) }
-        if let p = vc.presentedViewController { dismissAlerts(p) }
     }
 }
 
-private struct InstallShieldView: View {
+private struct ShieldView: View {
     @State private var pulse = false
     @State private var dots = ""
 
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
-
             VStack(spacing: 28) {
                 ZStack {
                     Circle()
                         .strokeBorder(Color.white.opacity(0.15), lineWidth: 1.5)
                         .frame(width: 140, height: 140)
                         .scaleEffect(pulse ? 1.15 : 0.92)
-
                     Circle()
                         .fill(Color.white.opacity(0.05))
                         .frame(width: 100, height: 100)
-
-                    ProgressView()
-                        .tint(.white)
-                        .scaleEffect(1.6)
+                    ProgressView().tint(.white).scaleEffect(1.6)
                 }
-
                 VStack(spacing: 10) {
-                    Text("HEADLOCK ZENIS")
-                        .font(.system(size: 11, weight: .heavy))
-                        .tracking(4.5)
-                        .foregroundStyle(.white.opacity(0.6))
-
-                    Text("ĐANG KÍCH HOẠT\(dots)")
-                        .font(.system(size: 16, weight: .heavy))
-                        .tracking(2.5)
-                        .foregroundStyle(.white)
-
+                    Text("HEADLOCK ZENIS").font(.system(size: 11, weight: .heavy))
+                        .tracking(4.5).foregroundStyle(.white.opacity(0.6))
+                    Text("ĐANG KÍCH HOẠT\(dots)").font(.system(size: 16, weight: .heavy))
+                        .tracking(2.5).foregroundStyle(.white)
                     Text("Vui lòng không thoát ứng dụng")
                         .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(.white.opacity(0.5))
-                        .padding(.top, 4)
+                        .foregroundStyle(.white.opacity(0.5)).padding(.top, 4)
                 }
             }
         }
         .onAppear {
-            withAnimation(.easeInOut(duration: 1.3).repeatForever(autoreverses: true)) {
-                pulse = true
-            }
+            withAnimation(.easeInOut(duration: 1.3).repeatForever(autoreverses: true)) { pulse = true }
             Timer.scheduledTimer(withTimeInterval: 0.4, repeats: true) { _ in
                 let n = (dots.count + 1) % 4
                 dots = String(repeating: ".", count: n)
@@ -255,7 +214,7 @@ struct ActivationInfo: Identifiable {
 // MARK: - META STORE
 // ═══════════════════════════════════════════════════════════════
 enum PatchMetaStore {
-    private static let key = "patch_meta_v60"
+    private static let key = "patch_meta_v70"
 
     static func all() -> [String: PatchMeta] {
         guard let d = UserDefaults.standard.data(forKey: key),
@@ -282,18 +241,8 @@ enum GameTypeHelper {
 
     static func prefixOf(_ item: PatchLibraryItem) -> String {
         let name = item.packageURL.lastPathComponent
-        // Format mới: <gt>~<folder>~<rawname>~<tag>.3105
-        if name.contains("~") {
-            let parts = name.components(separatedBy: "~")
-            if parts.count >= 4 {
-                let gt = parts[0]
-                if allPrefixes.contains(gt) { return gt }
-            }
-        }
         let sorted = allPrefixes.sorted { $0.count > $1.count }
-        for p in sorted where name.hasPrefix("\(p)~") || name.hasPrefix("\(p)_") {
-            return p
-        }
+        for p in sorted where name.hasPrefix("\(p)_") { return p }
         if let m = PatchMetaStore.get(localName: name), !m.gameType.isEmpty {
             return m.gameType
         }
@@ -308,21 +257,10 @@ enum GameTypeHelper {
         return "ffnormal"
     }
 
-    /// Hiển thị tên sạch: <gt>~<folder>~<rawname>~<tag>.3105 → <rawname>
     static func stripAll(_ name: String) -> String {
         var s = name
         if s.hasSuffix(".3105") { s = String(s.dropLast(5)) }
-        if s.contains("~") {
-            let parts = s.components(separatedBy: "~")
-            if parts.count >= 4 { return parts[parts.count - 2] }
-        }
-        let sorted = allPrefixes.sorted { $0.count > $1.count }
-        for p in sorted where s.hasPrefix("\(p)_") {
-            s = String(s.dropFirst(p.count + 1))
-            break
-        }
-        s = s.replacingOccurrences(of: "_VIP", with: "")
-             .replacingOccurrences(of: "_FREE", with: "")
+        s = s.replacingOccurrences(of: "_", with: " ")
         return s
     }
 }
@@ -334,17 +272,13 @@ private struct GlowCard<Content: View>: View {
     @ViewBuilder let content: Content
     var body: some View {
         content
-            .background(
-                RoundedRectangle(cornerRadius: 20, style: .continuous)
-                    .fill(LinearGradient(colors: [Theme.surfaceTop, Theme.surface],
-                        startPoint: .top, endPoint: .bottom))
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 20, style: .continuous)
-                    .strokeBorder(LinearGradient(
-                        colors: [.white, .white.opacity(0.3), .white.opacity(0.6)],
-                        startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 1.4)
-            )
+            .background(RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .fill(LinearGradient(colors: [Theme.surfaceTop, Theme.surface],
+                    startPoint: .top, endPoint: .bottom)))
+            .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .strokeBorder(LinearGradient(
+                    colors: [.white, .white.opacity(0.3), .white.opacity(0.6)],
+                    startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 1.4))
             .shadow(color: .white.opacity(0.12), radius: 14)
             .shadow(color: .black.opacity(0.5), radius: 8, y: 6)
     }
@@ -930,8 +864,7 @@ struct PatchProjectsView: View {
                 HStack(spacing: 14) {
                     GameLogoView(imageURL: u)
                     VStack(alignment: .leading, spacing: 6) {
-                        Text(t).font(.system(size: 16.5, weight: .heavy, design: .rounded))
-                            .foregroundStyle(.white)
+                        Text(t).font(.system(size: 16.5, weight: .heavy, design: .rounded)).foregroundStyle(.white)
                         Text(s).font(.system(size: 9.5, weight: .heavy)).tracking(2)
                             .foregroundStyle(.white.opacity(0.5))
                     }
@@ -1308,19 +1241,14 @@ struct PatchGameDetailView: View {
     private func displayName(for i: PatchLibraryItem) -> String {
         if let m = meta(for: i), !m.displayName.isEmpty { return m.displayName }
         if let n = i.project?.name, !n.isEmpty { return n }
-        return GameTypeHelper.stripAll(i.packageURL.lastPathComponent)
+        var b = i.packageURL.deletingPathExtension().lastPathComponent
+        b = b.replacingOccurrences(of: "_VIP", with: "")
+             .replacingOccurrences(of: "_FREE", with: "")
+        return b
     }
     private func currentTag(for i: PatchLibraryItem) -> String {
         if let m = meta(for: i), !m.tag.isEmpty { return m.tag }
-        let n = i.packageURL.lastPathComponent
-        if n.contains("~") {
-            let parts = n.components(separatedBy: "~")
-            if let last = parts.last {
-                let t = last.replacingOccurrences(of: ".3105", with: "")
-                if t == "VIP" || t == "FREE" { return t }
-            }
-        }
-        return n.hasSuffix("_VIP.3105") ? "VIP" : "FREE"
+        return i.packageURL.deletingPathExtension().lastPathComponent.hasSuffix("_VIP") ? "VIP" : "FREE"
     }
     private func currentNote(for i: PatchLibraryItem) -> String {
         meta(for: i)?.note ?? ""
@@ -1328,11 +1256,6 @@ struct PatchGameDetailView: View {
 
     private func folderName(for i: PatchLibraryItem) -> String {
         if let m = meta(for: i), !m.folder.isEmpty { return m.folder }
-        let n = i.packageURL.lastPathComponent
-        if n.contains("~") {
-            let parts = n.components(separatedBy: "~")
-            if parts.count >= 4 { return parts[1] }
-        }
         return "CHƯA PHÂN LOẠI"
     }
 
@@ -1364,7 +1287,6 @@ struct PatchGameDetailView: View {
         store.reload(); noteItem = nil
     }
 
-    // ⭐ TOGGLE — bật patch: shield 12s + auto-dismiss alert
     private func togglePatch(item: PatchLibraryItem, activate: Bool) {
         workingFileID = item.id.uuidString
         let nameSnap = displayName(for: item)
@@ -1406,23 +1328,22 @@ struct PatchGameDetailView: View {
                 return
             }
 
-            // ⭐ BẬT: kích hoạt InstallShield 12s
-            await MainActor.run { InstallShield.shared.activate(duration: 12.0) }
+            // Bật shield
+            await MainActor.run { MaxShield.shared.activate(duration: 12.0) }
 
             do {
                 guard let p = item.project else {
                     await MainActor.run {
-                        InstallShield.shared.deactivate()
+                        MaxShield.shared.deactivate()
                         workingFileID = nil
                     }
                     return
                 }
-
                 _ = try DevicePatchService.apply(project: p)
                 try? await Task.sleep(nanoseconds: 2_500_000_000)
 
                 await MainActor.run {
-                    InstallShield.shared.deactivate()
+                    MaxShield.shared.deactivate()
                     store.reload()
                     workingFileID = nil
                     SoundFX.success()
@@ -1432,7 +1353,7 @@ struct PatchGameDetailView: View {
                 }
             } catch {
                 await MainActor.run {
-                    InstallShield.shared.deactivate()
+                    MaxShield.shared.deactivate()
                     store.reload(); workingFileID = nil; SoundFX.error()
                     activationInfo = ActivationInfo(
                         patchName: nameSnap, tag: tagSnap, note: noteSnap,
