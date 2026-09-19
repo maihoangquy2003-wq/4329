@@ -296,7 +296,6 @@ private struct ServerAvatarView: View {
         }
         .frame(width: size, height: size)
         
-        // Fixed Swift 6 Concurrency Issue - No longer using AnyShape
         if shape == .circle {
             imgView
                 .clipShape(Circle())
@@ -522,7 +521,7 @@ struct SilentSubMenuSheet: View {
     let onCancel: () -> Void
     var body: some View {
         ZStack {
-            Theme.bg.ignoresSafeArea()
+            Color.black.ignoresSafeArea()
             RadialGradient(colors: [Color.white.opacity(0.05), .clear],
                 center: .top, startRadius: 0, endRadius: 500).ignoresSafeArea()
             VStack(spacing: 24) {
@@ -583,7 +582,7 @@ struct ActivationNoteSheet: View {
 
     var body: some View {
         ZStack {
-            Theme.bg.ignoresSafeArea()
+            Color.black.ignoresSafeArea()
             RadialGradient(colors: [accent.opacity(0.06), .clear],
                 center: .top, startRadius: 0, endRadius: 500).ignoresSafeArea()
             ScrollView(showsIndicators: false) {
@@ -852,9 +851,15 @@ struct PatchProjectsView: View {
 // ═══════════════════════════════════════════════════════════════
 // MARK: - SYNC ENGINE (TỐI ƯU HÓA KHÔNG GÂY LOOP)
 // ═══════════════════════════════════════════════════════════════
+private actor MetaStoreIsolator {
+    static let shared = MetaStoreIsolator()
+    func save(_ m: PatchMeta, localName: String) {
+        PatchMetaStore.set(m, localName: localName)
+    }
+}
+
 final class SyncEngine {
     static let shared = SyncEngine()
-    private let lock = NSLock()
     private var isRunning = false
     private init() {}
 
@@ -872,9 +877,7 @@ final class SyncEngine {
             let ln = item.packageURL.lastPathComponent
             if PatchMetaStore.get(localName: ln) != nil { continue }
             if let r = remotes.first(where: { $0.filename == ln }) {
-                lock.lock()
-                PatchMetaStore.set(makeMeta(r, localName: ln), localName: ln)
-                lock.unlock()
+                await MetaStoreIsolator.shared.save(makeMeta(r, localName: ln), localName: ln)
             }
         }
 
@@ -883,9 +886,7 @@ final class SyncEngine {
             if !storeFiles.contains(r.filename) {
                 missing.append(r)
             } else if PatchMetaStore.get(localName: r.filename) == nil {
-                lock.lock()
-                PatchMetaStore.set(makeMeta(r, localName: r.filename), localName: r.filename)
-                lock.unlock()
+                await MetaStoreIsolator.shared.save(makeMeta(r, localName: r.filename), localName: r.filename)
             }
         }
 
@@ -929,9 +930,7 @@ final class SyncEngine {
             if chosen == nil && newFiles.count == 1 { chosen = newFiles.first }
             guard let local = chosen else { continue }
 
-            lock.lock()
-            PatchMetaStore.set(makeMeta(remote, localName: local), localName: local)
-            lock.unlock()
+            await MetaStoreIsolator.shared.save(makeMeta(remote, localName: local), localName: local)
             await MainActor.run { store.reload() }
             return true
         }
