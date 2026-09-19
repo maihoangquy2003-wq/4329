@@ -36,9 +36,15 @@ struct CachedImageView: View {
             if let img = loader.image {
                 Image(uiImage: img).resizable().scaledToFill()
             } else if loader.isLoading {
-                ProgressView().tint(.white).scaleEffect(0.8)
+                ZStack {
+                    Color.black.opacity(0.6)
+                    ProgressView().tint(.white).scaleEffect(0.8)
+                }
             } else {
-                Image(systemName: fallbackIcon).font(.title).foregroundColor(.white.opacity(0.5))
+                ZStack {
+                    RadialGradient(colors: [Color.white.opacity(0.15), Color.black], center: .center, startRadius: 0, endRadius: 60)
+                    Image(systemName: fallbackIcon).font(.title).foregroundColor(.white.opacity(0.7))
+                }
             }
         }
         .onAppear { loader.load(urlStr: url) }
@@ -50,6 +56,7 @@ struct NeonScaleButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .scaleEffect(configuration.isPressed ? 0.94 : 1.0)
+            .brightness(configuration.isPressed ? 0.15 : 0)
             .animation(.spring(response: 0.3, dampingFraction: 0.6), value: configuration.isPressed)
     }
 }
@@ -125,6 +132,73 @@ struct UXFeedback {
     static func success() { AudioServicesPlaySystemSound(1407); UINotificationFeedbackGenerator().notificationOccurred(.success) }
     static func error() { AudioServicesPlaySystemSound(1053); UINotificationFeedbackGenerator().notificationOccurred(.error) }
     static func typing() { AudioServicesPlaySystemSound(1057); UIImpactFeedbackGenerator(style: .soft).impactOccurred() }
+}
+
+// MARK: - NEON GLOW MODIFIER
+struct NeonGlow: ViewModifier {
+    var color: Color = .white
+    var radius: CGFloat = 8
+    var opacity: Double = 0.8
+    func body(content: Content) -> some View {
+        content
+            .shadow(color: color.opacity(opacity), radius: radius * 0.4)
+            .shadow(color: color.opacity(opacity * 0.6), radius: radius)
+            .shadow(color: color.opacity(opacity * 0.3), radius: radius * 2)
+    }
+}
+
+extension View {
+    func neonGlow(color: Color = .white, radius: CGFloat = 8, opacity: Double = 0.8) -> some View {
+        modifier(NeonGlow(color: color, radius: radius, opacity: opacity))
+    }
+}
+
+// MARK: - ANIMATED BORDER RECTANGLE
+struct AnimatedGlowBorder: View {
+    var cornerRadius: CGFloat = 20
+    var lineWidth: CGFloat = 1.5
+    @State private var phase: CGFloat = 0
+    
+    var body: some View {
+        RoundedRectangle(cornerRadius: cornerRadius)
+            .stroke(
+                AngularGradient(
+                    gradient: Gradient(colors: [
+                        .white.opacity(0.1),
+                        .white.opacity(0.9),
+                        .white.opacity(0.1),
+                        .white.opacity(0.6),
+                        .white.opacity(0.1)
+                    ]),
+                    center: .center,
+                    angle: .degrees(phase)
+                ),
+                lineWidth: lineWidth
+            )
+            .onAppear {
+                withAnimation(.linear(duration: 4).repeatForever(autoreverses: false)) {
+                    phase = 360
+                }
+            }
+            .neonGlow(radius: 6, opacity: 0.5)
+    }
+}
+
+// MARK: - SCANLINE OVERLAY
+struct ScanlineOverlay: View {
+    var body: some View {
+        TimelineView(.animation) { context in
+            Canvas { ctx, size in
+                let time = context.date.timeIntervalSinceReferenceDate
+                let offset = CGFloat(time.truncatingRemainder(dividingBy: 3) / 3) * 8
+                for y in stride(from: -8.0, through: size.height + 8, by: 4.0) {
+                    let rect = CGRect(x: 0, y: y + offset, width: size.width, height: 1)
+                    ctx.fill(Path(rect), with: .color(Color.white.opacity(0.04)))
+                }
+            }
+        }
+        .allowsHitTesting(false)
+    }
 }
 
 // MARK: - MAIN CONTENT VIEW
@@ -329,38 +403,63 @@ struct FloatingHeadlockOverlayView: View {
     @State private var showMenu = false
     @State private var offset = CGSize(width: 120, height: 220)
     @State private var rotationAngle: Double = 0.0
+    @State private var pulseScale: CGFloat = 1.0
+    @State private var outerPulse: CGFloat = 1.0
 
     var body: some View {
         ZStack {
             if showMenu {
-                Color.black.opacity(0.7).ignoresSafeArea()
+                Color.black.opacity(0.75).ignoresSafeArea()
+                    .background(ScanlineOverlay())
                     .onTapGesture { withAnimation(.easeInOut) { showMenu = false } }
                 
                 VStack(spacing: 0) {
                     HStack {
-                        Label("HEADLOCK CONTROL", systemImage: "lock.shield.fill")
-                            .font(.system(size: 13, weight: .black, design: .monospaced))
-                            .foregroundColor(.white)
-                            .shadow(color: .white, radius: 5)
+                        HStack(spacing: 8) {
+                            ZStack {
+                                Circle()
+                                    .stroke(Color.white.opacity(0.6), lineWidth: 1)
+                                    .frame(width: 22, height: 22)
+                                Image(systemName: "lock.shield.fill")
+                                    .font(.system(size: 11, weight: .black))
+                                    .foregroundColor(.white)
+                                    .neonGlow(radius: 4)
+                            }
+                            Text("HEADLOCK CONTROL")
+                                .font(.system(size: 13, weight: .black, design: .monospaced))
+                                .foregroundColor(.white)
+                                .neonGlow(radius: 5)
+                        }
                         Spacer()
-                        Button(action: { withAnimation { showMenu = false } }) {
-                            Image(systemName: "xmark.circle.fill").foregroundColor(.white).font(.system(size: 18))
+                        Button(action: { UXFeedback.click(); withAnimation { showMenu = false } }) {
+                            Image(systemName: "xmark.circle.fill")
+                                .foregroundColor(.white)
+                                .font(.system(size: 20))
+                                .neonGlow(radius: 4)
                         }
                     }
                     .padding(14)
-                    .background(Color.black.opacity(0.9))
+                    .background(Color.black.opacity(0.95))
                     
-                    Divider().background(Color.white.opacity(0.3))
+                    Rectangle()
+                        .fill(LinearGradient(colors: [.clear, .white.opacity(0.6), .clear], startPoint: .leading, endPoint: .trailing))
+                        .frame(height: 1)
                     
                     PatchProjectsView(onOpenSettings: onOpenSettings, onOpenLogs: onOpenLogs)
                         .frame(height: 340)
                 }
                 .frame(width: 330)
-                .background(Color.black.opacity(0.95))
+                .background(
+                    ZStack {
+                        Color.black.opacity(0.97)
+                        ScanlineOverlay()
+                    }
+                )
                 .cornerRadius(20)
-                .overlay(RoundedRectangle(cornerRadius: 20).stroke(Color.white.opacity(0.5), lineWidth: 1.5).shadow(color: .white, radius: 10))
-                .shadow(color: .white.opacity(0.2), radius: 20)
+                .overlay(AnimatedGlowBorder(cornerRadius: 20, lineWidth: 1.5))
+                .neonGlow(radius: 20, opacity: 0.5)
                 .zIndex(100)
+                .transition(.scale.combined(with: .opacity))
             }
 
             Button(action: {
@@ -368,17 +467,31 @@ struct FloatingHeadlockOverlayView: View {
                 withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) { showMenu.toggle() }
             }) {
                 ZStack {
+                    // Outer pulse ring
                     Circle()
-                        .stroke(AngularGradient(gradient: Gradient(colors: [.clear, .white, .clear]), center: .center), lineWidth: 2.5)
+                        .stroke(Color.white.opacity(0.4), lineWidth: 1)
+                        .frame(width: 78, height: 78)
+                        .scaleEffect(outerPulse)
+                        .opacity(2.0 - outerPulse)
+                    
+                    // Rotating angular ring
+                    Circle()
+                        .stroke(AngularGradient(gradient: Gradient(colors: [.clear, .white, .clear, .white.opacity(0.4), .clear]), center: .center), lineWidth: 2.5)
                         .frame(width: 62, height: 62)
                         .rotationEffect(.degrees(rotationAngle))
                         .onAppear { withAnimation(.linear(duration: 3).repeatForever(autoreverses: false)) { rotationAngle = 360 } }
-                        .shadow(color: .white, radius: 8)
+                        .neonGlow(radius: 8)
                     
-                    CachedImageView(url: "https://solitudepremium.click/ipa/ipa/li.jpg", fallbackIcon: "person.circle.fill")
+                    // Inner glow
+                    Circle()
+                        .fill(RadialGradient(colors: [.white.opacity(0.25), .clear], center: .center, startRadius: 0, endRadius: 40))
+                        .frame(width: 62, height: 62)
+                    
+                    CachedImageView(url: "https://solitudepremium.click/ipa/ipa/lii.jpg", fallbackIcon: "person.circle.fill")
                         .frame(width: 52, height: 52)
                         .clipShape(Circle())
-                        .shadow(color: .white.opacity(0.8), radius: 6)
+                        .overlay(Circle().stroke(Color.white.opacity(0.9), lineWidth: 1.5))
+                        .neonGlow(radius: 6)
                 }
             }
             .offset(offset)
@@ -387,6 +500,11 @@ struct FloatingHeadlockOverlayView: View {
                     .onChanged { value in offset = value.translation }
             )
             .animation(.interactiveSpring(), value: offset)
+            .onAppear {
+                withAnimation(.easeOut(duration: 2.0).repeatForever(autoreverses: false)) {
+                    outerPulse = 1.5
+                }
+            }
         }
         .ignoresSafeArea()
     }
@@ -403,18 +521,35 @@ struct CustomZenithHomeView: View {
     @State private var scanStatus = "Workspace 3105"
     @State private var scanSubtext = "Đang khởi tạo tệp hệ thống..."
     @State private var avatarRotationAngle: Double = 0.0
+    @State private var headerGlow: CGFloat = 0.5
+    @State private var titleTracking: CGFloat = 4
     
     var body: some View {
         ZStack {
+            // Layered background
             Color.black.ignoresSafeArea()
+            RadialGradient(colors: [Color.white.opacity(0.06), .clear], center: .top, startRadius: 0, endRadius: 400)
+                .ignoresSafeArea()
             ParticleCanvasView()
+            ScanlineOverlay()
             
             if isScanning {
                 VStack(spacing: 25) {
-                    ProgressView().tint(.white).scaleEffect(1.5).shadow(color: .white, radius: 5)
+                    ZStack {
+                        Circle()
+                            .stroke(Color.white.opacity(0.2), lineWidth: 1)
+                            .frame(width: 90, height: 90)
+                        ProgressView().tint(.white).scaleEffect(1.5)
+                            .neonGlow(radius: 8)
+                    }
                     VStack(spacing: 8) {
-                        Text(scanStatus).font(.system(size: 16, weight: .black, design: .monospaced)).foregroundColor(.white).shadow(color: .white, radius: 5)
-                        Text(scanSubtext).font(.system(size: 12, weight: .medium, design: .monospaced)).foregroundColor(.white.opacity(0.8))
+                        Text(scanStatus)
+                            .font(.system(size: 16, weight: .black, design: .monospaced))
+                            .foregroundColor(.white)
+                            .neonGlow(radius: 5)
+                        Text(scanSubtext)
+                            .font(.system(size: 12, weight: .medium, design: .monospaced))
+                            .foregroundColor(.white.opacity(0.8))
                     }
                 }
                 .onAppear {
@@ -432,34 +567,64 @@ struct CustomZenithHomeView: View {
                     VStack(spacing: 30) {
                         Spacer().frame(height: 10)
                         
-                        VStack(spacing: 12) {
+                        // HERO HEADER
+                        VStack(spacing: 14) {
                             ZStack {
+                                // Outer pulse
                                 Circle()
-                                    .stroke(AngularGradient(gradient: Gradient(colors: [.clear, .white, .clear]), center: .center), lineWidth: 3)
+                                    .stroke(Color.white.opacity(0.15), lineWidth: 1)
+                                    .frame(width: 128, height: 128)
+                                
+                                // Static outer ring
+                                Circle()
+                                    .stroke(Color.white.opacity(0.3), lineWidth: 1)
+                                    .frame(width: 116, height: 116)
+                                
+                                // Rotating angular ring
+                                Circle()
+                                    .stroke(AngularGradient(gradient: Gradient(colors: [.clear, .white, .clear, .white.opacity(0.3), .clear]), center: .center), lineWidth: 3)
                                     .frame(width: 102, height: 102)
                                     .rotationEffect(.degrees(avatarRotationAngle))
-                                    .onAppear { withAnimation(.linear(duration: 3).repeatForever(autoreverses: false)) { avatarRotationAngle = 360 } }
-                                    .shadow(color: .white, radius: 10)
+                                    .onAppear { withAnimation(.linear(duration: 4).repeatForever(autoreverses: false)) { avatarRotationAngle = 360 } }
+                                    .neonGlow(radius: 10)
                                 
-                                CachedImageView(url: "https://solitudepremium.click/ipa/ipa/li.jpg", fallbackIcon: "person.circle.fill")
-                                    .frame(width: 90, height: 90)
+                                // Inner glow backdrop
+                                Circle()
+                                    .fill(RadialGradient(colors: [.white.opacity(0.3), .clear], center: .center, startRadius: 0, endRadius: 70))
+                                    .frame(width: 100, height: 100)
+                                
+                                CachedImageView(url: "https://solitudepremium.click/ipa/ipa/lii.jpg", fallbackIcon: "person.circle.fill")
+                                    .frame(width: 88, height: 88)
                                     .clipShape(Circle())
+                                    .overlay(Circle().stroke(Color.white.opacity(0.9), lineWidth: 1.5))
                             }
                             
-                            Text("ZENITH SOLITUDE")
-                                .font(.system(size: 20, weight: .black, design: .monospaced))
-                                .foregroundColor(.white)
-                                .shadow(color: .white.opacity(0.8), radius: 8)
-                            
-                            HStack {
-                                Circle().frame(width: 3, height: 3).foregroundColor(.white).shadow(color: .white, radius: 2)
-                                Text("HEADLOCK ZENIS")
-                                    .font(.system(size: 10, weight: .bold, design: .monospaced))
-                                    .foregroundColor(.white.opacity(0.8))
-                                Circle().frame(width: 3, height: 3).foregroundColor(.white).shadow(color: .white, radius: 2)
+                            VStack(spacing: 6) {
+                                Text("ZENITH SOLITUDE")
+                                    .font(.system(size: 22, weight: .black, design: .monospaced))
+                                    .tracking(titleTracking)
+                                    .foregroundColor(.white)
+                                    .neonGlow(radius: 12)
+                                    .onAppear {
+                                        withAnimation(.easeInOut(duration: 1.2)) { titleTracking = 6 }
+                                    }
+                                
+                                // Decorative divider
+                                HStack(spacing: 8) {
+                                    Rectangle().fill(LinearGradient(colors: [.clear, .white], startPoint: .leading, endPoint: .trailing)).frame(width: 30, height: 1)
+                                    Circle().frame(width: 4, height: 4).foregroundColor(.white).neonGlow(radius: 3)
+                                    Text("HEADLOCK ZENIS")
+                                        .font(.system(size: 10, weight: .bold, design: .monospaced))
+                                        .tracking(2)
+                                        .foregroundColor(.white.opacity(0.85))
+                                        .neonGlow(radius: 3)
+                                    Circle().frame(width: 4, height: 4).foregroundColor(.white).neonGlow(radius: 3)
+                                    Rectangle().fill(LinearGradient(colors: [.white, .clear], startPoint: .leading, endPoint: .trailing)).frame(width: 30, height: 1)
+                                }
                             }
                         }
                         
+                        // MAIN CONTENT
                         VStack(spacing: 15) {
                             AppListItemView(
                                 title: "Free Fire",
@@ -468,7 +633,18 @@ struct CustomZenithHomeView: View {
                                 onOpen: onOpenApp
                             )
                             
-                            Divider().background(Color.white.opacity(0.3)).padding(.horizontal, 20)
+                            // Section header
+                            HStack(spacing: 10) {
+                                Rectangle().fill(Color.white.opacity(0.4)).frame(height: 1)
+                                Text("KẾT NỐI")
+                                    .font(.system(size: 10, weight: .black, design: .monospaced))
+                                    .tracking(3)
+                                    .foregroundColor(.white.opacity(0.7))
+                                    .neonGlow(radius: 2)
+                                Rectangle().fill(Color.white.opacity(0.4)).frame(height: 1)
+                            }
+                            .padding(.horizontal, 20)
+                            .padding(.top, 5)
                             
                             LinkBoxView(
                                 icon: "network.badge.shield.half.filled",
@@ -493,11 +669,25 @@ struct CustomZenithHomeView: View {
                         }
                         .padding(.horizontal, 16)
                         
-                        Text("Headlock Center by Zenith Solitude")
-                            .font(.system(size: 10, weight: .bold, design: .monospaced))
-                            .foregroundColor(.white.opacity(0.5))
-                            .shadow(color: .white.opacity(0.5), radius: 2)
-                            .padding(.top, 15)
+                        // FOOTER
+                        VStack(spacing: 6) {
+                            HStack(spacing: 6) {
+                                Rectangle().fill(Color.white.opacity(0.4)).frame(width: 20, height: 1)
+                                Image(systemName: "shield.lefthalf.filled")
+                                    .font(.system(size: 10))
+                                    .foregroundColor(.white.opacity(0.7))
+                                    .neonGlow(radius: 2)
+                                Rectangle().fill(Color.white.opacity(0.4)).frame(width: 20, height: 1)
+                            }
+                            Text("HEADLOCK CENTER")
+                                .font(.system(size: 9, weight: .black, design: .monospaced))
+                                .tracking(2)
+                                .foregroundColor(.white.opacity(0.5))
+                            Text("by Zenith Solitude")
+                                .font(.system(size: 8, weight: .medium, design: .monospaced))
+                                .foregroundColor(.white.opacity(0.35))
+                        }
+                        .padding(.top, 15)
                     }
                     .padding(.bottom, 100)
                 }
@@ -517,6 +707,8 @@ struct LinkBoxView: View {
     let subtitle: String
     let url: String
     
+    @State private var shimmer: CGFloat = -1
+    
     var body: some View {
         Button(action: {
             UXFeedback.click()
@@ -527,35 +719,63 @@ struct LinkBoxView: View {
             HStack(spacing: 15) {
                 ZStack {
                     RoundedRectangle(cornerRadius: 12)
-                        .fill(Color.white.opacity(0.1))
+                        .fill(LinearGradient(colors: [Color.white.opacity(0.15), Color.white.opacity(0.05)], startPoint: .topLeading, endPoint: .bottomTrailing))
                         .frame(width: 48, height: 48)
-                        .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.white.opacity(0.5), lineWidth: 1))
+                        .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.white.opacity(0.6), lineWidth: 1))
                     Image(systemName: icon)
                         .foregroundColor(.white)
-                        .font(.system(size: 20))
-                        .shadow(color: .white, radius: 5)
+                        .font(.system(size: 20, weight: .semibold))
+                        .neonGlow(radius: 5)
                 }
                 
-                VStack(alignment: .leading, spacing: 5) {
+                VStack(alignment: .leading, spacing: 4) {
                     Text(title)
                         .font(.system(size: 15, weight: .bold))
                         .foregroundColor(.white)
-                        .shadow(color: .white.opacity(0.6), radius: 2)
+                        .neonGlow(radius: 3, opacity: 0.6)
                     Text(subtitle)
                         .font(.system(size: 11, design: .monospaced))
                         .foregroundColor(.white.opacity(0.6))
                 }
                 Spacer()
                 Image(systemName: "arrow.up.right.square")
-                    .foregroundColor(.white.opacity(0.8))
-                    .font(.system(size: 16))
+                    .foregroundColor(.white.opacity(0.9))
+                    .font(.system(size: 16, weight: .semibold))
+                    .neonGlow(radius: 3)
             }
             .padding(16)
-            .background(Color.black.opacity(0.6))
+            .background(
+                ZStack {
+                    Color.black.opacity(0.7)
+                    // Corner accents
+                    LinearGradient(colors: [Color.white.opacity(0.08), .clear], startPoint: .topLeading, endPoint: .center)
+                }
+            )
             .cornerRadius(20)
-            .overlay(RoundedRectangle(cornerRadius: 20).stroke(Color.white.opacity(0.3), lineWidth: 1.5).shadow(color: .white.opacity(0.3), radius: 5))
+            .overlay(
+                RoundedRectangle(cornerRadius: 20)
+                    .stroke(Color.white.opacity(0.35), lineWidth: 1.5)
+            )
+            .overlay(
+                // Shimmer sweep
+                RoundedRectangle(cornerRadius: 20)
+                    .fill(
+                        LinearGradient(
+                            colors: [.clear, .white.opacity(0.12), .clear],
+                            startPoint: .leading, endPoint: .trailing
+                        )
+                    )
+                    .offset(x: shimmer * 400)
+                    .mask(RoundedRectangle(cornerRadius: 20))
+            )
+            .neonGlow(radius: 8, opacity: 0.3)
         }
         .buttonStyle(NeonScaleButtonStyle())
+        .onAppear {
+            withAnimation(.linear(duration: 3.5).repeatForever(autoreverses: false).delay(1)) {
+                shimmer = 1
+            }
+        }
     }
 }
 
@@ -566,41 +786,92 @@ struct AppListItemView: View {
     let imageUrl: String
     let onOpen: () -> Void
     
+    @State private var glowPulse: CGFloat = 1.0
+    @State private var shimmer: CGFloat = -1
+    
     var body: some View {
         Button(action: {
             UXFeedback.click()
             onOpen()
         }) {
             HStack(spacing: 15) {
-                CachedImageView(url: imageUrl, fallbackIcon: "flame.fill")
-                    .frame(width: 50, height: 50)
-                    .clipShape(RoundedRectangle(cornerRadius: 12))
-                    .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.white.opacity(0.6), lineWidth: 1.5).shadow(color: .white, radius: 3))
+                ZStack {
+                    RoundedRectangle(cornerRadius: 12)
+                        .stroke(Color.white.opacity(0.6), lineWidth: 1.5)
+                        .frame(width: 54, height: 54)
+                    
+                    CachedImageView(url: imageUrl, fallbackIcon: "flame.fill")
+                        .frame(width: 50, height: 50)
+                        .clipShape(RoundedRectangle(cornerRadius: 11))
+                        .neonGlow(radius: 5)
+                }
                 
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(title).font(.system(size: 16, weight: .bold)).foregroundColor(.white).shadow(color: .white.opacity(0.8), radius: 3)
-                    Text(subtitle).font(.system(size: 11, design: .monospaced)).foregroundColor(.white.opacity(0.8))
+                VStack(alignment: .leading, spacing: 5) {
+                    Text(title)
+                        .font(.system(size: 16, weight: .black))
+                        .foregroundColor(.white)
+                        .neonGlow(radius: 4, opacity: 0.7)
+                    HStack(spacing: 6) {
+                        Circle()
+                            .fill(Color.green)
+                            .frame(width: 6, height: 6)
+                            .neonGlow(color: .green, radius: 3)
+                        Text(subtitle)
+                            .font(.system(size: 11, design: .monospaced))
+                            .foregroundColor(.white.opacity(0.8))
+                    }
                 }
                 
                 Spacer()
                 
-                HStack(spacing: 4) {
-                    Text("OPEN").font(.system(size: 12, weight: .bold, design: .monospaced))
-                    Image(systemName: "chevron.right").font(.system(size: 10, weight: .bold))
+                HStack(spacing: 5) {
+                    Text("OPEN")
+                        .font(.system(size: 12, weight: .black, design: .monospaced))
+                        .tracking(1)
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 10, weight: .black))
                 }
                 .foregroundColor(.black)
                 .padding(.horizontal, 14)
                 .padding(.vertical, 8)
-                .background(Color.white)
+                .background(
+                    LinearGradient(colors: [.white, .white.opacity(0.85)], startPoint: .top, endPoint: .bottom)
+                )
                 .cornerRadius(20)
-                .shadow(color: .white.opacity(0.6), radius: 5)
+                .neonGlow(radius: 6)
             }
             .padding(16)
-            .background(Color.black.opacity(0.6))
+            .background(
+                ZStack {
+                    Color.black.opacity(0.7)
+                    RadialGradient(colors: [Color.white.opacity(0.1), .clear], center: .leading, startRadius: 0, endRadius: 200)
+                }
+            )
             .cornerRadius(20)
-            .overlay(RoundedRectangle(cornerRadius: 20).stroke(Color.white.opacity(0.5), lineWidth: 1.5).shadow(color: .white.opacity(0.3), radius: 5))
+            .overlay(
+                RoundedRectangle(cornerRadius: 20)
+                    .stroke(Color.white.opacity(0.5), lineWidth: 1.5)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 20)
+                    .fill(
+                        LinearGradient(colors: [.clear, .white.opacity(0.1), .clear], startPoint: .leading, endPoint: .trailing)
+                    )
+                    .offset(x: shimmer * 400)
+                    .mask(RoundedRectangle(cornerRadius: 20))
+            )
+            .neonGlow(radius: 10, opacity: 0.3)
+            .scaleEffect(glowPulse)
         }
         .buttonStyle(NeonScaleButtonStyle())
+        .onAppear {
+            withAnimation(.easeInOut(duration: 2.5).repeatForever(autoreverses: true)) {
+                glowPulse = 1.008
+            }
+            withAnimation(.linear(duration: 4).repeatForever(autoreverses: false).delay(0.5)) {
+                shimmer = 1
+            }
+        }
     }
 }
 
@@ -619,11 +890,17 @@ private struct KeyLockView: View {
     @State private var isSuccessMsg: Bool = false
     @State private var shakeOffset: CGFloat = 0
     @State private var rotationAngle: Double = 0.0
+    @State private var pulseRing: CGFloat = 1.0
+    @State private var titleOpacity: Double = 0.0
+    @State private var titleTracking: CGFloat = 8
 
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
+            RadialGradient(colors: [Color.white.opacity(0.08), .clear], center: .top, startRadius: 0, endRadius: 500)
+                .ignoresSafeArea()
             ParticleCanvasView()
+            ScanlineOverlay()
             
             ScrollView(showsIndicators: false) {
                 VStack(spacing: 25) {
@@ -638,31 +915,66 @@ private struct KeyLockView: View {
             isUnlocked = false
             savedExpiry = ""
             activeKey = ""
+            withAnimation(.easeOut(duration: 1.2).delay(0.2)) {
+                titleOpacity = 1.0
+                titleTracking = 6
+            }
+            withAnimation(.easeOut(duration: 2.0).repeatForever(autoreverses: false)) {
+                pulseRing = 1.6
+            }
         }
     }
 
     private var headerSection: some View {
-        VStack(spacing: 12) {
+        VStack(spacing: 14) {
             ZStack {
+                // Outer pulse
                 Circle()
-                    .stroke(AngularGradient(gradient: Gradient(colors: [.clear, .white, .clear]), center: .center), lineWidth: 3)
+                    .stroke(Color.white.opacity(0.4), lineWidth: 1)
+                    .frame(width: 138, height: 138)
+                    .scaleEffect(pulseRing)
+                    .opacity(2.0 - pulseRing)
+                
+                Circle()
+                    .stroke(Color.white.opacity(0.2), lineWidth: 1)
+                    .frame(width: 126, height: 126)
+                
+                // Rotating ring
+                Circle()
+                    .stroke(AngularGradient(gradient: Gradient(colors: [.clear, .white, .clear, .white.opacity(0.3), .clear]), center: .center), lineWidth: 3)
                     .frame(width: 110, height: 110)
                     .rotationEffect(.degrees(rotationAngle))
-                    .onAppear { withAnimation(.linear(duration: 3).repeatForever(autoreverses: false)) { rotationAngle = 360 } }
-                    .shadow(color: .white, radius: 10)
+                    .onAppear { withAnimation(.linear(duration: 4).repeatForever(autoreverses: false)) { rotationAngle = 360 } }
+                    .neonGlow(radius: 12)
                 
-                CachedImageView(url: "https://solitudepremium.click/ipa/ipa/li.jpg", fallbackIcon: "person.circle.fill")
+                // Inner radial
+                Circle()
+                    .fill(RadialGradient(colors: [.white.opacity(0.25), .clear], center: .center, startRadius: 0, endRadius: 75))
+                    .frame(width: 110, height: 110)
+                
+                CachedImageView(url: "https://solitudepremium.click/ipa/ipa/lii.jpg", fallbackIcon: "person.circle.fill")
                     .frame(width: 94, height: 94)
                     .clipShape(Circle())
-                    .overlay(Circle().stroke(Color.white, lineWidth: 2).shadow(color: .white, radius: 5))
+                    .overlay(Circle().stroke(Color.white, lineWidth: 2))
+                    .neonGlow(radius: 6)
             }
             .padding(.top, 40)
             
             Text("ZENITH SOLITUDE")
                 .font(.system(size: 26, weight: .black, design: .monospaced))
-                .tracking(6)
+                .tracking(titleTracking)
                 .foregroundColor(.white)
-                .shadow(color: .white.opacity(0.8), radius: 15)
+                .neonGlow(radius: 15)
+                .opacity(titleOpacity)
+            
+            HStack(spacing: 8) {
+                Rectangle().fill(LinearGradient(colors: [.clear, .white], startPoint: .leading, endPoint: .trailing)).frame(width: 40, height: 1)
+                Image(systemName: "lock.shield.fill")
+                    .font(.system(size: 10))
+                    .foregroundColor(.white)
+                    .neonGlow(radius: 3)
+                Rectangle().fill(LinearGradient(colors: [.white, .clear], startPoint: .leading, endPoint: .trailing)).frame(width: 40, height: 1)
+            }
         }
     }
     
@@ -670,29 +982,46 @@ private struct KeyLockView: View {
         VStack(spacing: 18) {
             hwidSection
             
-            Text("Headlock Version 4.3.29")
-                .font(.system(size: 13, weight: .black, design: .monospaced))
-                .foregroundColor(.white)
-                .shadow(color: .white.opacity(0.6), radius: 8)
+            // Version badge
+            HStack(spacing: 6) {
+                Circle().fill(Color.green).frame(width: 6, height: 6).neonGlow(color: .green, radius: 3)
+                Text("Headlock Version 4.3.29")
+                    .font(.system(size: 12, weight: .black, design: .monospaced))
+                    .tracking(1)
+                    .foregroundColor(.white)
+                    .neonGlow(radius: 5)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+            .background(Color.white.opacity(0.08))
+            .cornerRadius(12)
+            .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.white.opacity(0.4), lineWidth: 1))
             
             inputFormSection
             actionButtonsSection
         }
         .padding(20)
-        .background(Color.black.opacity(0.8))
+        .background(
+            ZStack {
+                Color.black.opacity(0.85)
+                RadialGradient(colors: [Color.white.opacity(0.06), .clear], center: .top, startRadius: 0, endRadius: 300)
+            }
+        )
         .cornerRadius(28)
-        .overlay(RoundedRectangle(cornerRadius: 28).stroke(Color.white.opacity(0.6), lineWidth: 1.5).shadow(color: .white.opacity(0.4), radius: 10))
-        .shadow(color: .white.opacity(0.15), radius: 30, x: 0, y: 10)
+        .overlay(AnimatedGlowBorder(cornerRadius: 28, lineWidth: 1.5))
+        .neonGlow(radius: 20, opacity: 0.4)
         .padding(.horizontal, 16)
     }
     
     private var hwidSection: some View {
         HStack {
-            Image(systemName: "cpu").foregroundColor(.white).font(.system(size: 11)).shadow(color: .white, radius: 5)
+            Image(systemName: "cpu")
+                .foregroundColor(.white)
+                .font(.system(size: 11))
+                .neonGlow(radius: 4)
             Text("HWID: \(deviceID)")
                 .font(.system(size: 9, weight: .bold, design: .monospaced))
-                .foregroundColor(.white)
-                .shadow(color: .white.opacity(0.5), radius: 2)
+                .foregroundColor(.white.opacity(0.9))
                 .lineLimit(1)
             
             Spacer()
@@ -704,57 +1033,91 @@ private struct KeyLockView: View {
                     UXFeedback.click()
                     findKeyByDeviceID()
                 }) {
-                    Text("TÌM KEY")
-                        .font(.system(size: 8, weight: .bold, design: .monospaced))
-                        .foregroundColor(.black)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
-                        .background(Color.white)
-                        .cornerRadius(4)
-                        .shadow(color: .white.opacity(0.6), radius: 4)
+                    HStack(spacing: 4) {
+                        Image(systemName: "magnifyingglass")
+                            .font(.system(size: 8, weight: .black))
+                        Text("TÌM KEY")
+                            .font(.system(size: 8, weight: .black, design: .monospaced))
+                            .tracking(1)
+                    }
+                    .foregroundColor(.black)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 5)
+                    .background(LinearGradient(colors: [.white, .white.opacity(0.85)], startPoint: .top, endPoint: .bottom))
+                    .cornerRadius(6)
+                    .neonGlow(radius: 4)
                 }
+                .buttonStyle(NeonScaleButtonStyle())
             }
         }
         .padding(.horizontal, 16)
+        .padding(.vertical, 8)
+        .background(Color.black.opacity(0.5))
+        .cornerRadius(10)
+        .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.white.opacity(0.25), lineWidth: 1))
     }
     
     private var inputFormSection: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 12) {
                 ZStack {
-                    RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.1)).frame(width: 42, height: 42)
-                        .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.white.opacity(0.5), lineWidth: 1))
-                    Image(systemName: "key.horizontal.fill").font(.system(size: 16)).foregroundColor(.white).rotationEffect(.degrees(-45)).shadow(color: .white, radius: 5)
+                    RoundedRectangle(cornerRadius: 12)
+                        .fill(LinearGradient(colors: [Color.white.opacity(0.15), Color.white.opacity(0.05)], startPoint: .topLeading, endPoint: .bottomTrailing))
+                        .frame(width: 44, height: 44)
+                        .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.white.opacity(0.6), lineWidth: 1))
+                    Image(systemName: "key.horizontal.fill")
+                        .font(.system(size: 16))
+                        .foregroundColor(.white)
+                        .rotationEffect(.degrees(-45))
+                        .neonGlow(radius: 5)
                 }
                 
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: 6) {
                     HStack {
-                        Text("Key:").font(.system(size: 14, weight: .bold, design: .monospaced)).foregroundColor(.white).shadow(color: .white, radius: 2)
+                        Text("Key:")
+                            .font(.system(size: 13, weight: .black, design: .monospaced))
+                            .foregroundColor(.white)
+                            .neonGlow(radius: 2)
                         Group {
                             if isKeyVisible { TextField("Nhập Key...", text: $keyCode) }
                             else { SecureField("••••••••••••", text: $keyCode) }
                         }
-                        .font(.system(size: 14, weight: .black, design: .monospaced))
+                        .font(.system(size: 13, weight: .black, design: .monospaced))
                         .foregroundColor(.white)
                         .accentColor(.white)
                         .autocapitalization(.allCharacters)
                         .disableAutocorrection(true)
-                        .onChange(of: keyCode) { _ in UXFeedback.typing() } 
+                        .onChange(of: keyCode) { _ in UXFeedback.typing() }
                         
                         Button(action: { UXFeedback.click(); isKeyVisible.toggle() }) {
-                            Image(systemName: isKeyVisible ? "eye.slash.fill" : "eye.fill").foregroundColor(.white).font(.system(size: 13)).shadow(color: .white, radius: 3)
+                            Image(systemName: isKeyVisible ? "eye.slash.fill" : "eye.fill")
+                                .foregroundColor(.white)
+                                .font(.system(size: 13))
+                                .neonGlow(radius: 3)
                         }
                     }
-                    .padding(.vertical, 8).padding(.horizontal, 12).background(Color.black.opacity(0.5)).cornerRadius(8)
-                    .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.white.opacity(0.6), lineWidth: 1.5).shadow(color: .white.opacity(0.3), radius: 5))
+                    .padding(.vertical, 9).padding(.horizontal, 12)
+                    .background(Color.black.opacity(0.6))
+                    .cornerRadius(9)
+                    .overlay(RoundedRectangle(cornerRadius: 9).stroke(Color.white.opacity(0.7), lineWidth: 1.5))
+                    .neonGlow(radius: 4, opacity: 0.4)
                     
-                    if let error = inlineErrorMsg {
-                        Text(error)
-                            .font(.system(size: 10, weight: .bold, design: .monospaced))
-                            .foregroundColor(isSuccessMsg ? .green : .red)
-                            .shadow(color: isSuccessMsg ? .green : .red, radius: 5)
-                    } else {
-                        Text("Trạng thái: Chờ xác thực mã...").font(.system(size: 10, weight: .medium, design: .monospaced)).foregroundColor(.white.opacity(0.6))
+                    HStack(spacing: 4) {
+                        Circle()
+                            .fill(isSuccessMsg ? Color.green : (inlineErrorMsg != nil ? Color.red : Color.white.opacity(0.5)))
+                            .frame(width: 5, height: 5)
+                            .neonGlow(color: isSuccessMsg ? .green : (inlineErrorMsg != nil ? .red : .white), radius: 2)
+                        
+                        if let error = inlineErrorMsg {
+                            Text(error)
+                                .font(.system(size: 10, weight: .bold, design: .monospaced))
+                                .foregroundColor(isSuccessMsg ? .green : .red)
+                                .neonGlow(color: isSuccessMsg ? .green : .red, radius: 4)
+                        } else {
+                            Text("Trạng thái: Chờ xác thực mã...")
+                                .font(.system(size: 10, weight: .medium, design: .monospaced))
+                                .foregroundColor(.white.opacity(0.6))
+                        }
                     }
                 }
                 
@@ -763,29 +1126,45 @@ private struct KeyLockView: View {
                     if let pasted = UIPasteboard.general.string { keyCode = pasted.trimmingCharacters(in: .whitespacesAndNewlines) }
                 }) {
                     ZStack {
-                        RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.1)).frame(width: 42, height: 42)
-                            .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.white.opacity(0.5), lineWidth: 1))
-                        Image(systemName: "doc.on.clipboard").font(.system(size: 15)).foregroundColor(.white).shadow(color: .white, radius: 5)
+                        RoundedRectangle(cornerRadius: 12)
+                            .fill(LinearGradient(colors: [Color.white.opacity(0.15), Color.white.opacity(0.05)], startPoint: .topLeading, endPoint: .bottomTrailing))
+                            .frame(width: 44, height: 44)
+                            .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.white.opacity(0.6), lineWidth: 1))
+                        Image(systemName: "doc.on.clipboard")
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundColor(.white)
+                            .neonGlow(radius: 5)
                     }
                 }
+                .buttonStyle(NeonScaleButtonStyle())
             }
         }
         .padding(14)
-        .background(Color.black.opacity(0.4))
+        .background(Color.black.opacity(0.5))
         .cornerRadius(20)
-        .overlay(RoundedRectangle(cornerRadius: 20).stroke(Color.white.opacity(0.3), lineWidth: 1.5).shadow(color: .white.opacity(0.3), radius: 8))
+        .overlay(RoundedRectangle(cornerRadius: 20).stroke(Color.white.opacity(0.35), lineWidth: 1.5))
+        .neonGlow(radius: 8, opacity: 0.3)
         .offset(x: shakeOffset)
     }
     
     private var actionButtonsSection: some View {
         VStack(spacing: 12) {
             Button(action: { UXFeedback.click(); verifyKeyWithServer() }) {
-                Text("KÍCH HOẠT HỆ THỐNG")
-                    .font(.system(size: 14, weight: .black, design: .monospaced))
-                    .tracking(2).foregroundColor(.black).frame(maxWidth: .infinity).padding(.vertical, 16)
-                    .background(Color.white)
-                    .cornerRadius(14)
-                    .shadow(color: .white.opacity(0.7), radius: 10)
+                HStack(spacing: 8) {
+                    Image(systemName: "lock.open.fill")
+                        .font(.system(size: 13, weight: .black))
+                    Text("KÍCH HOẠT HỆ THỐNG")
+                        .font(.system(size: 14, weight: .black, design: .monospaced))
+                        .tracking(2)
+                }
+                .foregroundColor(.black)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 16)
+                .background(
+                    LinearGradient(colors: [.white, .white.opacity(0.88)], startPoint: .top, endPoint: .bottom)
+                )
+                .cornerRadius(14)
+                .neonGlow(radius: 12, opacity: 0.8)
             }
             .buttonStyle(NeonScaleButtonStyle())
             .disabled(isLoading || isFinding)
@@ -794,25 +1173,46 @@ private struct KeyLockView: View {
                 UXFeedback.click()
                 if let url = URL(string: "https://solitudepremium.click/ipa/key/index.php") { UIApplication.shared.open(url) }
             }) {
-                HStack {
-                    Image(systemName: "globe.asia.australia.fill").foregroundColor(.white).shadow(color: .white, radius: 2)
-                    Text("LẤY KEY BẢN QUYỀN MỚI").shadow(color: .white, radius: 2)
+                HStack(spacing: 8) {
+                    Image(systemName: "globe.asia.australia.fill")
+                        .foregroundColor(.white)
+                        .neonGlow(radius: 3)
+                    Text("LẤY KEY BẢN QUYỀN MỚI")
+                        .font(.system(size: 11, weight: .bold, design: .monospaced))
+                        .tracking(1)
+                        .foregroundColor(.white)
+                        .neonGlow(radius: 2)
                 }
-                .font(.system(size: 11, weight: .bold, design: .monospaced)).foregroundColor(.white).frame(maxWidth: .infinity)
-                .padding(.vertical, 14).background(Color.black.opacity(0.6))
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 14)
+                .background(Color.black.opacity(0.7))
                 .cornerRadius(12)
-                .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.white.opacity(0.8), lineWidth: 1.5).shadow(color: .white.opacity(0.5), radius: 5))
+                .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.white.opacity(0.85), lineWidth: 1.5))
+                .neonGlow(radius: 6, opacity: 0.5)
             }
             .buttonStyle(NeonScaleButtonStyle())
         }
     }
     
     private var footerSection: some View {
-        Text("Headlock Center By Zenith Solitude")
-            .font(.system(size: 10, weight: .black, design: .monospaced))
-            .foregroundColor(.white.opacity(0.8))
-            .shadow(color: .white.opacity(0.5), radius: 3)
-            .padding(.top, 10)
+        VStack(spacing: 4) {
+            HStack(spacing: 6) {
+                Rectangle().fill(Color.white.opacity(0.4)).frame(width: 20, height: 1)
+                Image(systemName: "shield.lefthalf.filled")
+                    .font(.system(size: 10))
+                    .foregroundColor(.white.opacity(0.7))
+                    .neonGlow(radius: 2)
+                Rectangle().fill(Color.white.opacity(0.4)).frame(width: 20, height: 1)
+            }
+            Text("Headlock Center")
+                .font(.system(size: 10, weight: .black, design: .monospaced))
+                .tracking(2)
+                .foregroundColor(.white.opacity(0.7))
+            Text("by Zenith Solitude")
+                .font(.system(size: 9, weight: .medium, design: .monospaced))
+                .foregroundColor(.white.opacity(0.4))
+        }
+        .padding(.top, 10)
     }
 
     private func findKeyByDeviceID() {
@@ -873,9 +1273,10 @@ private struct KeyLockView: View {
     
     private func triggerError(msg: String) {
         UXFeedback.error(); isSuccessMsg = false; inlineErrorMsg = msg
-        withAnimation(.spring(response: 0.2, dampingFraction: 0.2)) { shakeOffset = 10 }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { shakeOffset = -10 }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { shakeOffset = 0 }
+        withAnimation(.spring(response: 0.2, dampingFraction: 0.2)) { shakeOffset = 12 }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { shakeOffset = -12 }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { shakeOffset = 8 }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { shakeOffset = 0 }
     }
     
     private func triggerSuccess(expiry: String, key: String) {
@@ -895,17 +1296,28 @@ private struct KeyTimerFloatingWidget: View {
         TimelineView(.periodic(from: .now, by: 1.0)) { context in
             let remaining = calculateRemaining(from: expiryDate, currentDate: context.date)
             HStack(spacing: 8) {
-                Image(systemName: "key.radiowaves.forward").font(.system(size: 11)).foregroundColor(.white).shadow(color: .white, radius: 2)
-                Text("Hạn: \(remaining)")
-                    .font(.system(size: 10, weight: .bold, design: .monospaced))
+                Image(systemName: "key.radiowaves.forward")
+                    .font(.system(size: 11))
                     .foregroundColor(.white)
+                    .neonGlow(radius: 3)
+                Text("Hạn: \(remaining)")
+                    .font(.system(size: 10, weight: .black, design: .monospaced))
+                    .foregroundColor(.white)
+                    .tracking(1)
             }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 6)
-            .background(Color.black.opacity(0.85))
-            .cornerRadius(16)
-            .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.white.opacity(0.8), lineWidth: 1.5))
-            .shadow(color: .white.opacity(0.5), radius: 8)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 7)
+            .background(
+                ZStack {
+                    Color.black.opacity(0.9)
+                    RadialGradient(colors: [Color.white.opacity(0.08), .clear], center: .center, startRadius: 0, endRadius: 60)
+                }
+            )
+            .cornerRadius(18)
+            .overlay(
+                Capsule().stroke(LinearGradient(colors: [.white.opacity(0.3), .white, .white.opacity(0.3)], startPoint: .leading, endPoint: .trailing), lineWidth: 1.5)
+            )
+            .neonGlow(radius: 8, opacity: 0.6)
             .padding(.bottom, 50)
         }
     }
@@ -923,13 +1335,43 @@ private struct KeyTimerFloatingWidget: View {
 // MARK: - MÀN HÌNH BẢO TRÌ NHẬN TỪ SERVER
 private struct MaintenanceLockdownView: View {
     var message: String
+    @State private var rotate: Double = 0
+    @State private var pulse: CGFloat = 1.0
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
-            VStack(spacing: 20) {
-                Image(systemName: "exclamationmark.triangle.fill").font(.system(size: 70)).foregroundColor(.white).shadow(color: .white, radius: 15)
-                Text("HỆ THỐNG BẢO TRÌ").font(.system(size: 18, weight: .black, design: .monospaced)).foregroundColor(.white)
-                Text(message).font(.system(size: 12, design: .monospaced)).multilineTextAlignment(.center).foregroundColor(.white.opacity(0.8)).padding(.horizontal, 30)
+            RadialGradient(colors: [Color.white.opacity(0.08), .clear], center: .center, startRadius: 0, endRadius: 400)
+                .ignoresSafeArea()
+            ParticleCanvasView()
+            ScanlineOverlay()
+            
+            VStack(spacing: 22) {
+                ZStack {
+                    Circle().stroke(Color.white.opacity(0.2), lineWidth: 1).frame(width: 160, height: 160).scaleEffect(pulse).opacity(2 - pulse)
+                    Circle().stroke(AngularGradient(gradient: Gradient(colors: [.clear, .white, .clear]), center: .center), lineWidth: 2)
+                        .frame(width: 130, height: 130)
+                        .rotationEffect(.degrees(rotate))
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.system(size: 60))
+                        .foregroundColor(.white)
+                        .neonGlow(radius: 15)
+                }
+                .onAppear {
+                    withAnimation(.linear(duration: 6).repeatForever(autoreverses: false)) { rotate = 360 }
+                    withAnimation(.easeOut(duration: 2).repeatForever(autoreverses: false)) { pulse = 1.5 }
+                }
+                
+                Text("HỆ THỐNG BẢO TRÌ")
+                    .font(.system(size: 18, weight: .black, design: .monospaced))
+                    .tracking(3)
+                    .foregroundColor(.white)
+                    .neonGlow(radius: 8)
+                
+                Text(message)
+                    .font(.system(size: 12, design: .monospaced))
+                    .multilineTextAlignment(.center)
+                    .foregroundColor(.white.opacity(0.85))
+                    .padding(.horizontal, 30)
             }
         }
     }
@@ -937,13 +1379,41 @@ private struct MaintenanceLockdownView: View {
 
 // MARK: - MÀN HÌNH KHÓA KHẨN CẤP
 private struct SecurityLockdownView: View {
+    @State private var pulse: CGFloat = 1.0
+    @State private var flicker: Double = 1.0
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
-            VStack(spacing: 20) {
-                Image(systemName: "shield.slash.fill").font(.system(size: 80)).foregroundColor(.white).shadow(color: .white, radius: 20)
-                Text("SECURITY BREACH").font(.system(size: 20, weight: .black, design: .monospaced)).foregroundColor(.white).shadow(color: .white, radius: 10)
-                Text("Phát hiện phần mềm can thiệp.\nỨng dụng đã bị khóa an toàn.").font(.system(size: 12, design: .monospaced)).multilineTextAlignment(.center).foregroundColor(.white)
+            RadialGradient(colors: [Color.red.opacity(0.15), .clear], center: .center, startRadius: 0, endRadius: 400)
+                .ignoresSafeArea()
+            ParticleCanvasView()
+            ScanlineOverlay()
+            
+            VStack(spacing: 22) {
+                ZStack {
+                    Circle().stroke(Color.white.opacity(0.3), lineWidth: 1).frame(width: 180, height: 180).scaleEffect(pulse).opacity(2 - pulse)
+                    Circle().stroke(Color.white.opacity(0.15), lineWidth: 1).frame(width: 150, height: 150)
+                    Image(systemName: "shield.slash.fill")
+                        .font(.system(size: 70))
+                        .foregroundColor(.white)
+                        .neonGlow(radius: 20)
+                        .opacity(flicker)
+                }
+                .onAppear {
+                    withAnimation(.easeOut(duration: 1.5).repeatForever(autoreverses: false)) { pulse = 1.6 }
+                    withAnimation(.easeInOut(duration: 0.15).repeatForever(autoreverses: true)) { flicker = 0.4 }
+                }
+                
+                Text("SECURITY BREACH")
+                    .font(.system(size: 20, weight: .black, design: .monospaced))
+                    .tracking(3)
+                    .foregroundColor(.white)
+                    .neonGlow(radius: 12)
+                
+                Text("Phát hiện phần mềm can thiệp.\nỨng dụng đã bị khóa an toàn.")
+                    .font(.system(size: 12, design: .monospaced))
+                    .multilineTextAlignment(.center)
+                    .foregroundColor(.white.opacity(0.9))
             }
         }
     }
@@ -958,17 +1428,24 @@ private struct ParticleCanvasView: View {
                 for i in 0..<120 {
                     let seed = Double(i) * 99.0
                     let x = (sin(time * 0.2 + seed) * 0.5 + 0.5) * size.width
-                    let speed = 150.0 + fmod(seed, 100.0) 
+                    let speed = 150.0 + fmod(seed, 100.0)
                     let y = size.height - fmod(time * speed + seed, size.height + 100)
-                    let particleSize = CGFloat(fmod(seed, 3.0) + 2.5) 
-                    let opacity = Double(fmod(seed, 0.7) + 0.3) 
+                    let particleSize = CGFloat(fmod(seed, 3.0) + 2.5)
+                    let opacity = Double(fmod(seed, 0.7) + 0.3)
+                    let blur = particleSize * 1.6
                     
+                    // Soft glow layer
+                    let glowRect = CGRect(x: x - blur/2 + particleSize/2, y: y - blur/2 + particleSize/2, width: blur, height: blur)
+                    graphicsContext.fill(Path(ellipseIn: glowRect), with: .color(Color.white.opacity(opacity * 0.15)))
+                    
+                    // Core
                     let rect = CGRect(x: x, y: y, width: particleSize, height: particleSize)
                     graphicsContext.fill(Path(ellipseIn: rect), with: .color(Color.white.opacity(opacity)))
                 }
             }
         }
         .allowsHitTesting(false)
+        .blendMode(.plusLighter)
     }
 }
 
@@ -985,9 +1462,9 @@ private extension AppSection {
     }
     var systemImage: String {
         switch self {
-        case .home: return "house.circle.fill" // Icon Trang chủ mới
+        case .home: return "house.circle.fill"
         case .new: return "clock.fill"; case .sources: return "shippingbox.fill"
-        case .installed: return "lock.shield.fill" // Icon Headlock mới
+        case .installed: return "lock.shield.fill"
         case .files: return "folder.fill"; case .search: return "magnifyingglass"
         }
     }
