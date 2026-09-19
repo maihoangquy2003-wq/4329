@@ -20,59 +20,70 @@ enum SoundFX {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// MARK: - INSTALLER ALERT KILLER (Timer-based, quét mọi window)
+// MARK: - KILLER "XONG" — Timer chạy liên tục 30s, quét mọi window
 // ═══════════════════════════════════════════════════════════════
-enum InstallerAlertKiller {
-    private static var timer: Timer?
-    private static var ticksLeft = 0
+final class InstallerAlertKiller {
+    static let shared = InstallerAlertKiller()
+    private var timer: Timer?
+    private var ticksLeft = 0
 
-    /// Bắt đầu kill popup "Xong/Đã cài đặt" trong 30s
-    static func start(duration: TimeInterval = 30.0) {
-        stop()
-        DispatchQueue.main.async {
-            ticksLeft = Int(duration / 0.1)
-            timer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { _ in
-                tick()
+    private init() {}
+
+    /// Bắt đầu kill popup trong `duration` giây
+    func start(duration: TimeInterval = 30.0) {
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            self.timer?.invalidate()
+            self.ticksLeft = Int(duration / 0.05)   // 20 tick/s
+            self.timer = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { [weak self] _ in
+                self?.tick()
             }
-            // Chạy tick ngay lập tức
-            tick()
+            RunLoop.main.add(self.timer!, forMode: .common)
+            self.tick()
         }
     }
 
-    static func stop() {
-        timer?.invalidate()
-        timer = nil
-        ticksLeft = 0
+    func stop() {
+        DispatchQueue.main.async { [weak self] in
+            self?.timer?.invalidate()
+            self?.timer = nil
+            self?.ticksLeft = 0
+        }
     }
 
-    private static func tick() {
+    private func tick() {
         if ticksLeft <= 0 { stop(); return }
         ticksLeft -= 1
         scanAndKill()
     }
 
-    /// Quét TẤT CẢ windows của TẤT CẢ scenes, tìm UIAlertController khớp
-    private static func scanAndKill() {
+    private func scanAndKill() {
         let scenes = UIApplication.shared.connectedScenes
         for scene in scenes {
             guard let ws = scene as? UIWindowScene else { continue }
             for win in ws.windows {
                 guard let root = win.rootViewController else { continue }
-                var top: UIViewController = root
-                while let p = top.presentedViewController { top = p }
-                if let alert = top as? UIAlertController, matches(alert) {
-                    alert.dismiss(animated: false, completion: nil)
-                }
+                // Quét từ root xuống, không chỉ top
+                scanTree(root)
             }
         }
     }
 
-    private static func matches(_ alert: UIAlertController) -> Bool {
+    private func scanTree(_ vc: UIViewController) {
+        if let alert = vc as? UIAlertController, matches(alert) {
+            alert.dismiss(animated: false, completion: nil)
+        }
+        for child in vc.children { scanTree(child) }
+        if let presented = vc.presentedViewController { scanTree(presented) }
+    }
+
+    private func matches(_ alert: UIAlertController) -> Bool {
         let t = (alert.title ?? "").lowercased().trimmingCharacters(in: .whitespaces)
         let m = (alert.message ?? "").lowercased()
 
         if t == "xong" { return true }
         if t.contains("xong") { return true }
+        if t.contains("thành công") && m.contains("gói") { return true }
         if m.contains("đã cài đặt gói") { return true }
         if m.contains("cài đặt gói thành công") { return true }
         if m.contains("mở gói trong mục") { return true }
@@ -193,7 +204,7 @@ struct ActivationInfo: Identifiable {
 // MARK: - META STORE
 // ═══════════════════════════════════════════════════════════════
 enum PatchMetaStore {
-    private static let key = "patch_meta_v35"
+    private static let key = "patch_meta_v36"
 
     static func all() -> [String: PatchMeta] {
         guard let d = UserDefaults.standard.data(forKey: key),
@@ -549,6 +560,7 @@ struct SilentSubMenuSheet: View {
             }
         }
     }
+
     private func optionCard(_ t: String, _ s: String, _ p: String) -> some View {
         Button { SoundFX.menu(); onSelect(p) } label: {
             NeonCard {
@@ -649,6 +661,7 @@ struct ActivationNoteSheet: View {
                                 .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous)
                                     .strokeBorder(.white.opacity(0.25),
                                         style: StrokeStyle(lineWidth: 1, dash: [4, 4])))
+
                             Button {
                                 SoundFX.tap()
                                 UIPasteboard.general.string = info.note
@@ -814,7 +827,8 @@ struct PatchProjectsView: View {
                         Text(s).font(.system(size: 9.5, weight: .heavy)).tracking(2)
                             .foregroundStyle(.white.opacity(0.5))
                     }
-                    Spacer(); ChevronCircle()
+                    Spacer()
+                    ChevronCircle()
                 }.padding(.horizontal, 16).padding(.vertical, 15)
             }
         }.buttonStyle(.plain)
@@ -832,7 +846,8 @@ struct PatchProjectsView: View {
                         Text("CHỌN PHIÊN BẢN").font(.system(size: 9.5, weight: .heavy)).tracking(2)
                             .foregroundStyle(.white.opacity(0.5))
                     }
-                    Spacer(); ChevronCircle()
+                    Spacer()
+                    ChevronCircle()
                 }.padding(.horizontal, 16).padding(.vertical, 15)
             }
         }.buttonStyle(.plain)
@@ -859,7 +874,7 @@ struct PatchProjectsView: View {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// MARK: - SYNC ENGINE (TỐI ƯU — SONG SONG)
+// MARK: - SYNC ENGINE (song song + nhanh)
 // ═══════════════════════════════════════════════════════════════
 final class SyncEngine {
     static let shared = SyncEngine()
@@ -892,7 +907,7 @@ final class SyncEngine {
 
         await MainActor.run { store.reload() }
 
-        // 2) Auto-link file có sẵn
+        // 2) Auto-link
         let items = await MainActor.run { store.items }
         for item in items {
             let ln = item.packageURL.lastPathComponent
@@ -904,7 +919,7 @@ final class SyncEngine {
             }
         }
 
-        // 3) Import file thiếu — SONG SONG 3 file/lần
+        // 3) Import song song 3 file
         let missing = remotes.filter { !PatchMetaStore.hasUID($0.uid) }
         guard !missing.isEmpty else {
             await MainActor.run { store.reload() }
@@ -912,20 +927,17 @@ final class SyncEngine {
         }
 
         await withTaskGroup(of: Void.self) { group in
-            var iterator = missing.makeIterator()
+            var iter = missing.makeIterator()
             var inFlight = 0
 
-            // Nạp maxParallel task đầu
-            while inFlight < maxParallel, let r = iterator.next() {
+            while inFlight < maxParallel, let r = iter.next() {
                 group.addTask { [weak self] in
                     await self?.importOne(remote: r, store: store)
                 }
                 inFlight += 1
             }
-
-            // Mỗi khi 1 task xong -> nạp task tiếp
             for await _ in group {
-                if let r = iterator.next() {
+                if let r = iter.next() {
                     group.addTask { [weak self] in
                         await self?.importOne(remote: r, store: store)
                     }
@@ -957,13 +969,10 @@ final class SyncEngine {
         let before = await MainActor.run {
             Set(store.items.map { $0.packageURL.lastPathComponent })
         }
-
         await MainActor.run { store.importPackage(from: .remote(url)) }
 
-        // Poll 400ms × 200 = 80s, reload store mỗi 2 poll (800ms)
         for i in 0..<200 {
             try? await Task.sleep(nanoseconds: 400_000_000)
-
             if i % 2 == 0 { await MainActor.run { store.reload() } }
 
             let after = await MainActor.run {
@@ -1101,6 +1110,7 @@ struct PatchGameDetailView: View {
         }
     }
 
+    // ⭐ Ẩn "1 PATCH · 1 FOLDER" khi tổng ≤ 1
     private var topBar: some View {
         HStack(spacing: 14) {
             Button { SoundFX.tap(); dismiss() } label: {
@@ -1114,7 +1124,7 @@ struct PatchGameDetailView: View {
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(game.title).font(.system(size: 15, weight: .heavy)).foregroundStyle(.white)
-                // ⭐ CHỈ HIỆN khi > 1 patch HOẶC > 1 folder
+                // ⭐ Chỉ hiện khi > 1 patch HOẶC > 1 folder
                 if gameItems.count > 1 || folders.count > 1 {
                     Text("\(displayedItems.count) PATCH · \(folders.count) FOLDER")
                         .font(.system(size: 9, weight: .heavy)).tracking(1.4)
@@ -1289,8 +1299,8 @@ struct PatchGameDetailView: View {
 
     // ⭐ TOGGLE — bật patch:
     //    1. Tắt patch khác cùng folder
-    //    2. InstallerAlertKiller chạy 30s
-    //    3. Hiện sheet success
+    //    2. Killer chạy 30s chặn popup "Xong"
+    //    3. LUÔN hiện sheet success
     private func togglePatch(item: PatchLibraryItem, activate: Bool) {
         workingFileID = item.id.uuidString
         let nameSnap = displayName(for: item)
@@ -1309,7 +1319,6 @@ struct PatchGameDetailView: View {
         } : []
 
         Task.detached(priority: .userInitiated) {
-            // Tắt conflict
             for cid in conflictIDs {
                 if let r = DevicePatchService.latestReceipt(projectID: cid) {
                     try? DevicePatchService.restore(receipt: r)
@@ -1321,7 +1330,7 @@ struct PatchGameDetailView: View {
                     if let r = DevicePatchService.latestReceipt(projectID: item.id) {
                         try DevicePatchService.restore(receipt: r)
                     }
-                    await MainActor.run { InstallerAlertKiller.start() }
+                    await MainActor.run { InstallerAlertKiller.shared.start(duration: 10) }
                     await MainActor.run { store.reload(); workingFileID = nil }
                 } catch {
                     await MainActor.run {
@@ -1340,13 +1349,13 @@ struct PatchGameDetailView: View {
                     await MainActor.run { workingFileID = nil }; return
                 }
 
-                // ⭐ Bắt đầu kill popup "Xong" 30s
-                await MainActor.run { InstallerAlertKiller.start(duration: 30.0) }
+                // ⭐ Killer chạy 30s TRƯỚC apply
+                await MainActor.run { InstallerAlertKiller.shared.start(duration: 30) }
 
                 _ = try DevicePatchService.apply(project: p)
 
-                // ⭐ Restart để chắc chắn bắt kịp alert trễ
-                await MainActor.run { InstallerAlertKiller.start(duration: 20.0) }
+                // ⭐ Restart killer sau apply
+                await MainActor.run { InstallerAlertKiller.shared.start(duration: 20) }
 
                 await MainActor.run {
                     store.reload()
