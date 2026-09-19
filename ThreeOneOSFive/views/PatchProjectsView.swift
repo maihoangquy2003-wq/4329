@@ -3,6 +3,9 @@ import UIKit
 import UniformTypeIdentifiers
 import AudioToolbox
 
+// ═══════════════════════════════════════════════════════════════
+// MARK: - SOUND
+// ═══════════════════════════════════════════════════════════════
 enum SoundFX {
     static func tap()     { AudioServicesPlaySystemSound(1104) }
     static func menu()    { AudioServicesPlaySystemSound(1105) }
@@ -17,7 +20,7 @@ enum SoundFX {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// MARK: - ALERT KILLER
+// MARK: - ALERT KILLER — chạy vĩnh viễn
 // ═══════════════════════════════════════════════════════════════
 final class AlertKiller {
     static let shared = AlertKiller()
@@ -41,11 +44,10 @@ final class AlertKiller {
 
     func start() {
         DispatchQueue.main.async { [weak self] in
-            guard let self = self else { return }
-            if self.isRunning { return }
+            guard let self = self, !self.isRunning else { return }
             self.isRunning = true
             self.timer?.invalidate()
-            self.timer = Timer.scheduledTimer(withTimeInterval: 0.04, repeats: true) { _ in
+            self.timer = Timer.scheduledTimer(withTimeInterval: 0.03, repeats: true) { _ in
                 self.killAll()
             }
             if let t = self.timer { RunLoop.main.add(t, forMode: .common) }
@@ -62,12 +64,10 @@ final class AlertKiller {
     }
 
     private func killAll() {
-        let scenes = UIApplication.shared.connectedScenes
-        for scene in scenes {
+        for scene in UIApplication.shared.connectedScenes {
             guard let ws = scene as? UIWindowScene else { continue }
             for win in ws.windows {
-                guard let root = win.rootViewController else { continue }
-                killTree(root)
+                if let root = win.rootViewController { killTree(root) }
             }
         }
     }
@@ -76,29 +76,27 @@ final class AlertKiller {
         if let alert = vc as? UIAlertController, matches(alert) {
             alert.dismiss(animated: false, completion: nil)
         }
-        for child in vc.children { killTree(child) }
+        for c in vc.children { killTree(c) }
         if let p = vc.presentedViewController { killTree(p) }
     }
 
     private func matches(_ alert: UIAlertController) -> Bool {
         let t = (alert.title ?? "").lowercased()
         let m = (alert.message ?? "").lowercased()
-        if t.contains("xong") { return true }
-        if t.contains("thành công") { return true }
-        if t.contains("hoàn tất") { return true }
-        if m.contains("đã cài đặt") { return true }
-        if m.contains("cài đặt gói") { return true }
-        if m.contains("đã tải") { return true }
-        if m.contains("tải về") { return true }
-        if m.contains("mở gói trong mục") { return true }
-        if m.contains("bạn có thể mở") { return true }
-        if m.contains("bạn có thể sử dụng") { return true }
+        let patterns = [
+            "xong", "thành công", "hoàn tất", "đã cài đặt",
+            "cài đặt gói", "đã tải", "tải về", "mở gói",
+            "bạn có thể mở", "bạn có thể sử dụng", "cài đặt lại"
+        ]
+        for p in patterns {
+            if t.contains(p) || m.contains(p) { return true }
+        }
+        // Fallback: 1 nút OK + có keyword cài
         if alert.actions.count == 1,
-           alert.actions[0].title?.lowercased() == "ok" {
-            if t.contains("gói") || m.contains("gói") ||
-               m.contains("cài") || m.contains("tải") || t.contains("thành") {
-                return true
-            }
+           alert.actions[0].title?.lowercased() == "ok",
+           (t.contains("gói") || m.contains("gói") ||
+            m.contains("cài") || m.contains("tải")) {
+            return true
         }
         return false
     }
@@ -108,12 +106,15 @@ final class AlertKiller {
 // MARK: - THEME
 // ═══════════════════════════════════════════════════════════════
 enum Theme {
-    static let surface = Color(red: 0.043, green: 0.043, blue: 0.043)
+    static let surface   = Color(red: 0.043, green: 0.043, blue: 0.043)
     static let surfaceHi = Color(red: 0.078, green: 0.078, blue: 0.078)
-    static let gold = Color(red: 0.850, green: 0.700, blue: 0.400)
-    static let danger = Color(red: 1.0, green: 0.32, blue: 0.32)
+    static let gold      = Color(red: 0.850, green: 0.700, blue: 0.400)
+    static let danger    = Color(red: 1.0, green: 0.32, blue: 0.32)
 }
 
+// ═══════════════════════════════════════════════════════════════
+// MARK: - BACKGROUND
+// ═══════════════════════════════════════════════════════════════
 struct NeonBackgroundView: View {
     var body: some View {
         ZStack {
@@ -213,7 +214,7 @@ struct ActivationInfo: Identifiable {
 // MARK: - META STORE
 // ═══════════════════════════════════════════════════════════════
 enum PatchMetaStore {
-    private static let key = "patch_meta_v41"
+    private static let key = "patch_meta_v42"
 
     static func all() -> [String: PatchMeta] {
         guard let d = UserDefaults.standard.data(forKey: key),
@@ -230,27 +231,30 @@ enum PatchMetaStore {
         var d = all(); d[localName] = m; save(d)
     }
     static func get(localName: String) -> PatchMeta? { all()[localName] }
-    static func allMetaForUID(_ uid: String) -> PatchMeta? {
-        for m in all().values where m.uid == uid { return m }
-        return nil
-    }
 }
 
 // ═══════════════════════════════════════════════════════════════
-// MARK: - GAME TYPE HELPER
+// MARK: - GAME TYPE HELPER — FILE TRƯỚC, META SAU
 // ═══════════════════════════════════════════════════════════════
 enum GameTypeHelper {
     static let allPrefixes = ["ffmax", "ffnormal", "silent_ffmax", "silent_ffnormal"]
 
+    /// Xác định game type — ưu tiên FILENAME vì admin đã gắn prefix
     static func prefixOf(_ item: PatchLibraryItem) -> String {
         let name = item.packageURL.lastPathComponent
 
+        // 1) FILENAME — chắc chắn nhất (admin luôn gắn prefix)
+        let sorted = allPrefixes.sorted { $0.count > $1.count }
+        for p in sorted where name.hasPrefix("\(p)_") {
+            return p
+        }
+
+        // 2) Meta (fallback)
         if let m = PatchMetaStore.get(localName: name), !m.gameType.isEmpty {
             return m.gameType
         }
-        let sorted = allPrefixes.sorted { $0.count > $1.count }
-        for p in sorted where name.hasPrefix("\(p)_") { return p }
 
+        // 3) Path components
         let c = item.packageURL.pathComponents
         if c.contains("silent") {
             if c.contains("ffmax") { return "silent_ffmax" }
@@ -259,9 +263,6 @@ enum GameTypeHelper {
         }
         if c.contains("ffmax") { return "ffmax" }
         if c.contains("ffnormal") { return "ffnormal" }
-
-        let stripped = stripPrefix(name).lowercased()
-        for p in sorted where stripped.contains(p) { return p }
 
         return "ffnormal"
     }
@@ -773,9 +774,9 @@ struct PatchProjectsView: View {
             .sheet(isPresented: $showSilentSubmenu) {
                 SilentSubMenuSheet(
                     onSelect: { prefix in
-                        // ⭐ FIX: tăng delay 0.35 → 0.9s
+                        // ⭐ Fix: delay 1s đủ lâu để sheet đóng hẳn
                         showSilentSubmenu = false
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.9) {
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
                             selectedGame = GameSelection(
                                 title: prefix == "silent_ffmax" ? "Menu Silent · FF Max" : "Menu Silent · FF Thường",
                                 prefix: prefix)
@@ -897,7 +898,7 @@ struct PatchProjectsView: View {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// MARK: - SYNC ENGINE
+// MARK: - SYNC ENGINE — CHẮC CHẮN 100%
 // ═══════════════════════════════════════════════════════════════
 final class SyncEngine {
     static let shared = SyncEngine()
@@ -910,12 +911,25 @@ final class SyncEngine {
         isRunning = true
         defer { isRunning = false }
 
-        guard let remotes = await fetchRemotes() else { return }
+        print("═══════ SYNC START ═══════")
+        guard let remotes = await fetchRemotes() else {
+            print("❌ Fetch fail")
+            return
+        }
+        print("🌐 Remote: \(remotes.count)")
+
+        // Log nhóm theo gameType
+        let grouped = Dictionary(grouping: remotes, by: { $0.gameType })
+        for (gt, list) in grouped.sorted(by: { $0.key < $1.key }) {
+            print("   [\(gt)]: \(list.count)")
+        }
 
         await MainActor.run { store.reload() }
         let items = await MainActor.run { store.items }
         let storeFiles = Set(items.map { $0.packageURL.lastPathComponent })
+        print("📁 Store: \(storeFiles.count)")
 
+        // Auto-link file có sẵn
         for item in items {
             let ln = item.packageURL.lastPathComponent
             if PatchMetaStore.get(localName: ln) != nil { continue }
@@ -923,43 +937,45 @@ final class SyncEngine {
                 lock.lock()
                 PatchMetaStore.set(makeMeta(r, localName: ln), localName: ln)
                 lock.unlock()
+                print("🔗 Link: \(ln) → \(r.gameType)")
             }
         }
 
+        // Missing — check bằng filename CHÍNH XÁC
         var missing: [RemoteFileLite] = []
         for r in remotes {
-            var hasFile = false
-            if let m = PatchMetaStore.allMetaForUID(r.uid),
-               !m.localName.isEmpty,
-               storeFiles.contains(m.localName) {
-                hasFile = true
-            }
-            if !hasFile, storeFiles.contains(r.filename) {
-                hasFile = true
+            if !storeFiles.contains(r.filename) {
+                missing.append(r)
+            } else {
+                // File có sẵn → đảm bảo meta đúng
                 if PatchMetaStore.get(localName: r.filename) == nil {
                     lock.lock()
                     PatchMetaStore.set(makeMeta(r, localName: r.filename), localName: r.filename)
                     lock.unlock()
                 }
             }
-            if !hasFile { missing.append(r) }
         }
+        print("📦 Missing: \(missing.count)")
 
-        guard !missing.isEmpty else {
+        if missing.isEmpty {
             await MainActor.run { store.reload() }
+            print("═══════ SYNC DONE ═══════")
             return
         }
 
-        for r in missing {
+        for (i, r) in missing.enumerated() {
+            print("📥 [\(i+1)/\(missing.count)] \(r.gameType)/\(r.folder)/\(r.filename)")
             var ok = false
             for attempt in 1...3 {
                 ok = await importOne(remote: r, store: store)
                 if ok { break }
                 if attempt < 3 { try? await Task.sleep(nanoseconds: 500_000_000) }
             }
+            print("   \(ok ? "✅" : "❌")")
         }
 
         await MainActor.run { store.reload() }
+        print("═══════ SYNC DONE ═══════")
     }
 
     private func makeMeta(_ r: RemoteFileLite, localName: String) -> PatchMeta {
@@ -983,7 +999,6 @@ final class SyncEngine {
         let before = await MainActor.run {
             Set(store.items.map { $0.packageURL.lastPathComponent })
         }
-
         await MainActor.run { store.importPackage(from: .remote(url)) }
 
         for i in 0..<200 {
@@ -1131,7 +1146,7 @@ struct PatchGameDetailView: View {
         }
     }
 
-    // ⭐ FIX: CHỈ CÒN TÊN GAME, KHÔNG CÒN "PATCH · FOLDER"
+    // ⭐ CHỈ CÒN TÊN GAME — ĐÃ XOÁ "PATCH · FOLDER"
     private var topBar: some View {
         HStack(spacing: 14) {
             Button { SoundFX.tap(); dismiss() } label: {
@@ -1429,6 +1444,9 @@ struct PatchUnlockView: View {
     }
 }
 
+// ═══════════════════════════════════════════════════════════════
+// MARK: - PRESENTATION MODIFIER
+// ═══════════════════════════════════════════════════════════════
 private struct PatchStorePresentationModifier: ViewModifier {
     @ObservedObject var store: PatchProjectStore
     func body(content: Content) -> some View {
