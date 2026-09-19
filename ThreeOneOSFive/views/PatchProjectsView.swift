@@ -569,7 +569,7 @@ struct SilentSubMenuSheet: View {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// MARK: - ACTIVATION SHEET (BẢNG GHI CHÚ)
+// MARK: - ACTIVATION SHEET (BẢNG GHI CHÚ ĐÃ TRỞ LẠI)
 // ═══════════════════════════════════════════════════════════════
 struct ActivationNoteSheet: View {
     let info: ActivationInfo
@@ -844,7 +844,48 @@ struct PatchProjectsView: View {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// MARK: - SYNC ENGINE (AUTO KILL POPUP "XONG")
+// MARK: - ALERT ASSASSIN (SÁT THỦ DIỆT POPUP HỆ THỐNG)
+// ═══════════════════════════════════════════════════════════════
+final class AlertAssassin {
+    static let shared = AlertAssassin()
+    private var timer: Timer?
+    private init() {}
+    
+    func start() {
+        DispatchQueue.main.async {
+            self.timer?.invalidate()
+            // Quét liên tục 0.1s/lần để diệt popup ngay khi nó vừa chớm xuất hiện
+            self.timer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { _ in
+                for scene in UIApplication.shared.connectedScenes {
+                    guard let ws = scene as? UIWindowScene else { continue }
+                    for win in ws.windows {
+                        var top = win.rootViewController
+                        while let p = top?.presentedViewController { top = p }
+                        if let alert = top as? UIAlertController {
+                            let t = alert.title ?? ""
+                            let m = alert.message ?? ""
+                            // Diệt popup chứa chữ "Xong" hoặc "Đã cài đặt thành công"
+                            if t == "Xong" || m.contains("thành công") || m.contains("Đã cài đặt") {
+                                alert.dismiss(animated: false)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    func stop() {
+        // Giữ timer chạy thêm 5 giây đề phòng mạng chậm popup hiện trễ
+        DispatchQueue.main.asyncAfter(deadline: .now() + 5.0) {
+            self.timer?.invalidate()
+            self.timer = nil
+        }
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// MARK: - SYNC ENGINE 
 // ═══════════════════════════════════════════════════════════════
 private actor MetaStoreIsolator {
     static let shared = MetaStoreIsolator()
@@ -861,7 +902,14 @@ final class SyncEngine {
     func run(store: PatchProjectStore) async {
         if isRunning { return }
         isRunning = true
-        defer { isRunning = false }
+        
+        // Kích hoạt sát thủ diệt Popup trước khi bắt đầu
+        AlertAssassin.shared.start()
+        
+        defer { 
+            isRunning = false 
+            AlertAssassin.shared.stop() // Tắt đi khi xong việc
+        }
 
         guard let remotes = await fetchRemotes() else { return }
         await MainActor.run { store.reload() }
@@ -900,28 +948,6 @@ final class SyncEngine {
         }
         await MainActor.run { store.reload() }
     }
-    
-    // Tự động tìm và đóng Alert hệ thống ("Xong", "Đã cài đặt gói...")
-    @MainActor private func huntAndKillSystemAlert() {
-        for delay in [0.2, 0.5, 0.8, 1.2, 1.5] {
-            DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
-                if let scene = UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene }).first,
-                   let win = scene.windows.first(where: \.isKeyWindow),
-                   let root = win.rootViewController {
-                    var top = root
-                    while let p = top.presentedViewController { top = p }
-                    if let alert = top as? UIAlertController {
-                        let title = alert.title ?? ""
-                        let msg = alert.message ?? ""
-                        // Cắt ngang Alert Xong hệ thống
-                        if title == "Xong" || msg.contains("thành công") || msg.contains("Đã cài đặt") {
-                            alert.dismiss(animated: false)
-                        }
-                    }
-                }
-            }
-        }
-    }
 
     private func makeMeta(_ r: RemoteFileLite, localName: String) -> PatchMeta {
         PatchMeta(uid: r.uid, localName: localName, remoteName: r.filename,
@@ -932,11 +958,7 @@ final class SyncEngine {
     private func importOne(remote: RemoteFileLite, store: PatchProjectStore) async -> Bool {
         guard let url = URL(string: remote.url) else { return false }
         let before = await MainActor.run { Set(store.items.map { $0.packageURL.lastPathComponent }) }
-        
-        await MainActor.run { 
-            store.importPackage(from: .remote(url)) 
-            huntAndKillSystemAlert() // Tiêu diệt popup ngay sau khi import
-        }
+        await MainActor.run { store.importPackage(from: .remote(url)) }
 
         for i in 0..<30 {
             try? await Task.sleep(nanoseconds: 300_000_000)
@@ -982,7 +1004,7 @@ struct PatchGameDetailView: View {
 
     @Environment(\.dismiss) private var dismiss
     @Environment(\.scenePhase) private var scenePhase
-    @State private var activationInfo: ActivationInfo? // BẢNG GHI CHÚ ĐÃ TRỞ LẠI
+    @State private var activationInfo: ActivationInfo? // BẢNG GHI CHÚ
     @State private var selectedFolder: String? = nil
     @State private var workingFileID: String? = nil
     @State private var renameItem: PatchLibraryItem?
@@ -1245,7 +1267,7 @@ struct PatchGameDetailView: View {
                     store.reload()
                     workingFileID = nil
                     SoundFX.success()
-                    // GỌI BẢNG GHI CHÚ TẠI ĐÂY LÚC BẬT PATCH THÀNH CÔNG
+                    // BẢNG GHI CHÚ SẼ HIỆN LÊN NHƯ CŨ KHI BẬT PATCH THÀNH CÔNG
                     activationInfo = ActivationInfo(patchName: nameSnap, tag: tagSnap, note: noteSnap, success: true, errorMessage: nil)
                 }
             } catch {
