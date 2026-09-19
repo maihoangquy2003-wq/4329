@@ -20,118 +20,77 @@ enum SoundFX {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// MARK: - ALERT WINDOW HIDER (ẩn mọi window level > normal)
+// MARK: - INSTALL SHIELD — che popup + auto dismiss alert
 // ═══════════════════════════════════════════════════════════════
-final class AlertWindowHider {
-    static let shared = AlertWindowHider()
-    private var timer: Timer?
-    private var isActive = false
-    private var startTime: Date?
+final class InstallShield {
+    static let shared = InstallShield()
+    private var overlayWindow: UIWindow?
+    private var scanTimer: Timer?
+    private var hideTimer: Timer?
 
     private init() {}
 
-    /// Bật chế độ ẩn window alert trong `duration` giây
-    func activate(duration: TimeInterval = 8.0) {
+    func activate(duration: TimeInterval = 12.0) {
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
-            self.isActive = true
-            self.startTime = Date()
-            self.timer?.invalidate()
-            self.timer = Timer.scheduledTimer(withTimeInterval: 0.02, repeats: true) { _ in
-                self.tick(duration: duration)
+            self.deactivate()
+
+            // 1) Overlay window che full-screen
+            if let scene = UIApplication.shared.connectedScenes
+                    .compactMap({ $0 as? UIWindowScene }).first {
+                let w = UIWindow(windowScene: scene)
+                w.windowLevel = UIWindow.Level.alert + 5000
+                w.backgroundColor = .black
+                let host = UIHostingController(rootView: InstallShieldView())
+                host.view.backgroundColor = .black
+                w.rootViewController = host
+                w.makeKeyAndVisible()
+                self.overlayWindow = w
             }
-            if let t = self.timer { RunLoop.main.add(t, forMode: .common) }
-            self.tick(duration: duration)
+
+            // 2) Auto-dismiss mọi UIAlertController trong app (30ms/lần)
+            self.scanTimer = Timer.scheduledTimer(withTimeInterval: 0.03, repeats: true) { _ in
+                self.scanAndDismiss()
+            }
+            if let t = self.scanTimer { RunLoop.main.add(t, forMode: .common) }
+
+            // 3) Tự tắt sau duration
+            self.hideTimer = Timer.scheduledTimer(withTimeInterval: duration, repeats: false) { _ in
+                self.deactivate()
+            }
         }
     }
 
     func deactivate() {
         DispatchQueue.main.async { [weak self] in
-            self?.isActive = false
-            self?.timer?.invalidate()
-            self?.timer = nil
+            self?.scanTimer?.invalidate(); self?.scanTimer = nil
+            self?.hideTimer?.invalidate(); self?.hideTimer = nil
+            self?.overlayWindow?.isHidden = true
+            self?.overlayWindow = nil
         }
     }
 
-    private func tick(duration: TimeInterval) {
-        guard isActive, let start = startTime else { return }
-        if Date().timeIntervalSince(start) > duration {
-            deactivate()
-            return
-        }
-
+    private func scanAndDismiss() {
         let scenes = UIApplication.shared.connectedScenes
         for scene in scenes {
             guard let ws = scene as? UIWindowScene else { continue }
             for win in ws.windows {
-                let level = win.windowLevel.rawValue
-                // Ẩn mọi window level cao hơn normal (alert windows)
-                if level > UIWindow.Level.normal.rawValue {
-                    win.isHidden = true
-                    win.alpha = 0
-                }
-                // Kill UIAlertController trong các window còn lại
-                if let root = win.rootViewController {
-                    killAlerts(root)
-                }
+                guard let root = win.rootViewController else { continue }
+                dismissAlerts(root)
             }
         }
     }
 
-    private func killAlerts(_ vc: UIViewController) {
-        if let a = vc as? UIAlertController {
-            a.dismiss(animated: false, completion: nil)
+    private func dismissAlerts(_ vc: UIViewController) {
+        if let alert = vc as? UIAlertController {
+            alert.dismiss(animated: false, completion: nil)
         }
-        for c in vc.children { killAlerts(c) }
-        if let p = vc.presentedViewController { killAlerts(p) }
+        for child in vc.children { dismissAlerts(child) }
+        if let p = vc.presentedViewController { dismissAlerts(p) }
     }
 }
 
-// ═══════════════════════════════════════════════════════════════
-// MARK: - SHIELD OVERLAY (che full-screen trong lúc cài)
-// ═══════════════════════════════════════════════════════════════
-final class ShieldOverlay {
-    static let shared = ShieldOverlay()
-    private var window: UIWindow?
-    private var hideTimer: Timer?
-
-    private init() {}
-
-    func show(duration: TimeInterval = 6.0) {
-        DispatchQueue.main.async { [weak self] in
-            guard let self = self else { return }
-            self.hideTimer?.invalidate()
-            guard let scene = UIApplication.shared.connectedScenes
-                    .compactMap({ $0 as? UIWindowScene }).first else { return }
-
-            let w = UIWindow(windowScene: scene)
-            // Level cực cao — trên cả alert
-            w.windowLevel = UIWindow.Level.alert + 10000
-            w.backgroundColor = .black
-
-            let host = UIHostingController(rootView: ShieldScreen())
-            host.view.backgroundColor = .black
-            w.rootViewController = host
-            w.makeKeyAndVisible()
-            self.window = w
-
-            self.hideTimer = Timer.scheduledTimer(withTimeInterval: duration, repeats: false) { _ in
-                self.hide()
-            }
-        }
-    }
-
-    func hide() {
-        DispatchQueue.main.async { [weak self] in
-            self?.hideTimer?.invalidate()
-            self?.hideTimer = nil
-            self?.window?.isHidden = true
-            self?.window = nil
-        }
-    }
-}
-
-private struct ShieldScreen: View {
+private struct InstallShieldView: View {
     @State private var pulse = false
     @State private var dots = ""
 
@@ -139,31 +98,31 @@ private struct ShieldScreen: View {
         ZStack {
             Color.black.ignoresSafeArea()
 
-            VStack(spacing: 24) {
+            VStack(spacing: 28) {
                 ZStack {
                     Circle()
-                        .strokeBorder(Color.white.opacity(0.12), lineWidth: 1.5)
-                        .frame(width: 130, height: 130)
-                        .scaleEffect(pulse ? 1.2 : 0.9)
+                        .strokeBorder(Color.white.opacity(0.15), lineWidth: 1.5)
+                        .frame(width: 140, height: 140)
+                        .scaleEffect(pulse ? 1.15 : 0.92)
 
                     Circle()
-                        .fill(Color.white.opacity(0.06))
-                        .frame(width: 90, height: 90)
+                        .fill(Color.white.opacity(0.05))
+                        .frame(width: 100, height: 100)
 
                     ProgressView()
                         .tint(.white)
-                        .scaleEffect(1.5)
+                        .scaleEffect(1.6)
                 }
 
-                VStack(spacing: 8) {
+                VStack(spacing: 10) {
                     Text("HEADLOCK ZENIS")
                         .font(.system(size: 11, weight: .heavy))
                         .tracking(4.5)
                         .foregroundStyle(.white.opacity(0.6))
 
-                    Text("ĐANG XỬ LÝ\(dots)")
-                        .font(.system(size: 15, weight: .heavy))
-                        .tracking(2)
+                    Text("ĐANG KÍCH HOẠT\(dots)")
+                        .font(.system(size: 16, weight: .heavy))
+                        .tracking(2.5)
                         .foregroundStyle(.white)
 
                     Text("Vui lòng không thoát ứng dụng")
@@ -174,10 +133,10 @@ private struct ShieldScreen: View {
             }
         }
         .onAppear {
-            withAnimation(.easeInOut(duration: 1.2).repeatForever(autoreverses: true)) {
+            withAnimation(.easeInOut(duration: 1.3).repeatForever(autoreverses: true)) {
                 pulse = true
             }
-            Timer.scheduledTimer(withTimeInterval: 0.4, repeats: true) { t in
+            Timer.scheduledTimer(withTimeInterval: 0.4, repeats: true) { _ in
                 let n = (dots.count + 1) % 4
                 dots = String(repeating: ".", count: n)
             }
@@ -189,22 +148,19 @@ private struct ShieldScreen: View {
 // MARK: - THEME
 // ═══════════════════════════════════════════════════════════════
 enum Theme {
-    static let surface   = Color(red: 0.043, green: 0.043, blue: 0.043)
-    static let surfaceHi = Color(red: 0.078, green: 0.078, blue: 0.078)
-    static let surfaceTop = Color(red: 0.11, green: 0.11, blue: 0.11)
-    static let gold      = Color(red: 0.85, green: 0.7, blue: 0.4)
-    static let danger    = Color(red: 1.0, green: 0.32, blue: 0.32)
-    static let success   = Color(red: 0.20, green: 0.85, blue: 0.45)
+    static let surface    = Color(red: 0.043, green: 0.043, blue: 0.043)
+    static let surfaceHi  = Color(red: 0.078, green: 0.078, blue: 0.078)
+    static let surfaceTop = Color(red: 0.11,  green: 0.11,  blue: 0.11)
+    static let gold       = Color(red: 0.85,  green: 0.70,  blue: 0.40)
+    static let danger     = Color(red: 1.0,   green: 0.32,  blue: 0.32)
+    static let success    = Color(red: 0.20,  green: 0.85,  blue: 0.45)
 }
 
-// ═══════════════════════════════════════════════════════════════
-// MARK: - BACKGROUND
-// ═══════════════════════════════════════════════════════════════
 struct NeonBackgroundView: View {
     var body: some View {
         ZStack {
             Color.black
-            RadialGradient(colors: [Color.white.opacity(0.11), .clear],
+            RadialGradient(colors: [Color.white.opacity(0.10), .clear],
                 center: .topLeading, startRadius: 0, endRadius: 620)
             RadialGradient(colors: [Color.white.opacity(0.05), .clear],
                 center: .bottomTrailing, startRadius: 0, endRadius: 620)
@@ -299,7 +255,7 @@ struct ActivationInfo: Identifiable {
 // MARK: - META STORE
 // ═══════════════════════════════════════════════════════════════
 enum PatchMetaStore {
-    private static let key = "patch_meta_v50"
+    private static let key = "patch_meta_v60"
 
     static func all() -> [String: PatchMeta] {
         guard let d = UserDefaults.standard.data(forKey: key),
@@ -319,31 +275,28 @@ enum PatchMetaStore {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// MARK: - GAME TYPE HELPER — FILENAME TRƯỚC META SAU
+// MARK: - GAME TYPE HELPER
 // ═══════════════════════════════════════════════════════════════
 enum GameTypeHelper {
     static let allPrefixes = ["ffmax", "ffnormal", "silent_ffmax", "silent_ffnormal"]
 
     static func prefixOf(_ item: PatchLibraryItem) -> String {
         let name = item.packageURL.lastPathComponent
-        // ⭐ Parse từ format mới: <gt>--<folder>--<rawname>--<tag>.3105
-        if name.contains("--") {
-            let parts = name.components(separatedBy: "--")
+        // Format mới: <gt>~<folder>~<rawname>~<tag>.3105
+        if name.contains("~") {
+            let parts = name.components(separatedBy: "~")
             if parts.count >= 4 {
                 let gt = parts[0]
                 if allPrefixes.contains(gt) { return gt }
             }
         }
-        // Fallback: check prefix
         let sorted = allPrefixes.sorted { $0.count > $1.count }
-        for p in sorted where name.hasPrefix("\(p)--") || name.hasPrefix("\(p)_") {
+        for p in sorted where name.hasPrefix("\(p)~") || name.hasPrefix("\(p)_") {
             return p
         }
-        // Fallback: meta
         if let m = PatchMetaStore.get(localName: name), !m.gameType.isEmpty {
             return m.gameType
         }
-        // Fallback: path
         let c = item.packageURL.pathComponents
         if c.contains("silent") {
             if c.contains("ffmax") { return "silent_ffmax" }
@@ -355,25 +308,19 @@ enum GameTypeHelper {
         return "ffnormal"
     }
 
-    /// Bỏ prefix gameType + folder + tag để hiển thị tên sạch
+    /// Hiển thị tên sạch: <gt>~<folder>~<rawname>~<tag>.3105 → <rawname>
     static func stripAll(_ name: String) -> String {
         var s = name
-        // Bỏ .3105
         if s.hasSuffix(".3105") { s = String(s.dropLast(5)) }
-        // Parse format mới
-        if s.contains("--") {
-            let parts = s.components(separatedBy: "--")
-            if parts.count >= 4 {
-                return parts[parts.count - 2]
-            }
+        if s.contains("~") {
+            let parts = s.components(separatedBy: "~")
+            if parts.count >= 4 { return parts[parts.count - 2] }
         }
-        // Fallback: bỏ prefix cũ
         let sorted = allPrefixes.sorted { $0.count > $1.count }
         for p in sorted where s.hasPrefix("\(p)_") {
             s = String(s.dropFirst(p.count + 1))
             break
         }
-        // Bỏ _VIP/_FREE
         s = s.replacingOccurrences(of: "_VIP", with: "")
              .replacingOccurrences(of: "_FREE", with: "")
         return s
@@ -389,16 +336,14 @@ private struct GlowCard<Content: View>: View {
         content
             .background(
                 RoundedRectangle(cornerRadius: 20, style: .continuous)
-                    .fill(LinearGradient(
-                        colors: [Theme.surfaceTop, Theme.surface],
+                    .fill(LinearGradient(colors: [Theme.surfaceTop, Theme.surface],
                         startPoint: .top, endPoint: .bottom))
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 20, style: .continuous)
                     .strokeBorder(LinearGradient(
                         colors: [.white, .white.opacity(0.3), .white.opacity(0.6)],
-                        startPoint: .topLeading, endPoint: .bottomTrailing),
-                        lineWidth: 1.4)
+                        startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 1.4)
             )
             .shadow(color: .white.opacity(0.12), radius: 14)
             .shadow(color: .black.opacity(0.5), radius: 8, y: 6)
@@ -485,7 +430,6 @@ private struct AnyShape: Shape {
 private struct AvatarView: View {
     @State private var rotate = false
     @State private var pulse = false
-
     var body: some View {
         ZStack {
             Circle().fill(Color.white.opacity(0.15))
@@ -497,8 +441,7 @@ private struct AvatarView: View {
                 .frame(width: 116, height: 116)
                 .rotationEffect(.degrees(rotate ? 360 : 0))
             Circle()
-                .strokeBorder(LinearGradient(
-                    colors: [.white, .white.opacity(0.3), .white],
+                .strokeBorder(LinearGradient(colors: [.white, .white.opacity(0.3), .white],
                     startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 2)
                 .frame(width: 96, height: 96)
             ServerAvatarView(size: 80, shape: .circle)
@@ -545,7 +488,6 @@ private struct PatchIconView: View {
         ZStack {
             if isApplied {
                 ServerAvatarView(size: 54, shape: .circle)
-                    .shadow(color: .white.opacity(0.4), radius: 10)
             } else {
                 ZStack {
                     RoundedRectangle(cornerRadius: 15, style: .continuous)
@@ -646,17 +588,16 @@ private struct PatchCard: View {
         }
         .padding(14)
         .background(RoundedRectangle(cornerRadius: 18, style: .continuous)
-            .fill(LinearGradient(
-                colors: isApplied ? [Color.white.opacity(0.10), Color.white.opacity(0.03)]
-                                  : [Color.white.opacity(0.03), Color.white.opacity(0.012)],
+            .fill(LinearGradient(colors: isApplied
+                ? [Color.white.opacity(0.10), Color.white.opacity(0.03)]
+                : [Color.white.opacity(0.03), Color.white.opacity(0.012)],
                 startPoint: .topLeading, endPoint: .bottomTrailing)))
         .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous)
-            .strokeBorder(
-                isApplied
-                    ? LinearGradient(colors: [.white, .white.opacity(0.5), .white],
-                        startPoint: .topLeading, endPoint: .bottomTrailing)
-                    : LinearGradient(colors: [Color.white.opacity(0.28), Color.white.opacity(0.18)],
-                        startPoint: .topLeading, endPoint: .bottomTrailing),
+            .strokeBorder(isApplied
+                ? LinearGradient(colors: [.white, .white.opacity(0.5), .white],
+                    startPoint: .topLeading, endPoint: .bottomTrailing)
+                : LinearGradient(colors: [Color.white.opacity(0.28), Color.white.opacity(0.18)],
+                    startPoint: .topLeading, endPoint: .bottomTrailing),
                 lineWidth: isApplied ? 1.7 : 1.1))
         .shadow(color: isApplied ? .white.opacity(0.20) : .black.opacity(0.3),
                 radius: isApplied ? 14 : 8, y: 4)
@@ -691,7 +632,6 @@ private struct EmptyStateView: View {
 struct SilentSubMenuSheet: View {
     let onSelect: (String) -> Void
     let onCancel: () -> Void
-
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
@@ -723,7 +663,6 @@ struct SilentSubMenuSheet: View {
             }
         }
     }
-
     private func optionCard(_ t: String, _ s: String, _ p: String) -> some View {
         Button { SoundFX.menu(); onSelect(p) } label: {
             GlowCard {
@@ -1058,7 +997,6 @@ final class SyncEngine {
         defer { isRunning = false }
 
         guard let remotes = await fetchRemotes() else { return }
-
         await MainActor.run { store.reload() }
         let items = await MainActor.run { store.items }
         let storeFiles = Set(items.map { $0.packageURL.lastPathComponent })
@@ -1097,7 +1035,6 @@ final class SyncEngine {
                 if attempt < 3 { try? await Task.sleep(nanoseconds: 700_000_000) }
             }
         }
-
         await MainActor.run { store.reload() }
     }
 
@@ -1146,7 +1083,6 @@ final class SyncEngine {
         let ts = Int(Date().timeIntervalSince1970)
         guard let url = URL(string:
             "https://solitudepremium.click/ipa/ipa/list.php?t=\(ts)") else { return nil }
-
         do {
             var req = URLRequest(url: url)
             req.cachePolicy = .reloadIgnoringLocalAndRemoteCacheData
@@ -1155,7 +1091,6 @@ final class SyncEngine {
             req.setValue("no-cache", forHTTPHeaderField: "Pragma")
             req.setValue("gzip, deflate, br", forHTTPHeaderField: "Accept-Encoding")
             let (data, _) = try await URLSession.shared.data(for: req)
-
             struct Wire: Decodable {
                 let uid: String?
                 let filename: String
@@ -1378,8 +1313,8 @@ struct PatchGameDetailView: View {
     private func currentTag(for i: PatchLibraryItem) -> String {
         if let m = meta(for: i), !m.tag.isEmpty { return m.tag }
         let n = i.packageURL.lastPathComponent
-        if n.contains("--") {
-            let parts = n.components(separatedBy: "--")
+        if n.contains("~") {
+            let parts = n.components(separatedBy: "~")
             if let last = parts.last {
                 let t = last.replacingOccurrences(of: ".3105", with: "")
                 if t == "VIP" || t == "FREE" { return t }
@@ -1394,8 +1329,8 @@ struct PatchGameDetailView: View {
     private func folderName(for i: PatchLibraryItem) -> String {
         if let m = meta(for: i), !m.folder.isEmpty { return m.folder }
         let n = i.packageURL.lastPathComponent
-        if n.contains("--") {
-            let parts = n.components(separatedBy: "--")
+        if n.contains("~") {
+            let parts = n.components(separatedBy: "~")
             if parts.count >= 4 { return parts[1] }
         }
         return "CHƯA PHÂN LOẠI"
@@ -1429,7 +1364,7 @@ struct PatchGameDetailView: View {
         store.reload(); noteItem = nil
     }
 
-    // ⭐ TOGGLE — Bật patch: kích hoạt 2 hệ thống chống popup
+    // ⭐ TOGGLE — bật patch: shield 12s + auto-dismiss alert
     private func togglePatch(item: PatchLibraryItem, activate: Bool) {
         workingFileID = item.id.uuidString
         let nameSnap = displayName(for: item)
@@ -1453,7 +1388,6 @@ struct PatchGameDetailView: View {
                     try? DevicePatchService.restore(receipt: r)
                 }
             }
-
             if !activate {
                 do {
                     if let r = DevicePatchService.latestReceipt(projectID: item.id) {
@@ -1472,32 +1406,23 @@ struct PatchGameDetailView: View {
                 return
             }
 
-            // ⭐ BẬT patch — kích hoạt 2 hệ thống chống popup
-            await MainActor.run {
-                // Tầng 1: Shield overlay che toàn màn hình (8s)
-                ShieldOverlay.shared.show(duration: 8.0)
-                // Tầng 2: Ẩn mọi window alert level cao
-                AlertWindowHider.shared.activate(duration: 8.0)
-            }
+            // ⭐ BẬT: kích hoạt InstallShield 12s
+            await MainActor.run { InstallShield.shared.activate(duration: 12.0) }
 
             do {
                 guard let p = item.project else {
                     await MainActor.run {
-                        ShieldOverlay.shared.hide()
-                        AlertWindowHider.shared.deactivate()
+                        InstallShield.shared.deactivate()
                         workingFileID = nil
                     }
                     return
                 }
 
                 _ = try DevicePatchService.apply(project: p)
-
-                // Đợi 3s để popup xuất hiện và bị che
-                try? await Task.sleep(nanoseconds: 3_000_000_000)
+                try? await Task.sleep(nanoseconds: 2_500_000_000)
 
                 await MainActor.run {
-                    ShieldOverlay.shared.hide()
-                    AlertWindowHider.shared.deactivate()
+                    InstallShield.shared.deactivate()
                     store.reload()
                     workingFileID = nil
                     SoundFX.success()
@@ -1507,8 +1432,7 @@ struct PatchGameDetailView: View {
                 }
             } catch {
                 await MainActor.run {
-                    ShieldOverlay.shared.hide()
-                    AlertWindowHider.shared.deactivate()
+                    InstallShield.shared.deactivate()
                     store.reload(); workingFileID = nil; SoundFX.error()
                     activationInfo = ActivationInfo(
                         patchName: nameSnap, tag: tagSnap, note: noteSnap,
