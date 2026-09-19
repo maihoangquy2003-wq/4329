@@ -3,9 +3,6 @@ import UIKit
 import UniformTypeIdentifiers
 import AudioToolbox
 
-// ═══════════════════════════════════════════════════════════════
-// MARK: - SOUND
-// ═══════════════════════════════════════════════════════════════
 enum SoundFX {
     static func tap()     { AudioServicesPlaySystemSound(1104) }
     static func menu()    { AudioServicesPlaySystemSound(1105) }
@@ -20,13 +17,12 @@ enum SoundFX {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// MARK: - ALERT KILLER — 3 TẦNG TẤN CÔNG (chạy vĩnh viễn)
+// MARK: - ALERT KILLER
 // ═══════════════════════════════════════════════════════════════
 final class AlertKiller {
     static let shared = AlertKiller()
     private var timer: Timer?
     private var isRunning = false
-    private var hiddenWindows: Set<ObjectIdentifier> = []
 
     private init() {
         NotificationCenter.default.addObserver(
@@ -38,7 +34,6 @@ final class AlertKiller {
             name: UIApplication.didEnterBackgroundNotification, object: nil
         )
     }
-
     deinit { NotificationCenter.default.removeObserver(self) }
 
     @objc private func appActive() { start() }
@@ -53,9 +48,7 @@ final class AlertKiller {
             self.timer = Timer.scheduledTimer(withTimeInterval: 0.04, repeats: true) { _ in
                 self.killAll()
             }
-            if let t = self.timer {
-                RunLoop.main.add(t, forMode: .common)
-            }
+            if let t = self.timer { RunLoop.main.add(t, forMode: .common) }
             self.killAll()
         }
     }
@@ -69,7 +62,6 @@ final class AlertKiller {
     }
 
     private func killAll() {
-        // TẦNG 1: Quét mọi window, dismiss UIAlertController
         let scenes = UIApplication.shared.connectedScenes
         for scene in scenes {
             guard let ws = scene as? UIWindowScene else { continue }
@@ -78,45 +70,11 @@ final class AlertKiller {
                 killTree(root)
             }
         }
-
-        // TẦNG 2: Ẩn window có level cao hơn normal (alert window)
-        for scene in scenes {
-            guard let ws = scene as? UIWindowScene else { continue }
-            for win in ws.windows {
-                let id = ObjectIdentifier(win)
-                if win.windowLevel.rawValue > UIWindow.Level.normal.rawValue {
-                    // Window level cao = alert window
-                    if !hiddenWindows.contains(id) {
-                        if hasAlertInside(win) {
-                            win.isHidden = true
-                            hiddenWindows.insert(id)
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                                win.isHidden = true  // giữ ẩn
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    private func hasAlertInside(_ window: UIWindow) -> Bool {
-        guard let root = window.rootViewController else { return false }
-        return containsAlert(root)
-    }
-
-    private func containsAlert(_ vc: UIViewController) -> Bool {
-        if vc is UIAlertController { return true }
-        for child in vc.children { if containsAlert(child) { return true } }
-        if let p = vc.presentedViewController, containsAlert(p) { return true }
-        return false
     }
 
     private func killTree(_ vc: UIViewController) {
-        if let alert = vc as? UIAlertController {
-            if matches(alert) {
-                alert.dismiss(animated: false, completion: nil)
-            }
+        if let alert = vc as? UIAlertController, matches(alert) {
+            alert.dismiss(animated: false, completion: nil)
         }
         for child in vc.children { killTree(child) }
         if let p = vc.presentedViewController { killTree(p) }
@@ -125,8 +83,6 @@ final class AlertKiller {
     private func matches(_ alert: UIAlertController) -> Bool {
         let t = (alert.title ?? "").lowercased()
         let m = (alert.message ?? "").lowercased()
-
-        // Match text phổ biến
         if t.contains("xong") { return true }
         if t.contains("thành công") { return true }
         if t.contains("hoàn tất") { return true }
@@ -137,17 +93,13 @@ final class AlertKiller {
         if m.contains("mở gói trong mục") { return true }
         if m.contains("bạn có thể mở") { return true }
         if m.contains("bạn có thể sử dụng") { return true }
-
-        // Single OK button + có từ khóa cài đặt
         if alert.actions.count == 1,
            alert.actions[0].title?.lowercased() == "ok" {
             if t.contains("gói") || m.contains("gói") ||
-               m.contains("cài") || m.contains("tải") ||
-               t.contains("thành") {
+               m.contains("cài") || m.contains("tải") || t.contains("thành") {
                 return true
             }
         }
-
         return false
     }
 }
@@ -162,9 +114,6 @@ enum Theme {
     static let danger = Color(red: 1.0, green: 0.32, blue: 0.32)
 }
 
-// ═══════════════════════════════════════════════════════════════
-// MARK: - BACKGROUND
-// ═══════════════════════════════════════════════════════════════
 struct NeonBackgroundView: View {
     var body: some View {
         ZStack {
@@ -264,7 +213,7 @@ struct ActivationInfo: Identifiable {
 // MARK: - META STORE
 // ═══════════════════════════════════════════════════════════════
 enum PatchMetaStore {
-    private static let key = "patch_meta_v40"
+    private static let key = "patch_meta_v41"
 
     static func all() -> [String: PatchMeta] {
         guard let d = UserDefaults.standard.data(forKey: key),
@@ -293,53 +242,27 @@ enum PatchMetaStore {
 enum GameTypeHelper {
     static let allPrefixes = ["ffmax", "ffnormal", "silent_ffmax", "silent_ffnormal"]
 
-    /// ⭐ 5 tầng xác định prefix
     static func prefixOf(_ item: PatchLibraryItem) -> String {
         let name = item.packageURL.lastPathComponent
 
-        // 1) Meta
         if let m = PatchMetaStore.get(localName: name), !m.gameType.isEmpty {
-            print("🎯 prefixOf[1-meta]: \(name) → \(m.gameType)")
             return m.gameType
         }
-
-        // 2) Filename prefix
         let sorted = allPrefixes.sorted { $0.count > $1.count }
-        for p in sorted where name.hasPrefix("\(p)_") {
-            print("🎯 prefixOf[2-filename]: \(name) → \(p)")
-            return p
-        }
+        for p in sorted where name.hasPrefix("\(p)_") { return p }
 
-        // 3) Path components — silent/ffmax/, silent/ffnormal/
         let c = item.packageURL.pathComponents
         if c.contains("silent") {
-            if c.contains("ffmax") {
-                print("🎯 prefixOf[3-silent-ffmax]: \(name)")
-                return "silent_ffmax"
-            }
-            if c.contains("ffnormal") {
-                print("🎯 prefixOf[3-silent-ffnormal]: \(name)")
-                return "silent_ffnormal"
-            }
+            if c.contains("ffmax") { return "silent_ffmax" }
+            if c.contains("ffnormal") { return "silent_ffnormal" }
+            return "silent_ffnormal"
         }
-        if c.contains("ffmax") {
-            print("🎯 prefixOf[3-ffmax]: \(name)")
-            return "ffmax"
-        }
-        if c.contains("ffnormal") {
-            print("🎯 prefixOf[3-ffnormal]: \(name)")
-            return "ffnormal"
-        }
+        if c.contains("ffmax") { return "ffmax" }
+        if c.contains("ffnormal") { return "ffnormal" }
 
-        // 4) Strip prefix và tìm lại
         let stripped = stripPrefix(name).lowercased()
-        for p in sorted where stripped.contains(p) {
-            print("🎯 prefixOf[4-stripped]: \(name) → \(p)")
-            return p
-        }
+        for p in sorted where stripped.contains(p) { return p }
 
-        // 5) Fallback
-        print("⚠️ prefixOf[5-fallback]: \(name) → ffnormal")
         return "ffnormal"
     }
 
@@ -850,8 +773,9 @@ struct PatchProjectsView: View {
             .sheet(isPresented: $showSilentSubmenu) {
                 SilentSubMenuSheet(
                     onSelect: { prefix in
+                        // ⭐ FIX: tăng delay 0.35 → 0.9s
                         showSilentSubmenu = false
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.9) {
                             selectedGame = GameSelection(
                                 title: prefix == "silent_ffmax" ? "Menu Silent · FF Max" : "Menu Silent · FF Thường",
                                 prefix: prefix)
@@ -973,7 +897,7 @@ struct PatchProjectsView: View {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// MARK: - SYNC ENGINE (⭐ LOG CHI TIẾT)
+// MARK: - SYNC ENGINE
 // ═══════════════════════════════════════════════════════════════
 final class SyncEngine {
     static let shared = SyncEngine()
@@ -986,26 +910,12 @@ final class SyncEngine {
         isRunning = true
         defer { isRunning = false }
 
-        print("═══════ SYNC START ═══════")
-        guard let remotes = await fetchRemotes() else {
-            print("❌ Fetch fail")
-            return
-        }
-        print("🌐 Remote: \(remotes.count) file")
+        guard let remotes = await fetchRemotes() else { return }
 
-        // Log remote theo gameType
-        let grouped = Dictionary(grouping: remotes, by: { $0.gameType })
-        for (gt, list) in grouped {
-            print("   [\(gt)]: \(list.count) file")
-        }
-
-        // Reload store
         await MainActor.run { store.reload() }
         let items = await MainActor.run { store.items }
         let storeFiles = Set(items.map { $0.packageURL.lastPathComponent })
-        print("📁 Store: \(storeFiles.count) file")
 
-        // Auto-link
         for item in items {
             let ln = item.packageURL.lastPathComponent
             if PatchMetaStore.get(localName: ln) != nil { continue }
@@ -1013,11 +923,9 @@ final class SyncEngine {
                 lock.lock()
                 PatchMetaStore.set(makeMeta(r, localName: ln), localName: ln)
                 lock.unlock()
-                print("🔗 Link: \(ln) → \(r.gameType)")
             }
         }
 
-        // Missing — check cả UID và filename
         var missing: [RemoteFileLite] = []
         for r in remotes {
             var hasFile = false
@@ -1037,26 +945,21 @@ final class SyncEngine {
             if !hasFile { missing.append(r) }
         }
 
-        print("📦 Missing: \(missing.count)")
-        if missing.isEmpty {
+        guard !missing.isEmpty else {
             await MainActor.run { store.reload() }
-            print("═══════ SYNC DONE (nothing) ═══════")
             return
         }
 
-        for (i, r) in missing.enumerated() {
-            print("📥 [\(i+1)/\(missing.count)] \(r.gameType)/\(r.folder)/\(r.filename)")
+        for r in missing {
             var ok = false
             for attempt in 1...3 {
                 ok = await importOne(remote: r, store: store)
                 if ok { break }
                 if attempt < 3 { try? await Task.sleep(nanoseconds: 500_000_000) }
             }
-            print("   \(ok ? "✅ OK" : "❌ FAIL")")
         }
 
         await MainActor.run { store.reload() }
-        print("═══════ SYNC DONE ═══════")
     }
 
     private func makeMeta(_ r: RemoteFileLite, localName: String) -> PatchMeta {
@@ -1108,7 +1011,6 @@ final class SyncEngine {
             await MainActor.run { store.reload() }
             return true
         }
-
         return false
     }
 
@@ -1229,6 +1131,7 @@ struct PatchGameDetailView: View {
         }
     }
 
+    // ⭐ FIX: CHỈ CÒN TÊN GAME, KHÔNG CÒN "PATCH · FOLDER"
     private var topBar: some View {
         HStack(spacing: 14) {
             Button { SoundFX.tap(); dismiss() } label: {
@@ -1240,14 +1143,8 @@ struct PatchGameDetailView: View {
                 }
             }.buttonStyle(.plain)
 
-            VStack(alignment: .leading, spacing: 2) {
-                Text(game.title).font(.system(size: 15, weight: .heavy)).foregroundStyle(.white)
-                if gameItems.count > 1 && folders.count > 1 {
-                    Text("\(displayedItems.count) PATCH · \(folders.count) FOLDER")
-                        .font(.system(size: 9, weight: .heavy)).tracking(1.4)
-                        .foregroundStyle(.white.opacity(0.5))
-                }
-            }
+            Text(game.title).font(.system(size: 15, weight: .heavy)).foregroundStyle(.white)
+
             Spacer()
         }.padding(.horizontal, 18).padding(.top, 14).padding(.bottom, 12)
     }
@@ -1532,9 +1429,6 @@ struct PatchUnlockView: View {
     }
 }
 
-// ═══════════════════════════════════════════════════════════════
-// MARK: - PRESENTATION MODIFIER
-// ═══════════════════════════════════════════════════════════════
 private struct PatchStorePresentationModifier: ViewModifier {
     @ObservedObject var store: PatchProjectStore
     func body(content: Content) -> some View {
