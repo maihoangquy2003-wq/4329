@@ -20,7 +20,7 @@ enum SoundFX {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// MARK: - SWEEP DISMISS (chặn popup "Xong" mạnh hơn)
+// MARK: - SWEEP DISMISS
 // ═══════════════════════════════════════════════════════════════
 enum InstallerAlertSweep {
     private static var sweepTask: Task<Void, Never>?
@@ -110,7 +110,8 @@ enum InstallerAlertSweep {
         for k in msgKeys where m.contains(k) { return true }
         for k in msgKeys where t.contains(k) { return true }
 
-        let titles = alert.actions.map { $0.title.lowercased() }
+        // ✅ FIX: $0.title là String? → dùng compactMap để loại nil
+        let titles = alert.actions.compactMap { $0.title?.lowercased() }
         let isSystemPattern = alert.actions.count == 1 &&
             (titles.contains("xong") || titles.contains("done") ||
              titles.contains("ok") || titles.contains("đóng"))
@@ -121,7 +122,8 @@ enum InstallerAlertSweep {
 
         if alert.actions.count == 1,
            let first = alert.actions.first,
-           ["xong", "done"].contains(first.title.lowercased()),
+           let firstTitle = first.title?.lowercased(),
+           ["xong", "done"].contains(firstTitle),
            alert.preferredStyle == .alert, !m.isEmpty {
             return true
         }
@@ -130,19 +132,18 @@ enum InstallerAlertSweep {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// MARK: - OPTIMIZED URL SESSION (tăng tốc tải file)
+// MARK: - OPTIMIZED URL SESSION
 // ═══════════════════════════════════════════════════════════════
 enum NetSession {
-    /// Session tối ưu cho tốc độ tải: nhiều connection, timeout hợp lý, cache thông minh
     static let shared: URLSession = {
         let cfg = URLSessionConfiguration.default
         cfg.timeoutIntervalForRequest = 20
         cfg.timeoutIntervalForResource = 300
-        cfg.httpMaximumConnectionsPerHost = 8              // tăng từ 6 → 8
+        cfg.httpMaximumConnectionsPerHost = 8
         cfg.requestCachePolicy = .reloadIgnoringLocalCacheData
         cfg.urlCache = nil
         cfg.waitsForConnectivity = true
-        cfg.httpShouldUsePipelining = true                 // bật pipelining
+        cfg.httpShouldUsePipelining = true
         cfg.httpAdditionalHeaders = [
             "Accept-Encoding": "gzip, deflate, br",
             "Connection": "keep-alive"
@@ -150,7 +151,6 @@ enum NetSession {
         return URLSession(configuration: cfg)
     }()
 
-    /// Session riêng cho API JSON (nhẹ, cache ngắn)
     static let api: URLSession = {
         let cfg = URLSessionConfiguration.ephemeral
         cfg.timeoutIntervalForRequest = 15
@@ -173,7 +173,7 @@ enum Theme {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// MARK: - BACKGROUND (static, nhẹ)
+// MARK: - BACKGROUND
 // ═══════════════════════════════════════════════════════════════
 struct NeonBackgroundView: View {
     var body: some View {
@@ -284,7 +284,7 @@ struct ActivationInfo: Identifiable {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// MARK: - META STORE (cache in-memory để tăng tốc)
+// MARK: - META STORE (in-memory cache)
 // ═══════════════════════════════════════════════════════════════
 enum PatchMetaStore {
     private static let key = "patch_meta_v34"
@@ -440,9 +440,14 @@ private struct ServerAvatarView: View {
 private extension Shape {
     func strokeBorder(_ c: Color, lineWidth: CGFloat) -> some View { self.stroke(c, lineWidth: lineWidth) }
 }
-private struct AnyShape: Shape {
-    private let make: (CGRect) -> Path
-    init<S: Shape>(_ s: S) { self.make = { s.path(in: $0) } }
+
+// ✅ FIX: đánh dấu @Sendable cho closure để hết warning Swift 6
+private struct AnyShape: Shape, @unchecked Sendable {
+    private let make: @Sendable (CGRect) -> Path
+    init<S: Shape>(_ s: S) {
+        let shape = s
+        self.make = { rect in shape.path(in: rect) }
+    }
     func path(in rect: CGRect) -> Path { make(rect) }
 }
 
@@ -867,7 +872,7 @@ struct PatchProjectsView: View {
             .task {
                 await syncNow()
                 while !Task.isCancelled {
-                    try? await Task.sleep(nanoseconds: 12_000_000_000) // 12s
+                    try? await Task.sleep(nanoseconds: 12_000_000_000)
                     if Task.isCancelled { break }
                     await syncNow()
                 }
@@ -1010,7 +1015,7 @@ struct PatchProjectsView: View {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// MARK: - SYNC ENGINE (TỐI ƯU TỐC ĐỘ)
+// MARK: - SYNC ENGINE
 // ═══════════════════════════════════════════════════════════════
 final class SyncEngine {
     static let shared = SyncEngine()
@@ -1018,7 +1023,7 @@ final class SyncEngine {
     private var isRunning = false
     private var lastRemotes: [RemoteFileLite] = []
     private var lastFetch: Date = .distantPast
-    private let remoteCacheTTL: TimeInterval = 5.0  // cache list.php 5s
+    private let remoteCacheTTL: TimeInterval = 5.0
     private init() {}
 
     func run(store: PatchProjectStore) async {
@@ -1030,7 +1035,6 @@ final class SyncEngine {
 
         guard let remotes = await fetchRemotesCached() else { return }
 
-        // ── 1. Cập nhật meta hiện có (in-memory, nhanh)
         var metaDict = PatchMetaStore.all()
         var changed = false
         for (ln, var m) in metaDict {
@@ -1048,7 +1052,6 @@ final class SyncEngine {
 
         await MainActor.run { store.reload() }
 
-        // ── 2. Match local items chưa có meta (nhanh)
         let items = await MainActor.run { store.items }
         var toSave: [String: PatchMeta] = [:]
         for item in items {
@@ -1064,7 +1067,6 @@ final class SyncEngine {
             PatchMetaStore.save(d)
         }
 
-        // ── 3. Import file thiếu (song song tối đa 3)
         let missing = remotes.filter { !PatchMetaStore.hasUID($0.uid) }
         if !missing.isEmpty {
             await withTaskGroup(of: Void.self) { group in
@@ -1102,7 +1104,6 @@ final class SyncEngine {
         return nil
     }
 
-    /// Import 1 file — tối ưu: check 120ms/lần, tổng tối đa 30s
     private func importOne(remote: RemoteFileLite, store: PatchProjectStore) async -> Bool {
         guard let url = URL(string: remote.url) else { return false }
 
@@ -1111,12 +1112,10 @@ final class SyncEngine {
         }
         await MainActor.run { store.importPackage(from: .remote(url)) }
 
-        // Fast poll: 120ms, 250 vòng = 30s max
         for i in 0..<250 {
             try? await Task.sleep(nanoseconds: 120_000_000)
             if Task.isCancelled { return false }
 
-            // Chỉ reload store mỗi 3 vòng để giảm tải main thread
             if i % 3 == 0 { await MainActor.run { store.reload() } }
 
             let after = await MainActor.run {
@@ -1141,14 +1140,12 @@ final class SyncEngine {
         return false
     }
 
-    /// Fetch list.php với cache TTL 5s để tránh spam server
     private func fetchRemotesCached() async -> [RemoteFileLite]? {
         let now = Date()
         if now.timeIntervalSince(lastFetch) < remoteCacheTTL, !lastRemotes.isEmpty {
             return lastRemotes
         }
         guard let r = await fetchRemotes() else {
-            // Nếu fetch fail nhưng có cache cũ → dùng cache
             return lastRemotes.isEmpty ? nil : lastRemotes
         }
         lastRemotes = r
@@ -1269,7 +1266,6 @@ struct PatchGameDetailView: View {
         }
     }
 
-    // ⭐ ĐÃ ẨN "X PATCH · Y FOLDER" — chỉ giữ title game
     private var topBar: some View {
         HStack(spacing: 14) {
             Button { SoundFX.tap(); dismiss() } label: {
