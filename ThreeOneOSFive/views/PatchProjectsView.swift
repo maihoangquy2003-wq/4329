@@ -20,45 +20,146 @@ enum SoundFX {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// MARK: - SWEEP DISMISS (chặn popup "Xong" an toàn, không swizzling)
+// MARK: - SWEEP DISMISS (chặn popup "Xong" mạnh hơn)
 // ═══════════════════════════════════════════════════════════════
 enum InstallerAlertSweep {
-    /// Chạy 1 lần — tự động dismiss mọi alert "Xong/Đã cài đặt" trong 10s
-    static func start() {
-        for step in stride(from: 0.05, through: 10.0, by: 0.15) {
-            DispatchQueue.main.asyncAfter(deadline: .now() + step) {
-                dismissIfMatch()
+    private static var sweepTask: Task<Void, Never>?
+    private static var observer: NSObjectProtocol?
+    private static var windowObserver: NSObjectProtocol?
+
+    static func start(duration: TimeInterval = 30.0) {
+        stop()
+
+        sweepTask = Task { @MainActor in
+            let deadline = Date().addingTimeInterval(duration)
+            while !Task.isCancelled && Date() < deadline {
+                sweepOnce()
+                try? await Task.sleep(nanoseconds: 80_000_000)
+            }
+        }
+
+        observer = NotificationCenter.default.addObserver(
+            forName: UIApplication.didBecomeActiveNotification,
+            object: nil,
+            queue: .main
+        ) { _ in
+            Task { @MainActor in
+                sweepOnce()
+                try? await Task.sleep(nanoseconds: 100_000_000)
+                sweepOnce()
+                try? await Task.sleep(nanoseconds: 200_000_000)
+                sweepOnce()
+            }
+        }
+
+        windowObserver = NotificationCenter.default.addObserver(
+            forName: UIWindow.didBecomeVisibleNotification,
+            object: nil,
+            queue: .main
+        ) { _ in
+            Task { @MainActor in
+                try? await Task.sleep(nanoseconds: 50_000_000)
+                sweepOnce()
             }
         }
     }
 
-    private static func dismissIfMatch() {
-        guard let sc = UIApplication.shared.connectedScenes
-                .compactMap({ $0 as? UIWindowScene }).first,
-              let win = sc.windows.first(where: { $0.isKeyWindow })
-                ?? sc.windows.first,
-              let root = win.rootViewController
-        else { return }
+    static func stop() {
+        sweepTask?.cancel()
+        sweepTask = nil
+        if let o = observer { NotificationCenter.default.removeObserver(o); observer = nil }
+        if let o = windowObserver { NotificationCenter.default.removeObserver(o); windowObserver = nil }
+    }
 
-        var top: UIViewController = root
-        while let p = top.presentedViewController { top = p }
-
-        guard let alert = top as? UIAlertController else { return }
-
-        let t = (alert.title ?? "").lowercased()
-        let m = (alert.message ?? "").lowercased()
-
-        let isInstaller =
-            t == "xong" || t.contains("xong") ||
-            m.contains("đã cài đặt gói") ||
-            m.contains("cài đặt gói thành công") ||
-            m.contains("mở gói trong mục") ||
-            m.contains("đã cài đặt")
-
-        if isInstaller {
-            alert.dismiss(animated: false)
+    @MainActor
+    private static func sweepOnce() {
+        for scene in UIApplication.shared.connectedScenes {
+            guard let ws = scene as? UIWindowScene else { continue }
+            for window in ws.windows {
+                if let root = window.rootViewController {
+                    sweepVC(root)
+                }
+            }
         }
     }
+
+    @MainActor
+    private static func sweepVC(_ vc: UIViewController) {
+        if let alert = vc as? UIAlertController, shouldDismiss(alert) {
+            alert.dismiss(animated: false)
+        }
+        if let p = vc.presentedViewController { sweepVC(p) }
+        for c in vc.children { sweepVC(c) }
+    }
+
+    private static func shouldDismiss(_ alert: UIAlertController) -> Bool {
+        let rawTitle = (alert.title ?? "").trimmingCharacters(in: .whitespaces)
+        let rawMsg   = (alert.message ?? "").trimmingCharacters(in: .whitespaces)
+        let t = rawTitle.lowercased()
+        let m = rawMsg.lowercased()
+
+        let exactTitles: Set<String> = ["xong", "done", "hoàn tất", "thành công", "đã xong"]
+        if exactTitles.contains(t) { return true }
+
+        let msgKeys: [String] = [
+            "đã cài đặt gói", "cài đặt gói thành công", "mở gói trong mục",
+            "đã cài đặt", "cấu hình đã được cài đặt", "đã được cài đặt",
+            "quản lý cấu hình", "profile installed", "profile has been installed",
+            "installed successfully", "the profile has been installed"
+        ]
+        for k in msgKeys where m.contains(k) { return true }
+        for k in msgKeys where t.contains(k) { return true }
+
+        let titles = alert.actions.map { $0.title.lowercased() }
+        let isSystemPattern = alert.actions.count == 1 &&
+            (titles.contains("xong") || titles.contains("done") ||
+             titles.contains("ok") || titles.contains("đóng"))
+        if isSystemPattern && (t == "xong" || t == "done" ||
+                               t.contains("thành công") || t.contains("cài đặt")) {
+            return true
+        }
+
+        if alert.actions.count == 1,
+           let first = alert.actions.first,
+           ["xong", "done"].contains(first.title.lowercased()),
+           alert.preferredStyle == .alert, !m.isEmpty {
+            return true
+        }
+        return false
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// MARK: - OPTIMIZED URL SESSION (tăng tốc tải file)
+// ═══════════════════════════════════════════════════════════════
+enum NetSession {
+    /// Session tối ưu cho tốc độ tải: nhiều connection, timeout hợp lý, cache thông minh
+    static let shared: URLSession = {
+        let cfg = URLSessionConfiguration.default
+        cfg.timeoutIntervalForRequest = 20
+        cfg.timeoutIntervalForResource = 300
+        cfg.httpMaximumConnectionsPerHost = 8              // tăng từ 6 → 8
+        cfg.requestCachePolicy = .reloadIgnoringLocalCacheData
+        cfg.urlCache = nil
+        cfg.waitsForConnectivity = true
+        cfg.httpShouldUsePipelining = true                 // bật pipelining
+        cfg.httpAdditionalHeaders = [
+            "Accept-Encoding": "gzip, deflate, br",
+            "Connection": "keep-alive"
+        ]
+        return URLSession(configuration: cfg)
+    }()
+
+    /// Session riêng cho API JSON (nhẹ, cache ngắn)
+    static let api: URLSession = {
+        let cfg = URLSessionConfiguration.ephemeral
+        cfg.timeoutIntervalForRequest = 15
+        cfg.timeoutIntervalForResource = 30
+        cfg.httpMaximumConnectionsPerHost = 4
+        cfg.requestCachePolicy = .reloadIgnoringLocalAndRemoteCacheData
+        cfg.urlCache = nil
+        return URLSession(configuration: cfg)
+    }()
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -183,18 +284,25 @@ struct ActivationInfo: Identifiable {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// MARK: - META STORE
+// MARK: - META STORE (cache in-memory để tăng tốc)
 // ═══════════════════════════════════════════════════════════════
 enum PatchMetaStore {
     private static let key = "patch_meta_v34"
+    private static var cache: [String: PatchMeta]? = nil
+    private static let lock = NSLock()
 
     static func all() -> [String: PatchMeta] {
+        lock.lock(); defer { lock.unlock() }
+        if let c = cache { return c }
         guard let d = UserDefaults.standard.data(forKey: key),
               let x = try? JSONDecoder().decode([String: PatchMeta].self, from: d)
-        else { return [:] }
+        else { cache = [:]; return [:] }
+        cache = x
         return x
     }
     static func save(_ d: [String: PatchMeta]) {
+        lock.lock(); defer { lock.unlock() }
+        cache = d
         if let x = try? JSONEncoder().encode(d) {
             UserDefaults.standard.set(x, forKey: key)
         }
@@ -206,6 +314,9 @@ enum PatchMetaStore {
     static func hasUID(_ uid: String) -> Bool {
         for m in all().values where m.uid == uid { return true }
         return false
+    }
+    static func invalidate() {
+        lock.lock(); cache = nil; lock.unlock()
     }
 }
 
@@ -565,7 +676,7 @@ struct SilentSubMenuSheet: View {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// MARK: - ACTIVATION SHEET (⭐ đổi text khi success)
+// MARK: - ACTIVATION SHEET
 // ═══════════════════════════════════════════════════════════════
 struct ActivationNoteSheet: View {
     let info: ActivationInfo
@@ -585,7 +696,6 @@ struct ActivationNoteSheet: View {
                 VStack(spacing: 22) {
                     Spacer(minLength: 50)
 
-                    // Icon
                     if isError {
                         ZStack {
                             Circle().fill(accent).frame(width: 88, height: 88)
@@ -597,7 +707,6 @@ struct ActivationNoteSheet: View {
                             .shadow(color: .white.opacity(0.5), radius: 20)
                     }
 
-                    // Title
                     if isError {
                         VStack(spacing: 10) {
                             Text("HEADLOCK ZENIS")
@@ -614,7 +723,6 @@ struct ActivationNoteSheet: View {
                             if !info.tag.isEmpty { TagPill(tag: info.tag) }
                         }
                     } else {
-                        // ⭐ SUCCESS — text mới theo yêu cầu
                         VStack(spacing: 12) {
                             Text("HEADLOCK ZENIS")
                                 .font(.system(size: 13, weight: .heavy)).tracking(4.5)
@@ -632,7 +740,6 @@ struct ActivationNoteSheet: View {
                                 .multilineTextAlignment(.center)
                                 .padding(.horizontal, 20)
 
-                            // Tên patch
                             Text(info.patchName)
                                 .font(.system(size: 18, weight: .heavy))
                                 .foregroundStyle(.white)
@@ -644,7 +751,6 @@ struct ActivationNoteSheet: View {
                         }
                     }
 
-                    // Error reason
                     if isError, let e = info.errorMessage, !e.isEmpty {
                         VStack(alignment: .leading, spacing: 10) {
                             Text("LÝ DO")
@@ -662,7 +768,6 @@ struct ActivationNoteSheet: View {
                         .padding(.horizontal, 24)
                     }
 
-                    // Note
                     if hasNote {
                         VStack(alignment: .leading, spacing: 14) {
                             HStack(spacing: 8) {
@@ -714,7 +819,6 @@ struct ActivationNoteSheet: View {
                         .padding(.horizontal, 22)
                     }
 
-                    // Close
                     Button { SoundFX.tap(); onDismiss() } label: {
                         Text("ĐÃ HIỂU")
                             .font(.system(size: 14, weight: .heavy)).tracking(3)
@@ -763,7 +867,7 @@ struct PatchProjectsView: View {
             .task {
                 await syncNow()
                 while !Task.isCancelled {
-                    try? await Task.sleep(nanoseconds: 15_000_000_000)
+                    try? await Task.sleep(nanoseconds: 12_000_000_000) // 12s
                     if Task.isCancelled { break }
                     await syncNow()
                 }
@@ -899,61 +1003,85 @@ struct PatchProjectsView: View {
         isSyncing = true
         await SyncEngine.shared.run(store: store)
         store.reload()
-        try? await Task.sleep(nanoseconds: 250_000_000)
+        try? await Task.sleep(nanoseconds: 150_000_000)
         store.reload()
         isSyncing = false
     }
 }
 
 // ═══════════════════════════════════════════════════════════════
-// MARK: - SYNC ENGINE
+// MARK: - SYNC ENGINE (TỐI ƯU TỐC ĐỘ)
 // ═══════════════════════════════════════════════════════════════
 final class SyncEngine {
     static let shared = SyncEngine()
     private let lock = NSLock()
     private var isRunning = false
+    private var lastRemotes: [RemoteFileLite] = []
+    private var lastFetch: Date = .distantPast
+    private let remoteCacheTTL: TimeInterval = 5.0  // cache list.php 5s
     private init() {}
 
     func run(store: PatchProjectStore) async {
-        if isRunning { return }
+        lock.lock()
+        if isRunning { lock.unlock(); return }
         isRunning = true
-        defer { isRunning = false }
+        lock.unlock()
+        defer { lock.lock(); isRunning = false; lock.unlock() }
 
-        guard let remotes = await fetchRemotes() else { return }
+        guard let remotes = await fetchRemotesCached() else { return }
 
+        // ── 1. Cập nhật meta hiện có (in-memory, nhanh)
         var metaDict = PatchMetaStore.all()
+        var changed = false
         for (ln, var m) in metaDict {
             if let r = remotes.first(where: { $0.uid == m.uid }) {
-                m.remoteName = r.filename
-                m.gameType = r.gameType
-                m.folder = r.folder
-                if !m.tagOverride  { m.tag = r.tag }
-                if !m.nameOverride { m.displayName = r.displayName }
-                if !m.noteOverride { m.note = r.note }
+                if m.remoteName != r.filename { m.remoteName = r.filename; changed = true }
+                if m.gameType != r.gameType { m.gameType = r.gameType; changed = true }
+                if m.folder != r.folder { m.folder = r.folder; changed = true }
+                if !m.tagOverride, m.tag != r.tag { m.tag = r.tag; changed = true }
+                if !m.nameOverride, m.displayName != r.displayName { m.displayName = r.displayName; changed = true }
+                if !m.noteOverride, m.note != r.note { m.note = r.note; changed = true }
                 metaDict[ln] = m
             }
         }
-        PatchMetaStore.save(metaDict)
+        if changed { PatchMetaStore.save(metaDict) }
 
         await MainActor.run { store.reload() }
 
+        // ── 2. Match local items chưa có meta (nhanh)
         let items = await MainActor.run { store.items }
+        var toSave: [String: PatchMeta] = [:]
         for item in items {
             let ln = item.packageURL.lastPathComponent
             if PatchMetaStore.get(localName: ln) != nil { continue }
             if let r = findMatch(localName: ln, remotes: remotes) {
-                lock.lock()
-                PatchMetaStore.set(makeMeta(r, localName: ln), localName: ln)
-                lock.unlock()
+                toSave[ln] = makeMeta(r, localName: ln)
             }
         }
-
-        var missing: [RemoteFileLite] = []
-        for r in remotes where !PatchMetaStore.hasUID(r.uid) {
-            missing.append(r)
+        if !toSave.isEmpty {
+            var d = PatchMetaStore.all()
+            for (k, v) in toSave { d[k] = v }
+            PatchMetaStore.save(d)
         }
-        for (i, r) in missing.enumerated() {
-            _ = await importOne(remote: r, store: store, index: i+1, total: missing.count)
+
+        // ── 3. Import file thiếu (song song tối đa 3)
+        let missing = remotes.filter { !PatchMetaStore.hasUID($0.uid) }
+        if !missing.isEmpty {
+            await withTaskGroup(of: Void.self) { group in
+                var active = 0
+                let maxConcurrent = 3
+                for r in missing {
+                    if active >= maxConcurrent {
+                        await group.next()
+                        active -= 1
+                    }
+                    group.addTask { [weak self] in
+                        _ = await self?.importOne(remote: r, store: store)
+                    }
+                    active += 1
+                }
+                await group.waitForAll()
+            }
         }
 
         await MainActor.run { store.reload() }
@@ -974,8 +1102,8 @@ final class SyncEngine {
         return nil
     }
 
-    private func importOne(remote: RemoteFileLite, store: PatchProjectStore,
-                           index: Int, total: Int) async -> Bool {
+    /// Import 1 file — tối ưu: check 120ms/lần, tổng tối đa 30s
+    private func importOne(remote: RemoteFileLite, store: PatchProjectStore) async -> Bool {
         guard let url = URL(string: remote.url) else { return false }
 
         let before = await MainActor.run {
@@ -983,9 +1111,13 @@ final class SyncEngine {
         }
         await MainActor.run { store.importPackage(from: .remote(url)) }
 
-        for i in 0..<240 {
-            try? await Task.sleep(nanoseconds: 250_000_000)
-            if i % 2 == 0 { await MainActor.run { store.reload() } }
+        // Fast poll: 120ms, 250 vòng = 30s max
+        for i in 0..<250 {
+            try? await Task.sleep(nanoseconds: 120_000_000)
+            if Task.isCancelled { return false }
+
+            // Chỉ reload store mỗi 3 vòng để giảm tải main thread
+            if i % 3 == 0 { await MainActor.run { store.reload() } }
 
             let after = await MainActor.run {
                 Set(store.items.map { $0.packageURL.lastPathComponent })
@@ -1002,13 +1134,26 @@ final class SyncEngine {
             if chosen == nil && newFiles.count == 1 { chosen = newFiles.first }
             guard let local = chosen else { continue }
 
-            lock.lock()
             PatchMetaStore.set(makeMeta(remote, localName: local), localName: local)
-            lock.unlock()
             await MainActor.run { store.reload() }
             return true
         }
         return false
+    }
+
+    /// Fetch list.php với cache TTL 5s để tránh spam server
+    private func fetchRemotesCached() async -> [RemoteFileLite]? {
+        let now = Date()
+        if now.timeIntervalSince(lastFetch) < remoteCacheTTL, !lastRemotes.isEmpty {
+            return lastRemotes
+        }
+        guard let r = await fetchRemotes() else {
+            // Nếu fetch fail nhưng có cache cũ → dùng cache
+            return lastRemotes.isEmpty ? nil : lastRemotes
+        }
+        lastRemotes = r
+        lastFetch = now
+        return r
     }
 
     private func fetchRemotes() async -> [RemoteFileLite]? {
@@ -1019,11 +1164,12 @@ final class SyncEngine {
         do {
             var req = URLRequest(url: url)
             req.cachePolicy = .reloadIgnoringLocalAndRemoteCacheData
-            req.timeoutInterval = 15
+            req.timeoutInterval = 12
             req.setValue("no-cache", forHTTPHeaderField: "Cache-Control")
             req.setValue("no-cache", forHTTPHeaderField: "Pragma")
+            req.setValue("gzip, deflate, br", forHTTPHeaderField: "Accept-Encoding")
 
-            let (data, _) = try await URLSession.shared.data(for: req)
+            let (data, _) = try await NetSession.api.data(for: req)
 
             struct Wire: Decodable {
                 let uid: String?
@@ -1084,7 +1230,7 @@ struct PatchGameDetailView: View {
                     await MainActor.run { store.reload(); refreshTick &+= 1; syncFolders() }
                 }
                 while !Task.isCancelled {
-                    try? await Task.sleep(nanoseconds: 15_000_000_000)
+                    try? await Task.sleep(nanoseconds: 12_000_000_000)
                     if Task.isCancelled { break }
                     await SyncEngine.shared.run(store: store)
                     await MainActor.run { store.reload(); refreshTick &+= 1; syncFolders() }
@@ -1123,7 +1269,7 @@ struct PatchGameDetailView: View {
         }
     }
 
-    // ⭐ Ẩn "1 PATCH · 1 FOLDER" khi tổng ≤ 1
+    // ⭐ ĐÃ ẨN "X PATCH · Y FOLDER" — chỉ giữ title game
     private var topBar: some View {
         HStack(spacing: 14) {
             Button { SoundFX.tap(); dismiss() } label: {
@@ -1135,15 +1281,10 @@ struct PatchGameDetailView: View {
                 }
             }.buttonStyle(.plain)
 
-            VStack(alignment: .leading, spacing: 2) {
-                Text(game.title).font(.system(size: 15, weight: .heavy)).foregroundStyle(.white)
-                // ⭐ Chỉ hiện khi có > 1 patch HOẶC > 1 folder
-                if gameItems.count > 1 || folders.count > 1 {
-                    Text("\(displayedItems.count) PATCH · \(folders.count) FOLDER")
-                        .font(.system(size: 9, weight: .heavy)).tracking(1.4)
-                        .foregroundStyle(.white.opacity(0.5))
-                }
-            }
+            Text(game.title)
+                .font(.system(size: 15, weight: .heavy))
+                .foregroundStyle(.white)
+
             Spacer()
         }.padding(.horizontal, 18).padding(.top, 14).padding(.bottom, 12)
     }
@@ -1310,10 +1451,6 @@ struct PatchGameDetailView: View {
         store.reload(); noteItem = nil
     }
 
-    // ⭐ TOGGLE — bật patch:
-    //    1. Tắt patch khác cùng folder
-    //    2. Sweep chặn popup "Xong"
-    //    3. LUÔN hiện sheet khi thành công
     private func togglePatch(item: PatchLibraryItem, activate: Bool) {
         workingFileID = item.id.uuidString
         let nameSnap = displayName(for: item)
@@ -1332,7 +1469,6 @@ struct PatchGameDetailView: View {
         } : []
 
         Task.detached(priority: .userInitiated) {
-            // Tắt conflict
             for cid in conflictIDs {
                 if let r = DevicePatchService.latestReceipt(projectID: cid) {
                     try? DevicePatchService.restore(receipt: r)
@@ -1363,20 +1499,14 @@ struct PatchGameDetailView: View {
                     await MainActor.run { workingFileID = nil }; return
                 }
 
-                // ⭐ Bắt đầu sweep TRƯỚC khi apply
                 await MainActor.run { InstallerAlertSweep.start() }
-
                 _ = try DevicePatchService.apply(project: p)
-
-                // ⭐ Sweep lại sau khi apply
                 await MainActor.run { InstallerAlertSweep.start() }
 
                 await MainActor.run {
                     store.reload()
                     workingFileID = nil
                     SoundFX.success()
-
-                    // ⭐ LUÔN hiện sheet thành công — không cần check note nữa
                     activationInfo = ActivationInfo(
                         patchName: nameSnap, tag: tagSnap, note: noteSnap,
                         success: true, errorMessage: nil)
