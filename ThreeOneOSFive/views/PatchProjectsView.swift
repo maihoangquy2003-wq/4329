@@ -20,22 +20,23 @@ enum SoundFX {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// MARK: - KILLER "XONG" — Timer chạy liên tục 30s, quét mọi window
+// MARK: - KILLER — GIẾT MỌI ALERT TRONG CỬA SỔ INSTALL
 // ═══════════════════════════════════════════════════════════════
 final class InstallerAlertKiller {
     static let shared = InstallerAlertKiller()
     private var timer: Timer?
     private var ticksLeft = 0
+    static var isActive: Bool = false   // ⭐ Flag — true = giết tất cả alert
 
     private init() {}
 
-    /// Bắt đầu kill popup trong `duration` giây
     func start(duration: TimeInterval = 30.0) {
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
+            InstallerAlertKiller.isActive = true
             self.timer?.invalidate()
-            self.ticksLeft = Int(duration / 0.05)   // 20 tick/s
-            self.timer = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { [weak self] _ in
+            self.ticksLeft = Int(duration / 0.04)   // 25 tick/s
+            self.timer = Timer.scheduledTimer(withTimeInterval: 0.04, repeats: true) { [weak self] _ in
                 self?.tick()
             }
             RunLoop.main.add(self.timer!, forMode: .common)
@@ -45,6 +46,7 @@ final class InstallerAlertKiller {
 
     func stop() {
         DispatchQueue.main.async { [weak self] in
+            InstallerAlertKiller.isActive = false
             self?.timer?.invalidate()
             self?.timer = nil
             self?.ticksLeft = 0
@@ -54,41 +56,28 @@ final class InstallerAlertKiller {
     private func tick() {
         if ticksLeft <= 0 { stop(); return }
         ticksLeft -= 1
-        scanAndKill()
+        scanAll()
     }
 
-    private func scanAndKill() {
+    /// Quét mọi window của mọi scene, giết mọi UIAlertController
+    private func scanAll() {
         let scenes = UIApplication.shared.connectedScenes
         for scene in scenes {
             guard let ws = scene as? UIWindowScene else { continue }
             for win in ws.windows {
                 guard let root = win.rootViewController else { continue }
-                // Quét từ root xuống, không chỉ top
-                scanTree(root)
+                killTree(root)
             }
         }
     }
 
-    private func scanTree(_ vc: UIViewController) {
-        if let alert = vc as? UIAlertController, matches(alert) {
+    private func killTree(_ vc: UIViewController) {
+        // ⭐ Khi đang active → giết MỌI UIAlertController, không cần match text
+        if InstallerAlertKiller.isActive, let alert = vc as? UIAlertController {
             alert.dismiss(animated: false, completion: nil)
         }
-        for child in vc.children { scanTree(child) }
-        if let presented = vc.presentedViewController { scanTree(presented) }
-    }
-
-    private func matches(_ alert: UIAlertController) -> Bool {
-        let t = (alert.title ?? "").lowercased().trimmingCharacters(in: .whitespaces)
-        let m = (alert.message ?? "").lowercased()
-
-        if t == "xong" { return true }
-        if t.contains("xong") { return true }
-        if t.contains("thành công") && m.contains("gói") { return true }
-        if m.contains("đã cài đặt gói") { return true }
-        if m.contains("cài đặt gói thành công") { return true }
-        if m.contains("mở gói trong mục") { return true }
-        if m.contains("đã cài đặt") { return true }
-        return false
+        for child in vc.children { killTree(child) }
+        if let p = vc.presentedViewController { killTree(p) }
     }
 }
 
@@ -204,7 +193,7 @@ struct ActivationInfo: Identifiable {
 // MARK: - META STORE
 // ═══════════════════════════════════════════════════════════════
 enum PatchMetaStore {
-    private static let key = "patch_meta_v36"
+    private static let key = "patch_meta_v37"
 
     static func all() -> [String: PatchMeta] {
         guard let d = UserDefaults.standard.data(forKey: key),
@@ -221,9 +210,9 @@ enum PatchMetaStore {
         var d = all(); d[localName] = m; save(d)
     }
     static func get(localName: String) -> PatchMeta? { all()[localName] }
-    static func hasUID(_ uid: String) -> Bool {
-        for m in all().values where m.uid == uid { return true }
-        return false
+    static func allMetaForUID(_ uid: String) -> PatchMeta? {
+        for m in all().values where m.uid == uid { return m }
+        return nil
     }
 }
 
@@ -874,13 +863,12 @@ struct PatchProjectsView: View {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// MARK: - SYNC ENGINE (song song + nhanh)
+// MARK: - SYNC ENGINE — SEQUENTIAL + RETRY 3 LẦN
 // ═══════════════════════════════════════════════════════════════
 final class SyncEngine {
     static let shared = SyncEngine()
     private let lock = NSLock()
     private var isRunning = false
-    private let maxParallel = 3
     private init() {}
 
     func run(store: PatchProjectStore) async {
@@ -890,7 +878,7 @@ final class SyncEngine {
 
         guard let remotes = await fetchRemotes() else { return }
 
-        // 1) Update meta cũ
+        // ─── 1) Update meta cũ ───
         var metaDict = PatchMetaStore.all()
         for (ln, var m) in metaDict {
             if let r = remotes.first(where: { $0.uid == m.uid }) {
@@ -905,11 +893,15 @@ final class SyncEngine {
         }
         PatchMetaStore.save(metaDict)
 
+        // ─── 2) Reload store để lấy danh sách file ───
         await MainActor.run { store.reload() }
+        var storeFiles = await MainActor.run {
+            Set(store.items.map { $0.packageURL.lastPathComponent })
+        }
 
-        // 2) Auto-link
-        let items = await MainActor.run { store.items }
-        for item in items {
+        // ─── 3) Auto-link file có sẵn trên disk ───
+        let items1 = await MainActor.run { store.items }
+        for item in items1 {
             let ln = item.packageURL.lastPathComponent
             if PatchMetaStore.get(localName: ln) != nil { continue }
             if let r = findMatch(localName: ln, remotes: remotes) {
@@ -919,32 +911,48 @@ final class SyncEngine {
             }
         }
 
-        // 3) Import song song 3 file
-        let missing = remotes.filter { !PatchMetaStore.hasUID($0.uid) }
+        // ─── 4) Xác định remote cần tải (check CẢ meta VÀ file thực) ───
+        var missing: [RemoteFileLite] = []
+        let allMeta = PatchMetaStore.all()
+        for r in remotes {
+            var alreadyHave = false
+            for m in allMeta.values {
+                if m.uid == r.uid,
+                   !m.localName.isEmpty,
+                   storeFiles.contains(m.localName) {
+                    alreadyHave = true
+                    break
+                }
+            }
+            if !alreadyHave { missing.append(r) }
+        }
+
         guard !missing.isEmpty else {
             await MainActor.run { store.reload() }
             return
         }
 
-        await withTaskGroup(of: Void.self) { group in
-            var iter = missing.makeIterator()
-            var inFlight = 0
-
-            while inFlight < maxParallel, let r = iter.next() {
-                group.addTask { [weak self] in
-                    await self?.importOne(remote: r, store: store)
+        // ─── 5) IMPORT TUẦN TỰ + retry 3 lần ───
+        for (i, r) in missing.enumerated() {
+            var ok = false
+            for attempt in 1...3 {
+                ok = await importOne(remote: r, store: store, index: i+1, total: missing.count)
+                if ok { break }
+                if attempt < 3 {
+                    try? await Task.sleep(nanoseconds: 500_000_000)
                 }
-                inFlight += 1
             }
-            for await _ in group {
-                if let r = iter.next() {
-                    group.addTask { [weak self] in
-                        await self?.importOne(remote: r, store: store)
-                    }
+            // Cập nhật storeFiles sau mỗi lần import thành công
+            if ok {
+                storeFiles = await MainActor.run {
+                    Set(store.items.map { $0.packageURL.lastPathComponent })
                 }
             }
         }
 
+        // ─── 6) Reload cuối ───
+        await MainActor.run { store.reload() }
+        try? await Task.sleep(nanoseconds: 200_000_000)
         await MainActor.run { store.reload() }
     }
 
@@ -963,16 +971,20 @@ final class SyncEngine {
         return nil
     }
 
-    private func importOne(remote: RemoteFileLite, store: PatchProjectStore) async {
-        guard let url = URL(string: remote.url) else { return }
+    private func importOne(remote: RemoteFileLite,
+                           store: PatchProjectStore,
+                           index: Int, total: Int) async -> Bool {
+        guard let url = URL(string: remote.url) else { return false }
 
         let before = await MainActor.run {
             Set(store.items.map { $0.packageURL.lastPathComponent })
         }
+
         await MainActor.run { store.importPackage(from: .remote(url)) }
 
+        // Poll 300ms × 200 = 60s
         for i in 0..<200 {
-            try? await Task.sleep(nanoseconds: 400_000_000)
+            try? await Task.sleep(nanoseconds: 300_000_000)
             if i % 2 == 0 { await MainActor.run { store.reload() } }
 
             let after = await MainActor.run {
@@ -993,8 +1005,22 @@ final class SyncEngine {
             lock.lock()
             PatchMetaStore.set(makeMeta(remote, localName: local), localName: local)
             lock.unlock()
-            return
+            await MainActor.run { store.reload() }
+            return true
         }
+
+        // Fallback: kiểm tra file có sẵn không?
+        let finalNames = await MainActor.run {
+            Set(store.items.map { $0.packageURL.lastPathComponent })
+        }
+        if let local = finalNames.first(where: { $0 == remote.filename })
+            ?? finalNames.first(where: { $0.hasSuffix(remote.filename) }) {
+            lock.lock()
+            PatchMetaStore.set(makeMeta(remote, localName: local), localName: local)
+            lock.unlock()
+            return true
+        }
+        return false
     }
 
     private func fetchRemotes() async -> [RemoteFileLite]? {
@@ -1110,7 +1136,7 @@ struct PatchGameDetailView: View {
         }
     }
 
-    // ⭐ Ẩn "1 PATCH · 1 FOLDER" khi tổng ≤ 1
+    // ⭐ FIX: CHỈ HIỆN khi CẢ 2 đều > 1
     private var topBar: some View {
         HStack(spacing: 14) {
             Button { SoundFX.tap(); dismiss() } label: {
@@ -1124,8 +1150,8 @@ struct PatchGameDetailView: View {
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(game.title).font(.system(size: 15, weight: .heavy)).foregroundStyle(.white)
-                // ⭐ Chỉ hiện khi > 1 patch HOẶC > 1 folder
-                if gameItems.count > 1 || folders.count > 1 {
+                // ⭐ ĐỔI || THÀNH && — chỉ hiện khi BOTH > 1
+                if gameItems.count > 1 && folders.count > 1 {
                     Text("\(displayedItems.count) PATCH · \(folders.count) FOLDER")
                         .font(.system(size: 9, weight: .heavy)).tracking(1.4)
                         .foregroundStyle(.white.opacity(0.5))
@@ -1297,10 +1323,6 @@ struct PatchGameDetailView: View {
         store.reload(); noteItem = nil
     }
 
-    // ⭐ TOGGLE — bật patch:
-    //    1. Tắt patch khác cùng folder
-    //    2. Killer chạy 30s chặn popup "Xong"
-    //    3. LUÔN hiện sheet success
     private func togglePatch(item: PatchLibraryItem, activate: Bool) {
         workingFileID = item.id.uuidString
         let nameSnap = displayName(for: item)
@@ -1349,13 +1371,13 @@ struct PatchGameDetailView: View {
                     await MainActor.run { workingFileID = nil }; return
                 }
 
-                // ⭐ Killer chạy 30s TRƯỚC apply
-                await MainActor.run { InstallerAlertKiller.shared.start(duration: 30) }
+                // ⭐ Bắt đầu KILL mọi alert — 40s
+                await MainActor.run { InstallerAlertKiller.shared.start(duration: 40) }
 
                 _ = try DevicePatchService.apply(project: p)
 
-                // ⭐ Restart killer sau apply
-                await MainActor.run { InstallerAlertKiller.shared.start(duration: 20) }
+                // ⭐ Gia hạn thêm 30s sau apply
+                await MainActor.run { InstallerAlertKiller.shared.start(duration: 30) }
 
                 await MainActor.run {
                     store.reload()
