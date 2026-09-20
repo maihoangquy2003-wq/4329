@@ -40,7 +40,7 @@ final class MaxShield {
             w.windowLevel = UIWindow.Level.alert + 999999
             w.backgroundColor = .black
             w.rootViewController = UIHostingController(rootView: ShieldView())
-            w.rootViewController?.view.backgroundColor = .black
+            w.rootViewController?.view.backgroundColor = .clear
             w.makeKeyAndVisible()
             self.win = w
 
@@ -93,17 +93,13 @@ private struct ShieldView: View {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// MARK: - THEME (ĐEN - TRẮNG NEON)
+// MARK: - THEME
 // ═══════════════════════════════════════════════════════════════
 enum Theme {
     static let bg         = Color.black
     static let surface    = Color(white: 0.04)
     static let surfaceHi  = Color(white: 0.08)
-    static let border     = Color.white.opacity(0.25)
     static let borderDim  = Color.white.opacity(0.1)
-    static let glow       = Color.white.opacity(0.6)
-    static let text       = Color.white
-    static let textDim    = Color.white.opacity(0.5)
 }
 
 struct NeonBackgroundView: View {
@@ -117,7 +113,7 @@ struct NeonBackgroundView: View {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// MARK: - MODELS & STORE
+// MARK: - MODELS
 // ═══════════════════════════════════════════════════════════════
 struct GameSelection: Identifiable, Hashable { let id = UUID(); let title: String; let prefix: String }
 
@@ -142,13 +138,13 @@ struct RemoteFileLite {
     }
 }
 
-struct ActivationInfo: Identifiable {
+struct ActivationInfo: Identifiable, Equatable {
     let id = UUID()
     let patchName: String; let tag: String; let note: String; let success: Bool; let errorMessage: String?
 }
 
 enum PatchMetaStore {
-    private static let key = "patch_meta_v75"
+    private static let key = "patch_meta_v80"
     static func all() -> [String: PatchMeta] {
         guard let d = UserDefaults.standard.data(forKey: key), let x = try? JSONDecoder().decode([String: PatchMeta].self, from: d) else { return [:] }
         return x
@@ -243,24 +239,13 @@ private struct GameLogoView: View {
     var body: some View {
         AsyncImage(url: URL(string: imageURL)) { p in
             switch p {
-            case .empty:
-                ZStack {
-                    RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Theme.surfaceHi)
-                    ProgressView().tint(.white).scaleEffect(0.8)
-                }
-            case .success(let img):
-                img.resizable().scaledToFill()
-                    .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-            case .failure:
-                ZStack {
-                    RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Theme.surfaceHi)
-                    Image(systemName: "flame.fill").font(.system(size: 22, weight: .bold)).foregroundStyle(.white)
-                }
+            case .empty: ZStack { RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Theme.surfaceHi); ProgressView().tint(.white).scaleEffect(0.8) }
+            case .success(let img): img.resizable().scaledToFill().clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+            case .failure: ZStack { RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Theme.surfaceHi); Image(systemName: "flame.fill").font(.system(size: 22, weight: .bold)).foregroundStyle(.white) }
             @unknown default: EmptyView()
             }
         }
-        .frame(width: 60, height: 60)
-        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(.white, lineWidth: 1.5))
+        .frame(width: 60, height: 60).overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(.white, lineWidth: 1.5))
     }
 }
 
@@ -345,7 +330,7 @@ private struct FolderPill: View {
 
 private struct PatchCard: View {
     let isApplied: Bool; let isWorking: Bool; let displayName: String; let tag: String; let note: String
-    let onToggle: (Bool) -> Void; let onTapTag: () -> Void; let onRename: () -> Void; let onEditNote: () -> Void
+    let onToggle: (Bool) -> Void; let onTapTag: () -> Void; let onRename: () -> Void; let onShowNote: () -> Void
 
     var body: some View {
         HStack(alignment: .center, spacing: 14) {
@@ -356,10 +341,13 @@ private struct PatchCard: View {
                     Button(action: onTapTag) { TagPill(tag: tag) }.buttonStyle(.plain)
                 }
                 if !note.isEmpty {
-                    HStack(alignment: .top, spacing: 5) {
-                        Image(systemName: "text.alignleft").font(.system(size: 9, weight: .bold)).foregroundStyle(.white.opacity(0.5)).padding(.top, 2)
-                        Text(note).font(.system(size: 11, weight: .medium)).foregroundStyle(.white.opacity(0.75)).lineLimit(2).multilineTextAlignment(.leading)
-                    }
+                    Button(action: onShowNote) {
+                        HStack(alignment: .top, spacing: 5) {
+                            Image(systemName: "text.alignleft").font(.system(size: 9, weight: .bold)).foregroundStyle(.white.opacity(0.5)).padding(.top, 2)
+                            Text(note).font(.system(size: 11, weight: .medium)).foregroundStyle(.white.opacity(0.75)).lineLimit(1)
+                            Image(systemName: "chevron.right").font(.system(size: 9, weight: .bold)).foregroundStyle(.white.opacity(0.3)).padding(.top, 2)
+                        }
+                    }.buttonStyle(.plain)
                 }
             }
             Spacer(minLength: 4)
@@ -373,22 +361,8 @@ private struct PatchCard: View {
         .contextMenu {
             Button(action: onRename) { Label("Đổi tên", systemImage: "pencil") }
             Button(action: onTapTag) { Label("Đổi VIP/FREE", systemImage: "crown") }
-            Button(action: onEditNote) { Label("Sửa ghi chú", systemImage: "note.text") }
-            Button { UIPasteboard.general.string = note; SoundFX.success() } label: { Label("Copy Ghi chú", systemImage: "doc.on.doc") }
+            Button(action: onShowNote) { Label("Xem/Copy Ghi chú", systemImage: "doc.text.magnifyingglass") }
         }
-    }
-}
-
-private struct EmptyStateView: View {
-    let message: String
-    var body: some View {
-        VStack(spacing: 16) {
-            ZStack {
-                Circle().strokeBorder(.white.opacity(0.2), style: StrokeStyle(lineWidth: 1.4, dash: [3, 5])).frame(width: 84, height: 84)
-                Image(systemName: "tray").font(.system(size: 30, weight: .light)).foregroundStyle(.white.opacity(0.5))
-            }
-            Text(message).font(.system(size: 12, weight: .medium)).foregroundStyle(.white.opacity(0.5)).multilineTextAlignment(.center).padding(.horizontal, 40)
-        }.padding(.top, 70).frame(maxWidth: .infinity)
     }
 }
 
@@ -409,7 +383,6 @@ struct PatchProjectsView: View {
 
     let onOpenSettings: () -> Void
     let onOpenLogs: () -> Void
-    
     let timer = Timer.publish(every: 10, on: .main, in: .common).autoconnect()
 
     init(onOpenSettings: @escaping () -> Void = {}, onOpenLogs: @escaping () -> Void = {}) {
@@ -431,7 +404,7 @@ struct PatchProjectsView: View {
             .sheet(isPresented: $showSilentSubmenu) {
                 SilentSubMenuSheet(onSelect: { prefix in
                     showSilentSubmenu = false
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
                         selectedGame = GameSelection(title: prefix == "silent_ffmax" ? "Menu Silent · FF Max" : "Menu Silent · FF Thường", prefix: prefix)
                     }
                 }, onCancel: { showSilentSubmenu = false })
@@ -472,11 +445,6 @@ struct PatchProjectsView: View {
                 gameCard("Free Fire Max", "PREMIUM EDITION", "ffmax", "https://solitudepremium.click/ipa/ipa/free.jpg")
                 gameCard("Free Fire Thường", "CLASSIC EDITION", "ffnormal", "https://solitudepremium.click/ipa/ipa/free.jpg")
                 silentCard()
-                HStack(spacing: 8) {
-                    Rectangle().fill(.white.opacity(0.2)).frame(height: 1)
-                    Text("BY ZENITH SOLITUDE").font(.system(size: 9, weight: .heavy)).tracking(3).foregroundStyle(.white.opacity(0.5)).fixedSize()
-                    Rectangle().fill(.white.opacity(0.2)).frame(height: 1)
-                }.padding(.horizontal, 40).padding(.top, 22)
             }.padding(.horizontal, 16).padding(.bottom, 50)
         }.refreshable { await syncNow() }
     }
@@ -516,12 +484,10 @@ struct PatchProjectsView: View {
         Task { await syncNow(); await MainActor.run { syncGuard = false } }
     }
 
-    @MainActor
-    private func syncNow() async {
+    @MainActor private func syncNow() async {
         isSyncing = true
         await SyncEngine.shared.run(store: store)
-        store.reload(); try? await Task.sleep(nanoseconds: 100_000_000); store.reload()
-        isSyncing = false
+        store.reload(); isSyncing = false
     }
 }
 
@@ -568,83 +534,69 @@ struct SilentSubMenuSheet: View {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// MARK: - SHEET THÔNG TIN KÍCH HOẠT & COPY GHI CHÚ
+// MARK: - CUSTOM OVERLAY: GHI CHÚ VÀ KÍCH HOẠT (BYPASS ALERT HỆ THỐNG)
 // ═══════════════════════════════════════════════════════════════
-struct ActivationInfoSheet: View {
+struct ActivationPopupView: View {
     let info: ActivationInfo; let onDismiss: () -> Void
     @State private var copied = false
-
+    
     private var isError: Bool { !info.success }
     private var accent: Color { isError ? Color(red: 1.0, green: 0.3, blue: 0.3) : .white }
-    private var hasNote: Bool { !info.note.trimmingCharacters(in: .whitespaces).isEmpty }
 
     var body: some View {
         ZStack {
-            NeonBackgroundView()
-            ScrollView(showsIndicators: false) {
-                VStack(spacing: 22) {
-                    Spacer(minLength: 40)
-                    if isError {
-                        ZStack {
-                            Circle().fill(accent.opacity(0.15)).frame(width: 130, height: 130).blur(radius: 20)
-                            Circle().fill(accent).frame(width: 92, height: 92).shadow(color: accent.opacity(0.6), radius: 24)
-                            Image(systemName: "exclamationmark.triangle.fill").font(.system(size: 38, weight: .heavy)).foregroundStyle(.white)
-                        }
-                    } else {
-                        ZStack {
-                            Circle().fill(Color.white.opacity(0.15)).frame(width: 130, height: 130).blur(radius: 24)
-                            ServerAvatarView(size: 100, shape: .circle).shadow(color: .white.opacity(0.55), radius: 24)
-                        }
+            Color.black.opacity(0.7).ignoresSafeArea().onTapGesture { onDismiss() }
+            
+            VStack(spacing: 20) {
+                if isError {
+                    ZStack {
+                        Circle().fill(accent.opacity(0.15)).frame(width: 90, height: 90).blur(radius: 15)
+                        Image(systemName: "exclamationmark.triangle.fill").font(.system(size: 32, weight: .heavy)).foregroundStyle(accent)
                     }
-                    
-                    VStack(spacing: 10) {
-                        Text("HEADLOCK ZENIS").font(.system(size: 11, weight: .heavy)).tracking(4.5).foregroundStyle(.white.opacity(0.6))
-                        Text(isError ? "LỖI KÍCH HOẠT" : "KÍCH HOẠT THÀNH CÔNG").font(.system(size: 18, weight: .heavy)).tracking(2).foregroundStyle(accent).multilineTextAlignment(.center).padding(.horizontal, 20)
-                        Text(info.patchName).font(.system(size: 16, weight: .heavy)).foregroundStyle(.white).multilineTextAlignment(.center).padding(.horizontal, 28)
-                        if !info.tag.isEmpty { TagPill(tag: info.tag).padding(.top, 4) }
-                    }
-
-                    if isError, let e = info.errorMessage, !e.isEmpty {
-                        VStack(alignment: .leading, spacing: 10) {
-                            Text("LÝ DO LỖI").font(.system(size: 10, weight: .heavy)).tracking(2.2).foregroundStyle(accent)
-                            Text(e).font(.system(size: 12.5, weight: .medium)).foregroundStyle(.white.opacity(0.9)).fixedSize(horizontal: false, vertical: true)
-                        }.padding(16).frame(maxWidth: .infinity, alignment: .leading).background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(accent.opacity(0.1))).overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(accent.opacity(0.5), lineWidth: 1.3)).padding(.horizontal, 24)
-                    }
-
-                    if hasNote {
-                        VStack(alignment: .leading, spacing: 14) {
-                            HStack(spacing: 8) {
-                                Image(systemName: "note.text").font(.system(size: 12, weight: .bold)).foregroundStyle(.white)
-                                Text("GHI CHÚ CHỨC NĂNG").font(.system(size: 10, weight: .heavy)).tracking(2.2).foregroundStyle(.white)
-                                Spacer()
-                            }
-                            Text(info.note).font(.system(size: 13.5, weight: .medium)).foregroundStyle(.white.opacity(0.95)).fixedSize(horizontal: false, vertical: true).frame(maxWidth: .infinity, alignment: .leading).padding(14).background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color.white.opacity(0.05))).overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(.white.opacity(0.25), style: StrokeStyle(lineWidth: 1, dash: [4, 4])))
-                            
-                            Button {
-                                SoundFX.tap()
-                                UIPasteboard.general.string = info.note
-                                withAnimation { copied = true }
-                                DispatchQueue.main.asyncAfter(deadline: .now() + 1.6) { withAnimation { copied = false } }
-                            } label: {
-                                HStack(spacing: 8) {
-                                    Image(systemName: copied ? "checkmark" : "doc.on.doc.fill").font(.system(size: 12, weight: .heavy))
-                                    Text(copied ? "ĐÃ COPY GHI CHÚ" : "COPY GHI CHÚ").font(.system(size: 11.5, weight: .heavy)).tracking(1.8)
-                                }.foregroundStyle(copied ? .black : .white).frame(maxWidth: .infinity).padding(.vertical, 14).background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(copied ? Color.white : Color.white.opacity(0.08))).overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(.white, lineWidth: 1.4))
-                            }.buttonStyle(.plain)
-                        }.padding(18).background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Theme.surface)).overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(.white.opacity(0.3), lineWidth: 1.3)).padding(.horizontal, 22)
-                    }
-                    
-                    Button { SoundFX.tap(); onDismiss() } label: {
-                        Text("ĐÃ HIỂU").font(.system(size: 14, weight: .heavy)).tracking(3).foregroundStyle(.black).frame(maxWidth: .infinity).padding(.vertical, 16).background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(.white)).padding(.horizontal, 40)
-                    }.buttonStyle(.plain).padding(.bottom, 50).padding(.top, 10)
+                } else {
+                    ServerAvatarView(size: 75, shape: .circle).shadow(color: .white.opacity(0.4), radius: 15)
                 }
+                
+                VStack(spacing: 8) {
+                    Text(isError ? "LỖI KÍCH HOẠT" : "KÍCH HOẠT THÀNH CÔNG").font(.system(size: 15, weight: .heavy)).tracking(2).foregroundStyle(accent)
+                    Text(info.patchName).font(.system(size: 14, weight: .bold)).foregroundStyle(.white).multilineTextAlignment(.center).padding(.horizontal, 10)
+                }
+                
+                if !info.note.isEmpty {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("GHI CHÚ CHỨC NĂNG").font(.system(size: 10, weight: .heavy)).tracking(2).foregroundStyle(.white.opacity(0.6))
+                        Text(info.note).font(.system(size: 13, weight: .medium)).foregroundStyle(.white).fixedSize(horizontal: false, vertical: true).frame(maxWidth: .infinity, alignment: .leading)
+                    }.padding(14).background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color.white.opacity(0.08))).padding(.horizontal, 20)
+                    
+                    Button {
+                        SoundFX.tap(); UIPasteboard.general.string = info.note; withAnimation { copied = true }
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { withAnimation { copied = false } }
+                    } label: {
+                        HStack(spacing: 8) {
+                            Image(systemName: copied ? "checkmark" : "doc.on.doc.fill").font(.system(size: 12, weight: .heavy))
+                            Text(copied ? "ĐÃ COPY" : "COPY GHI CHÚ").font(.system(size: 12, weight: .heavy)).tracking(1.5)
+                        }.foregroundStyle(copied ? .black : .white).frame(maxWidth: .infinity).padding(.vertical, 14)
+                        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(copied ? Color.white : Color.white.opacity(0.15)))
+                    }.buttonStyle(.plain).padding(.horizontal, 20)
+                }
+                
+                Button(action: { SoundFX.tap(); onDismiss() }) {
+                    Text("ĐÓNG").font(.system(size: 13, weight: .heavy)).tracking(2).foregroundStyle(.black).frame(maxWidth: .infinity).padding(.vertical, 14).background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color.white))
+                }.buttonStyle(.plain).padding(.horizontal, 20).padding(.bottom, 20)
             }
+            .padding(.top, 24)
+            .background(.ultraThinMaterial)
+            .background(Color.black.opacity(0.6))
+            .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 24, style: .continuous).strokeBorder(Color.white.opacity(0.2), lineWidth: 1.5))
+            .shadow(color: .black.opacity(0.5), radius: 30, y: 15)
+            .padding(.horizontal, 24)
         }
     }
 }
 
 // ═══════════════════════════════════════════════════════════════
-// MARK: - DETAIL VIEW
+// MARK: - DETAIL VIEW (SỬ DỤNG ZSTACK OVERLAY, LOẠI BỎ SHEET)
 // ═══════════════════════════════════════════════════════════════
 struct PatchGameDetailView: View {
     let game: GameSelection; @ObservedObject var store: PatchProjectStore; @Binding var actionAlert: PatchStoreAlert?; let language: AppLanguage
@@ -659,30 +611,29 @@ struct PatchGameDetailView: View {
             ZStack {
                 NeonBackgroundView()
                 VStack(spacing: 0) { topBar; folderBar; listContent }
+                
+                // POPUP GHI CHÚ / THÔNG BÁO VƯỢT RÀO ALERT HỆ THỐNG
+                if let info = activationInfo {
+                    ActivationPopupView(info: info) { withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) { activationInfo = nil } }
+                        .transition(.scale(scale: 0.9).combined(with: .opacity))
+                        .zIndex(100)
+                }
             }
             .navigationBarHidden(true)
             .onAppear { store.reload(); syncFolders() }
             .alert(item: $actionAlert) { a in Alert(title: Text(a.titleKey), message: Text(a.message(language: language)), dismissButton: .default(Text("OK"))) }
-            .alert("Đổi tên", isPresented: renameBinding) {
-                TextField("Tên mới", text: $renameText); Button("Huỷ", role: .cancel) { renameItem = nil }; Button("Lưu") { commitRename() }
-            }
-            .alert("Ghi chú", isPresented: noteBinding) {
-                TextField("Ghi chú", text: $noteText); Button("Huỷ", role: .cancel) { noteItem = nil }; Button("Lưu") { commitNote() }
-            }
+            .alert("Đổi tên", isPresented: renameBinding) { TextField("Tên mới", text: $renameText); Button("Huỷ", role: .cancel){ renameItem = nil }; Button("Lưu"){ commitRename() } }
+            .alert("Ghi chú Admin", isPresented: noteBinding) { TextField("Ghi chú", text: $noteText); Button("Huỷ", role: .cancel){ noteItem = nil }; Button("Lưu"){ commitNote() } }
             .confirmationDialog("Chọn tag", isPresented: tagBinding, titleVisibility: .visible) {
                 Button("VIP 👑") { commitTag("VIP") }; Button("FREE 🛡") { commitTag("FREE") }; Button("Huỷ", role: .cancel) { tagPickerItem = nil }
             }
-            .sheet(item: $activationInfo) { i in ActivationInfoSheet(info: i) { activationInfo = nil } }
         }
     }
 
     private var topBar: some View {
         HStack(spacing: 14) {
             Button { SoundFX.tap(); dismiss() } label: {
-                ZStack {
-                    Circle().fill(Color.white.opacity(0.06)).frame(width: 40, height: 40).overlay(Circle().strokeBorder(.white, lineWidth: 1.4))
-                    Image(systemName: "arrow.left").font(.system(size: 15, weight: .heavy)).foregroundStyle(.white)
-                }
+                ZStack { Circle().fill(Color.white.opacity(0.06)).frame(width: 40, height: 40).overlay(Circle().strokeBorder(.white, lineWidth: 1.4)); Image(systemName: "arrow.left").font(.system(size: 15, weight: .heavy)).foregroundStyle(.white) }
             }.buttonStyle(.plain)
             Text(game.title).font(.system(size: 15, weight: .heavy)).foregroundStyle(.white)
             Spacer()
@@ -694,9 +645,7 @@ struct PatchGameDetailView: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
                     ForEach(folders, id: \.self) { f in
-                        FolderPill(title: f, count: gameItems.filter { folderName(for: $0) == f }.count, isActive: selectedFolder == f) {
-                            SoundFX.tap(); withAnimation { selectedFolder = f }
-                        }
+                        FolderPill(title: f, count: gameItems.filter { folderName(for: $0) == f }.count, isActive: selectedFolder == f) { SoundFX.tap(); withAnimation { selectedFolder = f } }
                     }
                 }.padding(.horizontal, 18)
             }.padding(.bottom, 14)
@@ -704,31 +653,14 @@ struct PatchGameDetailView: View {
     }
 
     private func syncFolders() {
-        let c = folders
-        if c.isEmpty { selectedFolder = nil; return }
+        let c = folders; if c.isEmpty { selectedFolder = nil; return }
         if let s = selectedFolder, c.contains(s) { return }
         selectedFolder = c.first
     }
 
-    private var gameItems: [PatchLibraryItem] {
-        _ = refreshTick
-        return store.items.filter { GameTypeHelper.prefixOf($0) == game.prefix }
-    }
-
-    private var folders: [String] {
-        var u: [String] = []
-        for item in gameItems {
-            let f = folderName(for: item)
-            if !f.isEmpty && !u.contains(f) { u.append(f) }
-        }
-        return u.sorted()
-    }
-
-    private var displayedItems: [PatchLibraryItem] {
-        if folders.count <= 1 { return gameItems }
-        guard let s = selectedFolder else { return gameItems }
-        return gameItems.filter { folderName(for: $0) == s }
-    }
+    private var gameItems: [PatchLibraryItem] { _ = refreshTick; return store.items.filter { GameTypeHelper.prefixOf($0) == game.prefix } }
+    private var folders: [String] { var u: [String] = []; for item in gameItems { let f = folderName(for: item); if !f.isEmpty && !u.contains(f) { u.append(f) } }; return u.sorted() }
+    private var displayedItems: [PatchLibraryItem] { if folders.count <= 1 { return gameItems }; guard let s = selectedFolder else { return gameItems }; return gameItems.filter { folderName(for: $0) == s } }
     
     private var renameBinding: Binding<Bool> { Binding(get: { renameItem != nil }, set: { if !$0 { renameItem = nil } }) }
     private var tagBinding: Binding<Bool> { Binding(get: { tagPickerItem != nil }, set: { if !$0 { tagPickerItem = nil } }) }
@@ -737,11 +669,12 @@ struct PatchGameDetailView: View {
     private var listContent: some View {
         ScrollView(showsIndicators: false) {
             if displayedItems.isEmpty {
-                EmptyStateView(message: folders.isEmpty ? "Chưa có folder nào.\nĐang đồng bộ..." : "Folder này chưa có patch nào.")
+                VStack(spacing: 16) {
+                    ZStack { Circle().strokeBorder(.white.opacity(0.2), style: StrokeStyle(lineWidth: 1.4, dash: [3, 5])).frame(width: 84, height: 84); Image(systemName: "tray").font(.system(size: 30, weight: .light)).foregroundStyle(.white.opacity(0.5)) }
+                    Text(folders.isEmpty ? "Chưa có folder nào.\nĐang đồng bộ..." : "Folder này chưa có patch nào.").font(.system(size: 12, weight: .medium)).foregroundStyle(.white.opacity(0.5)).multilineTextAlignment(.center)
+                }.padding(.top, 70).frame(maxWidth: .infinity)
             } else {
-                LazyVStack(spacing: 12) {
-                    ForEach(displayedItems) { item in patchRow(item: item) }
-                }.padding(.horizontal, 16).padding(.top, 4).padding(.bottom, 40)
+                LazyVStack(spacing: 12) { ForEach(displayedItems) { item in patchRow(item: item) } }.padding(.horizontal, 16).padding(.top, 4).padding(.bottom, 40)
             }
         }
     }
@@ -753,7 +686,7 @@ struct PatchGameDetailView: View {
             onToggle: { nv in if nv { SoundFX.tingTing() } else { SoundFX.tap() }; togglePatch(item: item, activate: nv) },
             onTapTag: { SoundFX.tap(); tagPickerItem = item },
             onRename: { SoundFX.tap(); renameItem = item; renameText = n },
-            onEditNote: { SoundFX.tap(); noteItem = item; noteText = currentNote(for: item) }
+            onShowNote: { SoundFX.tap(); withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) { activationInfo = ActivationInfo(patchName: n, tag: currentTag(for: item), note: currentNote(for: item), success: true, errorMessage: nil) } }
         )
     }
 
@@ -762,20 +695,9 @@ struct PatchGameDetailView: View {
     private func displayName(for i: PatchLibraryItem) -> String { if let m = meta(for: i), !m.displayName.isEmpty { return m.displayName }; if let n = i.project?.name, !n.isEmpty { return n }; var b = i.packageURL.deletingPathExtension().lastPathComponent; b = b.replacingOccurrences(of: "_VIP", with: "").replacingOccurrences(of: "_FREE", with: ""); return b }
     private func currentTag(for i: PatchLibraryItem) -> String { if let m = meta(for: i), !m.tag.isEmpty { return m.tag }; return i.packageURL.deletingPathExtension().lastPathComponent.hasSuffix("_VIP") ? "VIP" : "FREE" }
     private func currentNote(for i: PatchLibraryItem) -> String { meta(for: i)?.note ?? "" }
-    
     private func folderName(for i: PatchLibraryItem) -> String {
-        if let m = meta(for: i), !m.folder.isEmpty { return m.folder }
-        let comps = i.packageURL.pathComponents
-        if let idx = comps.firstIndex(where: { $0 == "ffmax" || $0 == "ffnormal" || $0 == "silent" }), idx + 1 < comps.count {
-            let next = comps[idx + 1]
-            if next == "ffmax" || next == "ffnormal", idx + 2 < comps.count {
-                return comps[idx + 2]
-            }
-            if next != "ffmax" && next != "ffnormal" {
-                return next
-            }
-        }
-        return "CHUNG"
+        if let m = meta(for: i), !m.folder.isEmpty { return m.folder }; let comps = i.packageURL.pathComponents
+        if let idx = comps.firstIndex(where: { $0 == "ffmax" || $0 == "ffnormal" || $0 == "silent" }), idx + 1 < comps.count { let next = comps[idx + 1]; if next == "ffmax" || next == "ffnormal", idx + 2 < comps.count { return comps[idx + 2] }; if next != "ffmax" && next != "ffnormal" { return next } }; return "CHUNG"
     }
 
     private func commitRename() { guard let i = renameItem else { return }; let t = renameText.trimmingCharacters(in: .whitespacesAndNewlines); guard !t.isEmpty else { renameItem = nil; return }; let ln = localKey(for: i); guard var m = PatchMetaStore.get(localName: ln) else { renameItem = nil; return }; m.displayName = t; m.nameOverride = true; PatchMetaStore.set(m, localName: ln); store.reload(); renameItem = nil }
@@ -792,26 +714,26 @@ struct PatchGameDetailView: View {
             if !activate {
                 do {
                     if let r = DevicePatchService.latestReceipt(projectID: item.id) { try DevicePatchService.restore(receipt: r) }
-                    await MainActor.run { store.reload(); workingFileID = nil; activationInfo = ActivationInfo(patchName: nameSnap, tag: tagSnap, note: noteSnap, success: true, errorMessage: nil) }
+                    await MainActor.run { store.reload(); workingFileID = nil; if !noteSnap.isEmpty { withAnimation { activationInfo = ActivationInfo(patchName: nameSnap, tag: tagSnap, note: noteSnap, success: true, errorMessage: nil) } } }
                 } catch {
-                    await MainActor.run { workingFileID = nil; SoundFX.error(); activationInfo = ActivationInfo(patchName: nameSnap, tag: tagSnap, note: noteSnap, success: false, errorMessage: error.localizedDescription) }
+                    await MainActor.run { workingFileID = nil; SoundFX.error(); withAnimation { activationInfo = ActivationInfo(patchName: nameSnap, tag: tagSnap, note: noteSnap, success: false, errorMessage: error.localizedDescription) } }
                 }
                 return
             }
             await MainActor.run { MaxShield.shared.activate(duration: 12.0) }
             do {
                 guard let p = item.project else { await MainActor.run { MaxShield.shared.deactivate(); workingFileID = nil }; return }
-                _ = try DevicePatchService.apply(project: p); try? await Task.sleep(nanoseconds: 1_500_000_000)
-                await MainActor.run { MaxShield.shared.deactivate(); store.reload(); workingFileID = nil; SoundFX.success(); activationInfo = ActivationInfo(patchName: nameSnap, tag: tagSnap, note: noteSnap, success: true, errorMessage: nil) }
+                _ = try DevicePatchService.apply(project: p); try? await Task.sleep(nanoseconds: 1_200_000_000)
+                await MainActor.run { MaxShield.shared.deactivate(); store.reload(); workingFileID = nil; SoundFX.success(); if !noteSnap.isEmpty { withAnimation { activationInfo = ActivationInfo(patchName: nameSnap, tag: tagSnap, note: noteSnap, success: true, errorMessage: nil) } } }
             } catch {
-                await MainActor.run { MaxShield.shared.deactivate(); store.reload(); workingFileID = nil; SoundFX.error(); activationInfo = ActivationInfo(patchName: nameSnap, tag: tagSnap, note: noteSnap, success: false, errorMessage: error.localizedDescription) }
+                await MainActor.run { MaxShield.shared.deactivate(); store.reload(); workingFileID = nil; SoundFX.error(); withAnimation { activationInfo = ActivationInfo(patchName: nameSnap, tag: tagSnap, note: noteSnap, success: false, errorMessage: error.localizedDescription) } }
             }
         }
     }
 }
 
 // ═══════════════════════════════════════════════════════════════
-// MARK: - SYNC ENGINE (ĐÃ TỐI ƯU SIÊU TỐC, BỎ CACHE URLSESSION)
+// MARK: - SYNC ENGINE TỐI ƯU SIÊU TỐC (BYPASS CACHE HOÀN TOÀN)
 // ═══════════════════════════════════════════════════════════════
 final class SyncEngine {
     static let shared = SyncEngine()
@@ -829,24 +751,17 @@ final class SyncEngine {
 
         for item in items {
             let ln = item.packageURL.lastPathComponent
-            if let r = remotes.first(where: { $0.filename == ln }) {
-                syncQueue.sync { PatchMetaStore.set(makeMeta(r, localName: ln), localName: ln) }
-            }
+            if let r = remotes.first(where: { $0.filename == ln }) { syncQueue.sync { PatchMetaStore.set(makeMeta(r, localName: ln), localName: ln) } }
         }
 
         var missing: [RemoteFileLite] = []
         for r in remotes {
-            if !storeFiles.contains(r.filename) {
-                missing.append(r)
-            } else {
-                syncQueue.sync { PatchMetaStore.set(makeMeta(r, localName: r.filename), localName: r.filename) }
-            }
+            if !storeFiles.contains(r.filename) { missing.append(r) }
+            else { syncQueue.sync { PatchMetaStore.set(makeMeta(r, localName: r.filename), localName: r.filename) } }
         }
 
         guard !missing.isEmpty else { await MainActor.run { store.reload() }; return }
-        for r in missing {
-            _ = await importOne(remote: r, store: store)
-        }
+        for r in missing { _ = await downloadAndImport(remote: r, store: store) }
         await MainActor.run { store.reload() }
     }
 
@@ -854,41 +769,45 @@ final class SyncEngine {
         PatchMeta(uid: r.uid, localName: localName, remoteName: r.filename, gameType: r.gameType, folder: r.folder, tag: r.tag, displayName: r.displayName, note: r.note)
     }
 
-    private func importOne(remote: RemoteFileLite, store: PatchProjectStore) async -> Bool {
+    // Cơ chế tải file thủ công bằng Ephemeral Session -> Fix 100% lỗi chỉ tải được 1 lần / kẹt cache URL
+    private func downloadAndImport(remote: RemoteFileLite, store: PatchProjectStore) async -> Bool {
         guard let url = URL(string: remote.url) else { return false }
-        let before = await MainActor.run { Set(store.items.map { $0.packageURL.lastPathComponent }) }
-        await MainActor.run { store.importPackage(from: .remote(url)) }
-
-        for i in 0..<60 { // Polling nhanh hơn (60 * 100ms = 6 giây)
-            try? await Task.sleep(nanoseconds: 100_000_000)
-            if i % 2 == 0 { await MainActor.run { store.reload() } }
-            let after = await MainActor.run { Set(store.items.map { $0.packageURL.lastPathComponent }) }
-            let newFiles = after.subtracting(before)
-            guard !newFiles.isEmpty else { continue }
-            
-            var chosen = newFiles.first(where: { $0 == remote.filename })
-            if chosen == nil { chosen = newFiles.first(where: { $0.hasSuffix(remote.filename) || remote.filename.hasSuffix($0) }) }
-            if chosen == nil && newFiles.count == 1 { chosen = newFiles.first }
-            guard let local = chosen else { continue }
-
-            syncQueue.sync { PatchMetaStore.set(makeMeta(remote, localName: local), localName: local) }
-            await MainActor.run { store.reload() }
-            return true
-        }
-        return false
-    }
-
-    private func fetchRemotes() async -> [RemoteFileLite]? {
-        let ts = Int(Date().timeIntervalSince1970)
-        guard let url = URL(string: "https://solitudepremium.click/ipa/ipa/list.php?v=\(ts)") else { return nil }
         do {
             var req = URLRequest(url: url)
             req.cachePolicy = .reloadIgnoringLocalAndRemoteCacheData
-            req.timeoutInterval = 10
-            req.setValue("no-cache", forHTTPHeaderField: "Cache-Control")
-            let config = URLSessionConfiguration.default
+            
+            let config = URLSessionConfiguration.ephemeral
             config.requestCachePolicy = .reloadIgnoringLocalAndRemoteCacheData
             let session = URLSession(configuration: config)
+            
+            let (data, response) = try await session.data(for: req)
+            guard let http = response as? HTTPURLResponse, http.statusCode == 200 else { return false }
+            
+            let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent(remote.filename)
+            try? FileManager.default.removeItem(at: tempURL)
+            try data.write(to: tempURL, options: .atomic)
+            
+            await MainActor.run { store.importPackage(from: .local(tempURL)) }
+            syncQueue.sync { PatchMetaStore.set(makeMeta(remote, localName: remote.filename), localName: remote.filename) }
+            
+            try? FileManager.default.removeItem(at: tempURL) // Clean up
+            return true
+        } catch {
+            return false
+        }
+    }
+
+    private func fetchRemotes() async -> [RemoteFileLite]? {
+        guard let url = URL(string: "https://solitudepremium.click/ipa/ipa/list.php") else { return nil }
+        do {
+            var req = URLRequest(url: url)
+            req.cachePolicy = .reloadIgnoringLocalAndRemoteCacheData
+            req.setValue("no-cache", forHTTPHeaderField: "Cache-Control")
+            
+            let config = URLSessionConfiguration.ephemeral
+            config.requestCachePolicy = .reloadIgnoringLocalAndRemoteCacheData
+            let session = URLSession(configuration: config)
+            
             let (data, _) = try await session.data(for: req)
             struct Wire: Decodable { let uid: String?; let filename: String; let gameType: String; let folder: String?; let displayName: String?; let tag: String?; let note: String?; let url: String }
             let wire = try JSONDecoder().decode([Wire].self, from: data)
