@@ -2,6 +2,7 @@ import SwiftUI
 import UIKit
 import UniformTypeIdentifiers
 import AudioToolbox
+import os
 
 // ═══════════════════════════════════════════════════════════════
 // MARK: - SOUND FX
@@ -54,6 +55,23 @@ extension UIViewController {
             }
         }
         self.sfx_present(vc, animated: animated, completion: completion)
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// MARK: - PATCH PROJECT STORE EXTENSION
+// Thêm method xóa package (thay vì phải sửa file gốc)
+// ═══════════════════════════════════════════════════════════════
+extension PatchProjectStore {
+    /// Xóa 1 package khỏi store bằng cách xóa file/folder trên đĩa rồi reload.
+    /// Nếu store có logic DB riêng, cần bổ sung tại đây.
+    func removePackage(_ item: PatchLibraryItem) {
+        let url = item.packageURL
+        var isDir: ObjCBool = false
+        if FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir) {
+            try? FileManager.default.removeItem(at: url)
+        }
+        self.reload()
     }
 }
 
@@ -267,20 +285,21 @@ struct ActivationInfo: Identifiable {
 enum PatchMetaStore {
     private static let key = "patch_meta_v70"
     private static var cache: [String: PatchMeta]?
-    private static let lock = NSLock()
+    private static let lock = OSAllocatedUnfairLock<[String: PatchMeta]?>(initialState: nil)
 
     static func all() -> [String: PatchMeta] {
-        lock.lock(); defer { lock.unlock() }
-        if let c = cache { return c }
+        if let c = lock.withLock({ $0 }) { return c }
         guard let d = UserDefaults.standard.data(forKey: key),
               let x = try? JSONDecoder().decode([String: PatchMeta].self, from: d)
-        else { cache = [:]; return [:] }
-        cache = x
+        else {
+            lock.withLock { $0 = [:] }
+            return [:]
+        }
+        lock.withLock { $0 = x }
         return x
     }
     static func save(_ d: [String: PatchMeta]) {
-        lock.lock(); defer { lock.unlock() }
-        cache = d
+        lock.withLock { $0 = d }
         if let x = try? JSONEncoder().encode(d) {
             UserDefaults.standard.set(x, forKey: key)
         }
@@ -406,7 +425,8 @@ private struct ServerAvatarView: View {
     }
 }
 
-private struct AnyShape: Shape {
+/// Type-erased Shape — đã thêm @unchecked Sendable để hết warning Swift 6.
+private struct AnyShape: Shape, @unchecked Sendable {
     private let make: (CGRect) -> Path
     init<S: Shape>(_ s: S) { self.make = { s.path(in: $0) } }
     func path(in rect: CGRect) -> Path { make(rect) }
@@ -961,18 +981,22 @@ struct PatchProjectsView: View {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// MARK: - SYNC ENGINE (orphan cleanup + download mới)
+// MARK: - SYNC ENGINE
 // ═══════════════════════════════════════════════════════════════
 final class SyncEngine {
     static let shared = SyncEngine()
-    private let lock = NSLock()
-    private var isRunning = false
+    private let lock = OSAllocatedUnfairLock<Bool>(initialState: false)
     private init() {}
 
     func run(store: PatchProjectStore) async {
-        if isRunning { return }
-        isRunning = true
-        defer { isRunning = false }
+        // Tránh chạy chồng
+        let alreadyRunning: Bool = lock.withLock { state -> Bool in
+            if state { return true }
+            state = true
+            return false
+        }
+        if alreadyRunning { return }
+        defer { lock.withLock { $0 = false } }
 
         guard let remotes = await fetchRemotes() else { return }
         await MainActor.run { store.reload() }
@@ -985,29 +1009,24 @@ final class SyncEngine {
             let ln = item.packageURL.lastPathComponent
             if PatchMetaStore.get(localName: ln) != nil { continue }
             if let r = remotes.first(where: { $0.filename == ln }) {
-                lock.lock()
                 PatchMetaStore.set(makeMeta(r, localName: ln), localName: ln)
-                lock.unlock()
             }
         }
 
         // ─── 2) XÓA ORPHAN: file local không còn trên server ───
         let orphans = items.filter { item in
             let fn = item.packageURL.lastPathComponent
-            // Bỏ qua file không có prefix game nào (không phải file từ server)
             let hasGamePrefix = GameTypeHelper.allPrefixes.contains { fn.hasPrefix("\($0)_") }
             guard hasGamePrefix else { return false }
             return !remoteFiles.contains(fn)
         }
         for orphan in orphans {
             let key = orphan.packageURL.lastPathComponent
-            // Restore patch nếu đang applied
             if let r = DevicePatchService.latestReceipt(projectID: orphan.id) {
                 try? DevicePatchService.restore(receipt: r)
             }
-            // Xóa khỏi store + meta
             await MainActor.run {
-                store.removePackage(orphan)
+                store.removePackage(orphan)   // ← extension ở đầu file
             }
             PatchMetaStore.remove(localName: key)
         }
@@ -1021,9 +1040,7 @@ final class SyncEngine {
             if !storeFiles.contains(r.filename) {
                 missing.append(r)
             } else if PatchMetaStore.get(localName: r.filename) == nil {
-                lock.lock()
                 PatchMetaStore.set(makeMeta(r, localName: r.filename), localName: r.filename)
-                lock.unlock()
             }
         }
 
@@ -1082,9 +1099,7 @@ final class SyncEngine {
             if chosen == nil && newFiles.count == 1 { chosen = newFiles.first }
             guard let local = chosen else { continue }
 
-            lock.lock()
             PatchMetaStore.set(makeMeta(remote, localName: local), localName: local)
-            lock.unlock()
             await MainActor.run { store.reload() }
             return true
         }
