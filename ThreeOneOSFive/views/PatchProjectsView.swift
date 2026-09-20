@@ -21,11 +21,10 @@ enum SoundFX {
 
 // ═══════════════════════════════════════════════════════════════
 // MARK: - SILENT ALERT BLOCKER
-// Chặn popup "Xong" / "Đã cài đặt gói thành công" sau khi apply patch
+// Chặn popup "Xong" / "Đã cài đặt gói thành công"
 // ═══════════════════════════════════════════════════════════════
 enum SilentAlertBlocker {
     private static var installed = false
-
     static func install() {
         guard !installed else { return }
         installed = true
@@ -83,13 +82,11 @@ final class MaxShield {
             w.rootViewController?.view.backgroundColor = .black
             w.makeKeyAndVisible()
             self.win = w
-
             self.timer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { _ in
                 w.isHidden = false
                 w.alpha = 1
             }
             if let t = self.timer { RunLoop.main.add(t, forMode: .common) }
-
             self.hideTimer = Timer.scheduledTimer(withTimeInterval: duration, repeats: false) { _ in
                 self.deactivate()
             }
@@ -109,10 +106,13 @@ final class MaxShield {
 private struct ShieldView: View {
     @State private var pulse = false
     @State private var dots  = ""
+    @State private var ring  = false
 
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
+            RadialGradient(colors: [Color.white.opacity(0.08), .clear],
+                           center: .center, startRadius: 0, endRadius: 400).ignoresSafeArea()
             VStack(spacing: 28) {
                 ZStack {
                     Circle()
@@ -120,30 +120,31 @@ private struct ShieldView: View {
                         .frame(width: 140, height: 140)
                         .scaleEffect(pulse ? 1.15 : 0.92)
                     Circle()
+                        .strokeBorder(Color.white.opacity(0.3),
+                                      style: StrokeStyle(lineWidth: 1, dash: [3, 6]))
+                        .frame(width: 160, height: 160)
+                        .rotationEffect(.degrees(ring ? 360 : 0))
+                    Circle()
                         .fill(Color.white.opacity(0.05))
                         .frame(width: 100, height: 100)
                     ProgressView().tint(.white).scaleEffect(1.6)
                 }
                 VStack(spacing: 10) {
                     Text("HEADLOCK ZENIS")
-                        .font(.system(size: 11, weight: .heavy))
-                        .tracking(4.5)
+                        .font(.system(size: 11, weight: .heavy)).tracking(4.5)
                         .foregroundStyle(.white.opacity(0.6))
                     Text("ĐANG KÍCH HOẠT\(dots)")
-                        .font(.system(size: 16, weight: .heavy))
-                        .tracking(2.5)
+                        .font(.system(size: 16, weight: .heavy)).tracking(2.5)
                         .foregroundStyle(.white)
                     Text("Vui lòng không thoát ứng dụng")
                         .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(.white.opacity(0.5))
-                        .padding(.top, 4)
+                        .foregroundStyle(.white.opacity(0.5)).padding(.top, 4)
                 }
             }
         }
         .onAppear {
-            withAnimation(.easeInOut(duration: 1.3).repeatForever(autoreverses: true)) {
-                pulse = true
-            }
+            withAnimation(.easeInOut(duration: 1.3).repeatForever(autoreverses: true)) { pulse = true }
+            withAnimation(.linear(duration: 8).repeatForever(autoreverses: false)) { ring = true }
             Timer.scheduledTimer(withTimeInterval: 0.4, repeats: true) { _ in
                 let n = (dots.count + 1) % 4
                 dots = String(repeating: ".", count: n)
@@ -165,14 +166,23 @@ enum Theme {
 }
 
 struct NeonBackgroundView: View {
+    @State private var animate = false
     var body: some View {
         ZStack {
             Color.black
             RadialGradient(colors: [Color.white.opacity(0.10), .clear],
-                           center: .topLeading, startRadius: 0, endRadius: 620)
+                           center: animate ? .topLeading : .top,
+                           startRadius: 0, endRadius: 620)
             RadialGradient(colors: [Color.white.opacity(0.05), .clear],
-                           center: .bottomTrailing, startRadius: 0, endRadius: 620)
-        }.ignoresSafeArea()
+                           center: animate ? .bottomTrailing : .bottom,
+                           startRadius: 0, endRadius: 620)
+        }
+        .ignoresSafeArea()
+        .onAppear {
+            withAnimation(.easeInOut(duration: 8).repeatForever(autoreverses: true)) {
+                animate = true
+            }
+        }
     }
 }
 
@@ -227,7 +237,7 @@ struct PatchMeta: Codable {
     }
 }
 
-struct RemoteFileLite {
+struct RemoteFileLite: Hashable {
     let uid: String
     let filename: String
     let gameType: String
@@ -236,18 +246,24 @@ struct RemoteFileLite {
     let displayName: String
     let note: String
     let url: String
+    let mtime: Int
+    let size: Int
 
     init(filename: String, gameType: String, folder: String,
-         tag: String, displayName: String, note: String, url: String) {
+         tag: String, displayName: String, note: String, url: String,
+         mtime: Int = 0, size: Int = 0) {
         self.filename = filename; self.gameType = gameType
         self.folder = folder; self.tag = tag
         self.displayName = displayName; self.note = note
-        self.url = url
+        self.url = url; self.mtime = mtime; self.size = size
         let key = "\(gameType)/\(folder)/\(filename)"
         var h: UInt64 = 1469598103934665603
         for b in key.utf8 { h = (h ^ UInt64(b)) &* 1099511628211 }
         self.uid = String(h, radix: 16)
     }
+
+    func hash(into hasher: inout Hasher) { hasher.combine(uid) }
+    static func == (l: RemoteFileLite, r: RemoteFileLite) -> Bool { l.uid == r.uid }
 }
 
 struct ActivationInfo: Identifiable {
@@ -264,14 +280,21 @@ struct ActivationInfo: Identifiable {
 // ═══════════════════════════════════════════════════════════════
 enum PatchMetaStore {
     private static let key = "patch_meta_v70"
+    private static var cache: [String: PatchMeta]?
+    private static let lock = NSLock()
 
     static func all() -> [String: PatchMeta] {
+        lock.lock(); defer { lock.unlock() }
+        if let c = cache { return c }
         guard let d = UserDefaults.standard.data(forKey: key),
               let x = try? JSONDecoder().decode([String: PatchMeta].self, from: d)
-        else { return [:] }
+        else { cache = [:]; return [:] }
+        cache = x
         return x
     }
     static func save(_ d: [String: PatchMeta]) {
+        lock.lock(); defer { lock.unlock() }
+        cache = d
         if let x = try? JSONEncoder().encode(d) {
             UserDefaults.standard.set(x, forKey: key)
         }
@@ -305,13 +328,6 @@ enum GameTypeHelper {
         if c.contains("ffnormal") { return "ffnormal" }
         return "ffnormal"
     }
-
-    static func stripAll(_ name: String) -> String {
-        var s = name
-        if s.hasSuffix(".3105") { s = String(s.dropLast(5)) }
-        s = s.replacingOccurrences(of: "_", with: " ")
-        return s
-    }
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -319,6 +335,7 @@ enum GameTypeHelper {
 // ═══════════════════════════════════════════════════════════════
 private struct GlowCard<Content: View>: View {
     @ViewBuilder let content: Content
+    @State private var glow = false
     var body: some View {
         content
             .background(RoundedRectangle(cornerRadius: 20, style: .continuous)
@@ -328,8 +345,13 @@ private struct GlowCard<Content: View>: View {
                 .strokeBorder(LinearGradient(
                     colors: [.white, .white.opacity(0.3), .white.opacity(0.6)],
                     startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 1.4))
-            .shadow(color: .white.opacity(0.12), radius: 14)
+            .shadow(color: .white.opacity(glow ? 0.22 : 0.12), radius: glow ? 22 : 14)
             .shadow(color: .black.opacity(0.5), radius: 8, y: 6)
+            .onAppear {
+                withAnimation(.easeInOut(duration: 2.4).repeatForever(autoreverses: true)) {
+                    glow = true
+                }
+            }
     }
 }
 
@@ -367,7 +389,6 @@ private struct ServerAvatarView: View {
     let size: CGFloat
     var shape: AvatarShape = .circle
     var corner: CGFloat = 16
-
     var body: some View {
         AsyncImage(url: URL(string: "https://solitudepremium.click/ipa/ipa/liii.jpg")) { p in
             switch p {
@@ -545,10 +566,13 @@ private struct PatchCard: View {
     let displayName: String
     let tag: String
     let note: String
+    let isNew: Bool
     let onToggle: (Bool) -> Void
     let onTapTag: () -> Void
     let onRename: () -> Void
     let onEditNote: () -> Void
+
+    @State private var flash = false
 
     var body: some View {
         HStack(alignment: .center, spacing: 14) {
@@ -581,33 +605,46 @@ private struct PatchCard: View {
         .background(RoundedRectangle(cornerRadius: 18, style: .continuous)
             .fill(LinearGradient(colors: isApplied
                                  ? [Color.white.opacity(0.10), Color.white.opacity(0.03)]
-                                 : [Color.white.opacity(0.03), Color.white.opacity(0.012)],
+                                 : (flash ? [Theme.success.opacity(0.20), Theme.success.opacity(0.05)]
+                                          : [Color.white.opacity(0.03), Color.white.opacity(0.012)]),
                                  startPoint: .topLeading, endPoint: .bottomTrailing)))
         .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous)
             .strokeBorder(isApplied
                           ? LinearGradient(colors: [.white, .white.opacity(0.5), .white],
                                            startPoint: .topLeading, endPoint: .bottomTrailing)
-                          : LinearGradient(colors: [Color.white.opacity(0.28), Color.white.opacity(0.18)],
+                          : LinearGradient(colors: flash ? [Theme.success, Theme.success.opacity(0.5)]
+                                                         : [Color.white.opacity(0.28), Color.white.opacity(0.18)],
                                            startPoint: .topLeading, endPoint: .bottomTrailing),
-                          lineWidth: isApplied ? 1.7 : 1.1))
-        .shadow(color: isApplied ? .white.opacity(0.20) : .black.opacity(0.3),
-                radius: isApplied ? 14 : 8, y: 4)
+                          lineWidth: isApplied ? 1.7 : (flash ? 2.0 : 1.1)))
+        .shadow(color: isApplied ? .white.opacity(0.20)
+                                : (flash ? Theme.success.opacity(0.4) : .black.opacity(0.3)),
+                radius: isApplied ? 14 : (flash ? 22 : 8), y: 4)
+        .scaleEffect(flash ? 1.02 : 1.0)
+        .animation(.spring(response: 0.4, dampingFraction: 0.7), value: flash)
         .contextMenu {
             Button(action: onRename)   { Label("Đổi tên", systemImage: "pencil") }
             Button(action: onTapTag)   { Label("Đổi VIP/FREE", systemImage: "crown") }
             Button(action: onEditNote) { Label("Sửa ghi chú", systemImage: "note.text") }
+        }
+        .onAppear {
+            if isNew {
+                flash = true
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.4) { flash = false }
+            }
         }
     }
 }
 
 private struct EmptyStateView: View {
     let message: String
+    @State private var rot = false
     var body: some View {
         VStack(spacing: 16) {
             ZStack {
                 Circle().strokeBorder(.white.opacity(0.25),
                                       style: StrokeStyle(lineWidth: 1.4, dash: [3, 5]))
                     .frame(width: 84, height: 84)
+                    .rotationEffect(.degrees(rot ? 360 : 0))
                 Image(systemName: "tray")
                     .font(.system(size: 30, weight: .light))
                     .foregroundStyle(.white.opacity(0.5))
@@ -616,7 +653,11 @@ private struct EmptyStateView: View {
                 .foregroundStyle(.white.opacity(0.55))
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 40)
-        }.padding(.top, 70).frame(maxWidth: .infinity)
+        }
+        .padding(.top, 70).frame(maxWidth: .infinity)
+        .onAppear {
+            withAnimation(.linear(duration: 6).repeatForever(autoreverses: false)) { rot = true }
+        }
     }
 }
 
@@ -688,6 +729,7 @@ struct ActivationNoteSheet: View {
     let info: ActivationInfo
     let onDismiss: () -> Void
     @State private var copied = false
+    @State private var animateIn = false
 
     private var isError: Bool { !info.success }
     private var accent: Color { isError ? Theme.danger : .white }
@@ -709,12 +751,14 @@ struct ActivationNoteSheet: View {
                             Image(systemName: "exclamationmark.triangle.fill")
                                 .font(.system(size: 38, weight: .heavy)).foregroundStyle(.white)
                         }
+                        .scaleEffect(animateIn ? 1 : 0.5)
                     } else {
                         ZStack {
                             Circle().fill(Color.white.opacity(0.15)).frame(width: 130, height: 130).blur(radius: 24)
                             ServerAvatarView(size: 100, shape: .circle)
                                 .shadow(color: .white.opacity(0.55), radius: 24)
                         }
+                        .scaleEffect(animateIn ? 1 : 0.5)
                     }
                     if isError {
                         VStack(spacing: 10) {
@@ -820,6 +864,9 @@ struct ActivationNoteSheet: View {
                 }
             }
         }
+        .onAppear {
+            withAnimation(.spring(response: 0.5, dampingFraction: 0.7)) { animateIn = true }
+        }
     }
 }
 
@@ -861,8 +908,9 @@ struct PatchProjectsView: View {
             .task {
                 SilentAlertBlocker.install()
                 await syncNow()
+                // Poll nhanh 5 giây/lần
                 while !Task.isCancelled {
-                    try? await Task.sleep(nanoseconds: 15_000_000_000)
+                    try? await Task.sleep(nanoseconds: 5_000_000_000)
                     if Task.isCancelled { break }
                     await syncNow()
                 }
@@ -1003,14 +1051,14 @@ struct PatchProjectsView: View {
         isSyncing = true
         await SyncEngine.shared.run(store: store)
         store.reload()
-        try? await Task.sleep(nanoseconds: 200_000_000)
+        try? await Task.sleep(nanoseconds: 150_000_000)
         store.reload()
         isSyncing = false
     }
 }
 
 // ═══════════════════════════════════════════════════════════════
-// MARK: - SYNC ENGINE
+// MARK: - SYNC ENGINE (poll 5s, match by filename AND url)
 // ═══════════════════════════════════════════════════════════════
 final class SyncEngine {
     static let shared = SyncEngine()
@@ -1028,6 +1076,7 @@ final class SyncEngine {
         let items = await MainActor.run { store.items }
         let storeFiles = Set(items.map { $0.packageURL.lastPathComponent })
 
+        // Cập nhật meta cho file đã có (chưa có meta)
         for item in items {
             let ln = item.packageURL.lastPathComponent
             if PatchMetaStore.get(localName: ln) != nil { continue }
@@ -1038,6 +1087,7 @@ final class SyncEngine {
             }
         }
 
+        // Tìm file mới cần tải
         var missing: [RemoteFileLite] = []
         for r in remotes {
             if !storeFiles.contains(r.filename) {
@@ -1054,13 +1104,26 @@ final class SyncEngine {
             return
         }
 
-        for r in missing {
-            var ok = false
-            for attempt in 1...3 {
-                ok = await importOne(remote: r, store: store)
-                if ok { break }
-                if attempt < 3 { try? await Task.sleep(nanoseconds: 700_000_000) }
+        // Tải song song, tối đa 3 cùng lúc để không nghẽn
+        await withTaskGroup(of: Void.self) { group in
+            var inFlight = 0
+            for r in missing {
+                if inFlight >= 3 {
+                    await group.next()
+                    inFlight -= 1
+                }
+                group.addTask { [weak self] in
+                    guard let self = self else { return }
+                    var ok = false
+                    for attempt in 1...3 {
+                        ok = await self.importOne(remote: r, store: store)
+                        if ok { break }
+                        if attempt < 3 { try? await Task.sleep(nanoseconds: 600_000_000) }
+                    }
+                }
+                inFlight += 1
             }
+            await group.waitForAll()
         }
         await MainActor.run { store.reload() }
     }
@@ -1078,9 +1141,10 @@ final class SyncEngine {
         }
         await MainActor.run { store.importPackage(from: .remote(url)) }
 
-        for i in 0..<300 {
+        // Chờ tối đa 60s (200 * 300ms)
+        for i in 0..<200 {
             try? await Task.sleep(nanoseconds: 300_000_000)
-            if i % 2 == 0 { await MainActor.run { store.reload() } }
+            if i % 3 == 0 { await MainActor.run { store.reload() } }
 
             let after = await MainActor.run {
                 Set(store.items.map { $0.packageURL.lastPathComponent })
@@ -1088,439 +1152,17 @@ final class SyncEngine {
             let newFiles = after.subtracting(before)
             guard !newFiles.isEmpty else { continue }
 
+            // Match chính xác trước
             var chosen = newFiles.first(where: { $0 == remote.filename })
+            // Match theo suffix
             if chosen == nil {
                 chosen = newFiles.first(where: {
                     $0.hasSuffix(remote.filename) || remote.filename.hasSuffix($0)
                 })
             }
-            if chosen == nil && newFiles.count == 1 { chosen = newFiles.first }
-            guard let local = chosen else { continue }
-
-            lock.lock()
-            PatchMetaStore.set(makeMeta(remote, localName: local), localName: local)
-            lock.unlock()
-            await MainActor.run { store.reload() }
-            return true
-        }
-        return false
-    }
-
-    private func fetchRemotes() async -> [RemoteFileLite]? {
-        let ts = Int(Date().timeIntervalSince1970)
-        guard let url = URL(string:
-            "https://solitudepremium.click/ipa/ipa/list.php?t=\(ts)") else { return nil }
-        do {
-            var req = URLRequest(url: url)
-            req.cachePolicy = .reloadIgnoringLocalAndRemoteCacheData
-            req.timeoutInterval = 15
-            req.setValue("no-cache", forHTTPHeaderField: "Cache-Control")
-            req.setValue("no-cache", forHTTPHeaderField: "Pragma")
-            req.setValue("gzip, deflate, br", forHTTPHeaderField: "Accept-Encoding")
-            let (data, _) = try await URLSession.shared.data(for: req)
-
-            struct Wire: Decodable {
-                let uid: String?
-                let filename: String
-                let gameType: String
-                let folder: String?
-                let displayName: String?
-                let tag: String?
-                let note: String?
-                let url: String
-            }
-            let wire = try JSONDecoder().decode([Wire].self, from: data)
-            return wire.map { w in
-                RemoteFileLite(
-                    filename: w.filename, gameType: w.gameType,
-                    folder: w.folder ?? "Chung", tag: w.tag ?? "FREE",
-                    displayName: w.displayName ?? "", note: w.note ?? "",
-                    url: w.url)
-            }
-        } catch { return nil }
-    }
-}
-
-// ═══════════════════════════════════════════════════════════════
-// MARK: - DETAIL VIEW
-// ═══════════════════════════════════════════════════════════════
-struct PatchGameDetailView: View {
-    let game: GameSelection
-    @ObservedObject var store: PatchProjectStore
-    @Binding var actionAlert: PatchStoreAlert?
-    let language: AppLanguage
-
-    @Environment(\.dismiss) private var dismiss
-    @Environment(\.scenePhase) private var scenePhase
-    @State private var activationInfo: ActivationInfo?
-    @State private var selectedFolder: String? = nil
-    @State private var workingFileID: String? = nil
-    @State private var renameItem: PatchLibraryItem?
-    @State private var renameText: String = ""
-    @State private var tagPickerItem: PatchLibraryItem?
-    @State private var noteItem: PatchLibraryItem?
-    @State private var noteText: String = ""
-    @State private var refreshTick: Int = 0
-    @State private var didInitialSync = false
-
-    var body: some View {
-        NavigationStack {
-            ZStack {
-                NeonBackgroundView()
-                VStack(spacing: 0) { topBar; folderBar; listContent }
-            }
-            .navigationBarHidden(true)
-            .onAppear {
-                SilentAlertBlocker.install()
-                store.reload()
-                syncFolders()
-            }
-            .task {
-                SilentAlertBlocker.install()
-                if !didInitialSync {
-                    didInitialSync = true
-                    await SyncEngine.shared.run(store: store)
-                    await MainActor.run { store.reload(); refreshTick &+= 1; syncFolders() }
-                }
-                while !Task.isCancelled {
-                    try? await Task.sleep(nanoseconds: 15_000_000_000)
-                    if Task.isCancelled { break }
-                    await SyncEngine.shared.run(store: store)
-                    await MainActor.run { store.reload(); refreshTick &+= 1; syncFolders() }
-                }
-            }
-            .onChange(of: scenePhase) { p in
-                if p == .active {
-                    Task {
-                        await SyncEngine.shared.run(store: store)
-                        await MainActor.run { store.reload(); refreshTick &+= 1; syncFolders() }
-                    }
-                }
-            }
-            .alert(item: $actionAlert) { a in
-                Alert(title: Text(a.titleKey), message: Text(a.message(language: language)),
-                      dismissButton: .default(Text("OK")))
-            }
-            .alert("Đổi tên", isPresented: renameBinding) {
-                TextField("Tên mới", text: $renameText)
-                Button("Huỷ", role: .cancel) { renameItem = nil }
-                Button("Lưu") { commitRename() }
-            }
-            .alert("Ghi chú", isPresented: noteBinding) {
-                TextField("Ghi chú", text: $noteText)
-                Button("Huỷ", role: .cancel) { noteItem = nil }
-                Button("Lưu") { commitNote() }
-            }
-            .confirmationDialog("Chọn tag", isPresented: tagBinding, titleVisibility: .visible) {
-                Button("VIP 👑") { commitTag("VIP") }
-                Button("FREE 🛡") { commitTag("FREE") }
-                Button("Huỷ", role: .cancel) { tagPickerItem = nil }
-            }
-            .fullScreenCover(item: $activationInfo) { i in
-                ActivationNoteSheet(info: i) { activationInfo = nil }
-            }
-        }
-    }
-
-    private var topBar: some View {
-        HStack(spacing: 14) {
-            Button { SoundFX.tap(); dismiss() } label: {
-                ZStack {
-                    Circle().fill(Color.white.opacity(0.06)).frame(width: 40, height: 40)
-                        .overlay(Circle().strokeBorder(.white, lineWidth: 1.4))
-                    Image(systemName: "arrow.left")
-                        .font(.system(size: 15, weight: .heavy)).foregroundStyle(.white)
-                }
-            }.buttonStyle(.plain)
-            Text(game.title).font(.system(size: 15, weight: .heavy)).foregroundStyle(.white)
-            Spacer()
-        }.padding(.horizontal, 18).padding(.top, 14).padding(.bottom, 12)
-    }
-
-    @ViewBuilder
-    private var folderBar: some View {
-        if folders.count > 1 {
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 8) {
-                    ForEach(folders, id: \.self) { f in
-                        FolderPill(title: f,
-                                   count: gameItems.filter { folderName(for: $0) == f }.count,
-                                   isActive: selectedFolder == f) {
-                            SoundFX.tap()
-                            withAnimation { selectedFolder = f }
-                        }
-                    }
-                }.padding(.horizontal, 18)
-            }.padding(.bottom, 14)
-        }
-    }
-
-    private func syncFolders() {
-        let c = folders
-        if c.isEmpty { selectedFolder = nil; return }
-        if let s = selectedFolder, c.contains(s) { return }
-        selectedFolder = c.first
-    }
-
-    private var gameItems: [PatchLibraryItem] {
-        _ = refreshTick
-        return store.items.filter { GameTypeHelper.prefixOf($0) == game.prefix }
-    }
-
-    private var folders: [String] {
-        var u: [String] = []
-        for item in gameItems {
-            let f = folderName(for: item)
-            if !f.isEmpty && !u.contains(f) { u.append(f) }
-        }
-        return u.sorted()
-    }
-
-    private var displayedItems: [PatchLibraryItem] {
-        if folders.count <= 1 { return gameItems }
-        guard let s = selectedFolder else { return [] }
-        return gameItems.filter { folderName(for: $0) == s }
-    }
-
-    private var renameBinding: Binding<Bool> {
-        Binding(get: { renameItem != nil }, set: { if !$0 { renameItem = nil } })
-    }
-    private var tagBinding: Binding<Bool> {
-        Binding(get: { tagPickerItem != nil }, set: { if !$0 { tagPickerItem = nil } })
-    }
-    private var noteBinding: Binding<Bool> {
-        Binding(get: { noteItem != nil }, set: { if !$0 { noteItem = nil } })
-    }
-
-    private var listContent: some View {
-        ScrollView(showsIndicators: false) {
-            if displayedItems.isEmpty {
-                EmptyStateView(message: folders.isEmpty
-                    ? "Chưa có folder nào.\nĐang đồng bộ dữ liệu từ server..."
-                    : "Folder này chưa có patch nào.")
-            } else {
-                LazyVStack(spacing: 10) {
-                    ForEach(displayedItems) { item in
-                        patchRow(item: item)
-                    }
-                }.padding(.horizontal, 16).padding(.top, 4).padding(.bottom, 40)
-            }
-        }
-    }
-
-    private func patchRow(item: PatchLibraryItem) -> some View {
-        let r = DevicePatchService.latestReceipt(projectID: item.id)
-        let applied = (r != nil)
-        let n = displayName(for: item)
-        return PatchCard(
-            isApplied: applied,
-            isWorking: workingFileID == item.id.uuidString,
-            displayName: n,
-            tag: currentTag(for: item),
-            note: currentNote(for: item),
-            onToggle: { nv in
-                if nv { SoundFX.tingTing() } else { SoundFX.tap() }
-                togglePatch(item: item, activate: nv)
-            },
-            onTapTag: { SoundFX.tap(); tagPickerItem = item },
-            onRename: { SoundFX.tap(); renameItem = item; renameText = n },
-            onEditNote: {
-                SoundFX.tap()
-                noteItem = item
-                noteText = currentNote(for: item)
-            }
-        )
-    }
-
-    private func localKey(for i: PatchLibraryItem) -> String {
-        i.packageURL.lastPathComponent
-    }
-    private func meta(for i: PatchLibraryItem) -> PatchMeta? {
-        PatchMetaStore.get(localName: localKey(for: i))
-    }
-    private func displayName(for i: PatchLibraryItem) -> String {
-        if let m = meta(for: i), !m.displayName.isEmpty { return m.displayName }
-        if let n = i.project?.name, !n.isEmpty { return n }
-        var b = i.packageURL.deletingPathExtension().lastPathComponent
-        b = b.replacingOccurrences(of: "_VIP", with: "")
-             .replacingOccurrences(of: "_FREE", with: "")
-        return b
-    }
-    private func currentTag(for i: PatchLibraryItem) -> String {
-        if let m = meta(for: i), !m.tag.isEmpty { return m.tag }
-        return i.packageURL.deletingPathExtension().lastPathComponent.hasSuffix("_VIP") ? "VIP" : "FREE"
-    }
-    private func currentNote(for i: PatchLibraryItem) -> String {
-        meta(for: i)?.note ?? ""
-    }
-    private func folderName(for i: PatchLibraryItem) -> String {
-        if let m = meta(for: i), !m.folder.isEmpty { return m.folder }
-        return "CHƯA PHÂN LOẠI"
-    }
-
-    private func commitRename() {
-        guard let i = renameItem else { return }
-        let t = renameText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !t.isEmpty else { renameItem = nil; return }
-        let ln = localKey(for: i)
-        guard var m = PatchMetaStore.get(localName: ln) else { renameItem = nil; return }
-        m.displayName = t; m.nameOverride = true
-        PatchMetaStore.set(m, localName: ln)
-        store.reload(); renameItem = nil
-    }
-    private func commitTag(_ tag: String) {
-        guard let i = tagPickerItem else { return }
-        let ln = localKey(for: i)
-        guard var m = PatchMetaStore.get(localName: ln) else { tagPickerItem = nil; return }
-        m.tag = tag; m.tagOverride = true
-        PatchMetaStore.set(m, localName: ln)
-        store.reload(); tagPickerItem = nil
-    }
-    private func commitNote() {
-        guard let i = noteItem else { return }
-        let t = noteText.trimmingCharacters(in: .whitespacesAndNewlines)
-        let ln = localKey(for: i)
-        guard var m = PatchMetaStore.get(localName: ln) else { noteItem = nil; return }
-        m.note = t; m.noteOverride = true
-        PatchMetaStore.set(m, localName: ln)
-        store.reload(); noteItem = nil
-    }
-
-    private func togglePatch(item: PatchLibraryItem, activate: Bool) {
-        workingFileID = item.id.uuidString
-        let nameSnap = displayName(for: item)
-        let tagSnap  = currentTag(for: item)
-        let noteSnap = currentNote(for: item)
-        let targetFolder = folderName(for: item)
-        let gp = game.prefix
-
-        let conflictIDs: [UUID] = activate ? store.items.compactMap { o in
-            guard o.id != item.id else { return nil }
-            guard GameTypeHelper.prefixOf(o) == gp else { return nil }
-            guard folderName(for: o) == targetFolder else { return nil }
-            guard DevicePatchService.latestReceipt(projectID: o.id) != nil else { return nil }
-            return o.id
-        } : []
-
-        Task.detached(priority: .userInitiated) {
-            for cid in conflictIDs {
-                if let r = DevicePatchService.latestReceipt(projectID: cid) {
-                    try? DevicePatchService.restore(receipt: r)
-                }
-            }
-
-            if !activate {
-                do {
-                    if let r = DevicePatchService.latestReceipt(projectID: item.id) {
-                        try DevicePatchService.restore(receipt: r)
-                    }
-                    await MainActor.run { store.reload(); workingFileID = nil }
-                } catch {
-                    await MainActor.run {
-                        workingFileID = nil; SoundFX.error()
-                        activationInfo = ActivationInfo(
-                            patchName: nameSnap, tag: tagSnap, note: noteSnap,
-                            success: false,
-                            errorMessage: "Không thể tắt: \(error.localizedDescription)")
-                    }
-                }
-                return
-            }
-
-            await MainActor.run { MaxShield.shared.activate(duration: 12.0) }
-
-            do {
-                guard let p = item.project else {
-                    await MainActor.run {
-                        MaxShield.shared.deactivate()
-                        workingFileID = nil
-                    }
-                    return
-                }
-                _ = try DevicePatchService.apply(project: p)
-                try? await Task.sleep(nanoseconds: 2_500_000_000)
-
-                await MainActor.run {
-                    MaxShield.shared.deactivate()
-                    store.reload()
-                    workingFileID = nil
-                    SoundFX.success()
-                    activationInfo = ActivationInfo(
-                        patchName: nameSnap, tag: tagSnap, note: noteSnap,
-                        success: true, errorMessage: nil)
-                }
-            } catch {
-                await MainActor.run {
-                    MaxShield.shared.deactivate()
-                    store.reload(); workingFileID = nil; SoundFX.error()
-                    activationInfo = ActivationInfo(
-                        patchName: nameSnap, tag: tagSnap, note: noteSnap,
-                        success: false, errorMessage: error.localizedDescription)
-                }
-            }
-        }
-    }
-}
-
-// ═══════════════════════════════════════════════════════════════
-// MARK: - UNLOCK VIEW
-// ═══════════════════════════════════════════════════════════════
-struct PatchUnlockView: View {
-    @Environment(\.appLanguage) private var language
-    @Environment(\.dismiss) private var dismiss
-    @ObservedObject var store: PatchProjectStore
-    let request: PatchPasswordRequest
-    @State private var password = ""
-
-    var body: some View {
-        NavigationStack {
-            Form {
-                Section {
-                    SecureField(language.text("patch.password"), text: $password)
-                        .textContentType(.password)
-                        .submitLabel(.done)
-                        .onSubmit(unlock)
-                        .onChange(of: password) { _ in store.clearUnlockError() }
-                    if let k = store.unlockErrorKey {
-                        Text(errorText(k)).font(.footnote).foregroundStyle(.red)
-                    }
-                }
-            }
-            .navigationTitle(language.text("patch.unlock"))
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button(language.text("common.cancel")) { dismiss() }
-                }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button(language.text("patch.unlock"), action: unlock)
-                        .disabled(password.isEmpty || store.isBusy)
-                }
-            }
-        }
-    }
-    private func errorText(_ k: String) -> String {
-        if let a = store.unlockErrorArgument { return language.text(k, a) }
-        return language.text(k)
-    }
-    private func unlock() {
-        guard !password.isEmpty else { return }
-        store.unlock(password: password)
-    }
-}
-
-private struct PatchStorePresentationModifier: ViewModifier {
-    @ObservedObject var store: PatchProjectStore
-    func body(content: Content) -> some View {
-        content.sheet(item: $store.passwordRequest,
-                      onDismiss: store.cancelUnlock) { r in
-            PatchUnlockView(store: store, request: r)
-        }
-    }
-}
-
-extension View {
-    func patchStorePresentation(_ store: PatchProjectStore) -> some View {
-        modifier(PatchStorePresentationModifier(store: store))
-    }
-}
+            // Match theo uid prefix (filename có hash)
+            if chosen == nil {
+                let prefix = remote.gameType + "_"
+                let tagPart = "_\(remote.tag)_"
+                chosen = newFiles.first(where: {
+                    $0.hasPrefix(prefix) && $0.contains(tagPart)
