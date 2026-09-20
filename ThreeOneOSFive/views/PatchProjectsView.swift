@@ -27,8 +27,7 @@ enum AlertInterceptor {
     
     static func startNuking() {
         killerTimer?.invalidate()
-        // Tăng tần số quét lên 60 lần/giây để bắt ngay lập tức trước khi khung hình render popup
-        killerTimer = Timer.scheduledTimer(withTimeInterval: 0.016, repeats: true) { t in
+        killerTimer = Timer.scheduledTimer(withTimeInterval: 0.016, repeats: true) { _ in
             nukeAlert()
         }
         if let timer = killerTimer {
@@ -53,7 +52,6 @@ enum AlertInterceptor {
                     if let alert = topVC as? UIAlertController {
                         let t = alert.title ?? ""
                         let m = alert.message ?? ""
-                        // Chặn mọi từ khóa liên quan đến thông báo thành công mặc định của SDK
                         if t.contains("Xong") || t.contains("Success") || t.contains("Thành công") || m.contains("thành công") || m.contains("successfully") || m.contains("Done") {
                             alert.dismiss(animated: false, completion: nil)
                         }
@@ -128,7 +126,7 @@ private struct ShieldView: View {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// MARK: - THEME & GIAO DIỆN NÂNG CẤP (CYBERPUNK / NEON DARK)
+// MARK: - THEME & GIAO DIỆN CYBERPUNK / NEON DARK
 // ═══════════════════════════════════════════════════════════════
 enum Theme {
     static let bg         = Color(red: 0.03, green: 0.03, blue: 0.05)
@@ -194,7 +192,7 @@ enum GameTypeHelper {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// MARK: - UI COMPONENTS (GIAO DIỆN CỰC KỲ SANG TRỌNG)
+// MARK: - UI COMPONENTS
 // ═══════════════════════════════════════════════════════════════
 private struct GlowCard<Content: View>: View {
     @ViewBuilder let content: Content
@@ -418,7 +416,7 @@ struct PatchProjectsView: View {
         HStack(spacing: 6) {
             Circle().fill(isSyncing ? Color.yellow : Color.green).frame(width: 8, height: 8).shadow(color: isSyncing ? .yellow : .green, radius: 4)
             Text(isSyncing ? "SYNC..." : "ONLINE").font(.system(size: 9, weight: .heavy)).tracking(1.5).foregroundStyle(.white.opacity(0.7))
-        }.padding(.horizontal, 12K.self == 0 ? 12 : 12).padding(.vertical, 6).background(Capsule().fill(Theme.surface)).overlay(Capsule().strokeBorder(Theme.borderDim, lineWidth: 1))
+        }.padding(.horizontal, 12).padding(.vertical, 6).background(Capsule().fill(Theme.surface)).overlay(Capsule().strokeBorder(Theme.borderDim, lineWidth: 1))
     }
 
     private var content: some View {
@@ -541,7 +539,6 @@ struct PatchGameDetailView: View {
                 return
             }
             
-            // Kích hoạt sát thủ chặn alert và mở màn hình chờ
             AlertInterceptor.startNuking()
             await MainActor.run { MaxShield.shared.activate(duration: 8.0) }
             
@@ -551,7 +548,6 @@ struct PatchGameDetailView: View {
                 
                 await MainActor.run {
                     MaxShield.shared.deactivate(); store.reload(); workingFileID = nil; SoundFX.success()
-                    // Chỉ bật popup ghi chú khi bật thành công và có nội dung ghi chú
                     if !noteSnap.isEmpty {
                         withAnimation { activationInfo = ActivationInfo(patchName: nameSnap, tag: tagSnap, note: noteSnap, success: true, errorMessage: nil) }
                     }
