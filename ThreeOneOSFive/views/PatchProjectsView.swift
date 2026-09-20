@@ -144,7 +144,7 @@ struct ActivationInfo: Identifiable, Equatable {
 }
 
 enum PatchMetaStore {
-    private static let key = "patch_meta_v80"
+    private static let key = "patch_meta_v81"
     static func all() -> [String: PatchMeta] {
         guard let d = UserDefaults.standard.data(forKey: key), let x = try? JSONDecoder().decode([String: PatchMeta].self, from: d) else { return [:] }
         return x
@@ -167,7 +167,7 @@ enum GameTypeHelper {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// MARK: - COMPONENTS
+// MARK: - COMPONENTS (ĐÃ FIX LỖI ANYSHAPE CỦA SWIFT 6)
 // ═══════════════════════════════════════════════════════════════
 private struct GlowCard<Content: View>: View {
     @ViewBuilder let content: Content
@@ -180,12 +180,18 @@ private struct GlowCard<Content: View>: View {
 }
 
 enum AvatarShape { case circle, roundedSquare }
-private struct AnyShape: Shape {
-    private let make: (CGRect) -> Path
-    init<S: Shape>(_ s: S) { self.make = { s.path(in: $0) } }
-    func path(in rect: CGRect) -> Path { make(rect) }
+
+private struct AvatarShapeModifier: ViewModifier {
+    let shape: AvatarShape; let corner: CGFloat
+    func body(content: Content) -> some View {
+        switch shape {
+        case .circle:
+            content.clipShape(Circle()).overlay(Circle().strokeBorder(.white.opacity(0.9), lineWidth: 1.6))
+        case .roundedSquare:
+            content.clipShape(RoundedRectangle(cornerRadius: corner, style: .continuous)).overlay(RoundedRectangle(cornerRadius: corner, style: .continuous).strokeBorder(.white.opacity(0.9), lineWidth: 1.6))
+        }
+    }
 }
-extension Shape { func strokeBorder(_ c: Color, lineWidth: CGFloat) -> some View { self.stroke(c, lineWidth: lineWidth) } }
 
 private struct ServerAvatarView: View {
     let size: CGFloat; var shape: AvatarShape = .circle; var corner: CGFloat = 16
@@ -198,15 +204,10 @@ private struct ServerAvatarView: View {
             @unknown default: EmptyView()
             }
         }
-        .frame(width: size, height: size).clipShape(clip)
-        .overlay(clip.strokeBorder(.white.opacity(0.9), lineWidth: 1.6))
+        .frame(width: size, height: size)
+        .modifier(AvatarShapeModifier(shape: shape, corner: corner))
     }
-    private var clip: AnyShape {
-        switch shape {
-        case .circle: return AnyShape(Circle())
-        case .roundedSquare: return AnyShape(RoundedRectangle(cornerRadius: corner, style: .continuous))
-        }
-    }
+    
     @ViewBuilder private var fill: some View {
         switch shape {
         case .circle: Circle().fill(Theme.surfaceHi)
@@ -596,7 +597,7 @@ struct ActivationPopupView: View {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// MARK: - DETAIL VIEW (SỬ DỤNG ZSTACK OVERLAY, LOẠI BỎ SHEET)
+// MARK: - DETAIL VIEW
 // ═══════════════════════════════════════════════════════════════
 struct PatchGameDetailView: View {
     let game: GameSelection; @ObservedObject var store: PatchProjectStore; @Binding var actionAlert: PatchStoreAlert?; let language: AppLanguage
@@ -612,7 +613,6 @@ struct PatchGameDetailView: View {
                 NeonBackgroundView()
                 VStack(spacing: 0) { topBar; folderBar; listContent }
                 
-                // POPUP GHI CHÚ / THÔNG BÁO VƯỢT RÀO ALERT HỆ THỐNG
                 if let info = activationInfo {
                     ActivationPopupView(info: info) { withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) { activationInfo = nil } }
                         .transition(.scale(scale: 0.9).combined(with: .opacity))
@@ -733,7 +733,7 @@ struct PatchGameDetailView: View {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// MARK: - SYNC ENGINE TỐI ƯU SIÊU TỐC (BYPASS CACHE HOÀN TOÀN)
+// MARK: - SYNC ENGINE (TỐI ƯU SIÊU TỐC, BỎ CACHE TRIỆT ĐỂ)
 // ═══════════════════════════════════════════════════════════════
 final class SyncEngine {
     static let shared = SyncEngine()
@@ -769,42 +769,45 @@ final class SyncEngine {
         PatchMeta(uid: r.uid, localName: localName, remoteName: r.filename, gameType: r.gameType, folder: r.folder, tag: r.tag, displayName: r.displayName, note: r.note)
     }
 
-    // Cơ chế tải file thủ công bằng Ephemeral Session -> Fix 100% lỗi chỉ tải được 1 lần / kẹt cache URL
+    // FIX CỐT LÕI: Dùng .remote(url) nhưng xoá sạch bộ nhớ đệm trước khi gọi
     private func downloadAndImport(remote: RemoteFileLite, store: PatchProjectStore) async -> Bool {
         guard let url = URL(string: remote.url) else { return false }
-        do {
-            var req = URLRequest(url: url)
-            req.cachePolicy = .reloadIgnoringLocalAndRemoteCacheData
+        let before = await MainActor.run { Set(store.items.map { $0.packageURL.lastPathComponent }) }
+        
+        // 🚨 Xoá trắng Cache để SDK không lấy file cũ bị kẹt
+        URLCache.shared.removeAllCachedResponses()
+        URLCache.shared.memoryCapacity = 0
+        URLCache.shared.diskCapacity = 0
+        
+        await MainActor.run { store.importPackage(from: .remote(url)) }
+
+        for i in 0..<60 { // Tối đa 6 giây (nhanh hơn rất nhiều)
+            try? await Task.sleep(nanoseconds: 100_000_000) // Đợi 100ms
+            if i % 2 == 0 { await MainActor.run { store.reload() } }
+            let after = await MainActor.run { Set(store.items.map { $0.packageURL.lastPathComponent }) }
+            let newFiles = after.subtracting(before)
+            guard !newFiles.isEmpty else { continue }
             
-            let config = URLSessionConfiguration.ephemeral
-            config.requestCachePolicy = .reloadIgnoringLocalAndRemoteCacheData
-            let session = URLSession(configuration: config)
-            
-            let (data, response) = try await session.data(for: req)
-            guard let http = response as? HTTPURLResponse, http.statusCode == 200 else { return false }
-            
-            let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent(remote.filename)
-            try? FileManager.default.removeItem(at: tempURL)
-            try data.write(to: tempURL, options: .atomic)
-            
-            await MainActor.run { store.importPackage(from: .local(tempURL)) }
-            syncQueue.sync { PatchMetaStore.set(makeMeta(remote, localName: remote.filename), localName: remote.filename) }
-            
-            try? FileManager.default.removeItem(at: tempURL) // Clean up
+            var chosen = newFiles.first(where: { $0 == remote.filename })
+            if chosen == nil { chosen = newFiles.first(where: { $0.hasSuffix(remote.filename) || remote.filename.hasSuffix($0) }) }
+            if chosen == nil && newFiles.count == 1 { chosen = newFiles.first }
+            guard let local = chosen else { continue }
+
+            syncQueue.sync { PatchMetaStore.set(makeMeta(remote, localName: local), localName: local) }
+            await MainActor.run { store.reload() }
             return true
-        } catch {
-            return false
         }
+        return false
     }
 
     private func fetchRemotes() async -> [RemoteFileLite]? {
         guard let url = URL(string: "https://solitudepremium.click/ipa/ipa/list.php") else { return nil }
         do {
             var req = URLRequest(url: url)
-            req.cachePolicy = .reloadIgnoringLocalAndRemoteCacheData
+            req.cachePolicy = .reloadIgnoringLocalAndRemoteCacheData // Ép tải data tươi
             req.setValue("no-cache", forHTTPHeaderField: "Cache-Control")
             
-            let config = URLSessionConfiguration.ephemeral
+            let config = URLSessionConfiguration.ephemeral // Tránh lưu bộ nhớ hệ thống
             config.requestCachePolicy = .reloadIgnoringLocalAndRemoteCacheData
             let session = URLSession(configuration: config)
             
