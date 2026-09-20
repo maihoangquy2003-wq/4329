@@ -172,10 +172,11 @@ struct ActivationInfo: Identifiable, Equatable {
 }
 
 enum PatchMetaStore {
-    private static let key = "patch_meta_v88"
+    private static let key = "patch_meta_v89"
     static func all() -> [String: PatchMeta] { guard let d = UserDefaults.standard.data(forKey: key), let x = try? JSONDecoder().decode([String: PatchMeta].self, from: d) else { return [:] }; return x }
     static func save(_ d: [String: PatchMeta]) { if let x = try? JSONEncoder().encode(d) { UserDefaults.standard.set(x, forKey: key) } }
     static func set(_ m: PatchMeta, localName: String) { var d = all(); d[localName] = m; save(d) }
+    static func get(localName: String) -> PatchMeta? { all()[localName] }
     static func remove(localName: String) { var d = all(); d.removeValue(forKey: localName); save(d) }
 }
 
@@ -560,7 +561,7 @@ struct PatchGameDetailView: View {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// MARK: - SYNC ENGINE (ĐỒNG BỘ 2 CHIỀU, TỰ XÓA FILE TRÊN APP KHI WEB XÓA)
+// MARK: - SYNC ENGINE (ĐỒNG BỘ 2 CHIỀU, XÓA TRÊN WEB TỰ XÓA TRÊN APP)
 // ═══════════════════════════════════════════════════════════════
 final class SyncEngine {
     static let shared = SyncEngine()
@@ -575,7 +576,7 @@ final class SyncEngine {
         let items = await MainActor.run { store.items }
         let remoteFilenames = Set(remotes.map { $0.filename })
         
-        // Tự động gỡ và xóa các package trên app nếu file đó đã bị xóa trên server (web)
+        // Tự động gỡ và xóa package trên app nếu file vật lý đã bị xóa trên server (web)
         for item in items {
             let localName = item.packageURL.lastPathComponent
             if !remoteFilenames.contains(localName) {
@@ -583,14 +584,16 @@ final class SyncEngine {
                     try? DevicePatchService.restore(receipt: r)
                 }
                 syncQueue.sync { PatchMetaStore.remove(localName: localName) }
-                await MainActor.run { store.removePackage(id: item.id) }
+                // Dùng cách xóa file thông qua FileManager trực tiếp tương thích mọi phiên bản SDK
+                try? FileManager.default.removeItem(at: item.packageURL)
             }
         }
-
-        let currentItems = await MainActor.run { store.items }
-        let storeFiles = Set(currentItems.map { $0.packageURL.lastPathComponent })
         
-        for item in currentItems {
+        await MainActor.run { store.reload() }
+        let refreshedItems = await MainActor.run { store.items }
+        let storeFiles = Set(refreshedItems.map { $0.packageURL.lastPathComponent })
+        
+        for item in refreshedItems {
             let ln = item.packageURL.lastPathComponent
             if let r = remotes.first(where: { $0.filename == ln }) {
                 syncQueue.sync { PatchMetaStore.set(makeMeta(r, localName: ln), localName: ln) }
