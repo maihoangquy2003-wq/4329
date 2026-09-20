@@ -142,6 +142,11 @@ struct RemoteFileLite {
     }
 }
 
+struct ActivationInfo: Identifiable {
+    let id = UUID()
+    let patchName: String; let tag: String; let note: String; let success: Bool; let errorMessage: String?
+}
+
 enum PatchMetaStore {
     private static let key = "patch_meta_v70"
     static func all() -> [String: PatchMeta] {
@@ -166,7 +171,7 @@ enum GameTypeHelper {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// MARK: - COMPONENTS (ĐÃ KHÔI PHỤC GAME LOGO FF URL)
+// MARK: - COMPONENTS
 // ═══════════════════════════════════════════════════════════════
 private struct GlowCard<Content: View>: View {
     @ViewBuilder let content: Content
@@ -233,7 +238,6 @@ private struct AvatarView: View {
     }
 }
 
-// KHÔI PHỤC ẢNH LOGO FREE FIRE CHUẨN XÁC
 private struct GameLogoView: View {
     let imageURL: String
     var body: some View {
@@ -564,12 +568,88 @@ struct SilentSubMenuSheet: View {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// MARK: - DETAIL VIEW (ĐÃ BỎ POPUP HIỂN THỊ "ĐÃ CẬP NHẬT THÀNH CÔNG")
+// MARK: - SHEET THÔNG BÁO BẬT TẮT & COPY GHI CHÚ
+// ═══════════════════════════════════════════════════════════════
+struct ActivationNoteSheet: View {
+    let info: ActivationInfo; let onDismiss: () -> Void
+    @State private var copied = false
+
+    private var isError: Bool { !info.success }
+    private var accent: Color { isError ? Color(red: 1.0, green: 0.3, blue: 0.3) : .white }
+    private var hasNote: Bool { !info.note.trimmingCharacters(in: .whitespaces).isEmpty }
+
+    var body: some View {
+        ZStack {
+            NeonBackgroundView()
+            ScrollView(showsIndicators: false) {
+                VStack(spacing: 22) {
+                    Spacer(minLength: 50)
+                    if isError {
+                        ZStack {
+                            Circle().fill(accent.opacity(0.15)).frame(width: 130, height: 130).blur(radius: 20)
+                            Circle().fill(accent).frame(width: 92, height: 92).shadow(color: accent.opacity(0.6), radius: 24)
+                            Image(systemName: "exclamationmark.triangle.fill").font(.system(size: 38, weight: .heavy)).foregroundStyle(.white)
+                        }
+                    } else {
+                        ZStack {
+                            Circle().fill(Color.white.opacity(0.15)).frame(width: 130, height: 130).blur(radius: 24)
+                            ServerAvatarView(size: 100, shape: .circle).shadow(color: .white.opacity(0.55), radius: 24)
+                        }
+                    }
+                    
+                    VStack(spacing: 12) {
+                        Text("HEADLOCK ZENIS").font(.system(size: 11, weight: .heavy)).tracking(4.5).foregroundStyle(.white.opacity(0.6))
+                        Text(isError ? "LỖI KÍCH HOẠT" : "KÍCH HOẠT THÀNH CÔNG").font(.system(size: 18, weight: .heavy)).tracking(2).foregroundStyle(accent).multilineTextAlignment(.center).padding(.horizontal, 20)
+                        Text(info.patchName).font(.system(size: 16, weight: .heavy)).foregroundStyle(.white).multilineTextAlignment(.center).padding(.horizontal, 28)
+                        if !info.tag.isEmpty { TagPill(tag: info.tag).padding(.top, 4) }
+                    }
+
+                    if isError, let e = info.errorMessage, !e.isEmpty {
+                        VStack(alignment: .leading, spacing: 10) {
+                            Text("LÝ DO LỖI").font(.system(size: 10, weight: .heavy)).tracking(2.2).foregroundStyle(accent)
+                            Text(e).font(.system(size: 12.5, weight: .medium)).foregroundStyle(.white.opacity(0.9)).fixedSize(horizontal: false, vertical: true)
+                        }.padding(16).frame(maxWidth: .infinity, alignment: .leading).background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(accent.opacity(0.1))).overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(accent.opacity(0.5), lineWidth: 1.3)).padding(.horizontal, 24)
+                    }
+
+                    if hasNote {
+                        VStack(alignment: .leading, spacing: 14) {
+                            HStack(spacing: 8) {
+                                Image(systemName: "note.text").font(.system(size: 12, weight: .bold)).foregroundStyle(.white)
+                                Text("GHI CHÚ").font(.system(size: 10, weight: .heavy)).tracking(2.2).foregroundStyle(.white)
+                                Spacer()
+                            }
+                            Text(info.note).font(.system(size: 13.5, weight: .medium)).foregroundStyle(.white.opacity(0.95)).fixedSize(horizontal: false, vertical: true).frame(maxWidth: .infinity, alignment: .leading).padding(14).background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color.white.opacity(0.05))).overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(.white.opacity(0.25), style: StrokeStyle(lineWidth: 1, dash: [4, 4])))
+                            
+                            Button {
+                                SoundFX.tap()
+                                UIPasteboard.general.string = info.note
+                                withAnimation { copied = true }
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 1.6) { withAnimation { copied = false } }
+                            } label: {
+                                HStack(spacing: 8) {
+                                    Image(systemName: copied ? "checkmark" : "doc.on.doc.fill").font(.system(size: 12, weight: .heavy))
+                                    Text(copied ? "ĐÃ COPY" : "COPY GHI CHÚ").font(.system(size: 11.5, weight: .heavy)).tracking(1.8)
+                                }.foregroundStyle(copied ? .black : .white).frame(maxWidth: .infinity).padding(.vertical, 13).background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(copied ? Color.white : Color.white.opacity(0.06))).overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(.white, lineWidth: 1.4))
+                            }.buttonStyle(.plain)
+                        }.padding(18).background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Theme.surface)).overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(.white.opacity(0.3), lineWidth: 1.3)).padding(.horizontal, 22)
+                    }
+                    
+                    Button { SoundFX.tap(); onDismiss() } label: {
+                        Text("ĐÃ HIỂU").font(.system(size: 14, weight: .heavy)).tracking(3).foregroundStyle(.black).frame(maxWidth: .infinity).padding(.vertical, 16).background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(.white)).padding(.horizontal, 40)
+                    }.buttonStyle(.plain).padding(.bottom, 50).padding(.top, 10)
+                }
+            }
+        }
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// MARK: - DETAIL VIEW
 // ═══════════════════════════════════════════════════════════════
 struct PatchGameDetailView: View {
     let game: GameSelection; @ObservedObject var store: PatchProjectStore; @Binding var actionAlert: PatchStoreAlert?; let language: AppLanguage
     @Environment(\.dismiss) private var dismiss; @Environment(\.scenePhase) private var scenePhase
-    @State private var selectedFolder: String? = nil
+    @State private var activationInfo: ActivationInfo?; @State private var selectedFolder: String? = nil
     @State private var workingFileID: String? = nil; @State private var renameItem: PatchLibraryItem?; @State private var renameText: String = ""
     @State private var tagPickerItem: PatchLibraryItem?; @State private var noteItem: PatchLibraryItem?; @State private var noteText: String = ""
     @State private var refreshTick: Int = 0
@@ -592,6 +672,7 @@ struct PatchGameDetailView: View {
             .confirmationDialog("Chọn tag", isPresented: tagBinding, titleVisibility: .visible) {
                 Button("VIP 👑") { commitTag("VIP") }; Button("FREE 🛡") { commitTag("FREE") }; Button("Huỷ", role: .cancel) { tagPickerItem = nil }
             }
+            .fullScreenCover(item: $activationInfo) { i in ActivationNoteSheet(info: i) { activationInfo = nil } }
         }
     }
 
@@ -622,10 +703,32 @@ struct PatchGameDetailView: View {
         }
     }
 
-    private func syncFolders() { let c = folders; if c.isEmpty { selectedFolder = nil; return }; if let s = selectedFolder, c.contains(s) { return }; selectedFolder = c.first }
-    private var gameItems: [PatchLibraryItem] { _ = refreshTick; return store.items.filter { GameTypeHelper.prefixOf($0) == game.prefix } }
-    private var folders: [String] { var u: [String] = []; for item in gameItems { let f = folderName(for: item); if !f.isEmpty && !u.contains(f) { u.append(f) } }; return u.sorted() }
-    private var displayedItems: [PatchLibraryItem] { if folders.count <= 1 { return gameItems }; guard let s = selectedFolder else { return [] }; return gameItems.filter { folderName(for: $0) == s } }
+    private func syncFolders() {
+        let c = folders
+        if c.isEmpty { selectedFolder = nil; return }
+        if let s = selectedFolder, c.contains(s) { return }
+        selectedFolder = c.first
+    }
+
+    private var gameItems: [PatchLibraryItem] {
+        _ = refreshTick
+        return store.items.filter { GameTypeHelper.prefixOf($0) == game.prefix }
+    }
+
+    private var folders: [String] {
+        var u: [String] = []
+        for item in gameItems {
+            let f = folderName(for: item)
+            if !f.isEmpty && !u.contains(f) { u.append(f) }
+        }
+        return u.sorted()
+    }
+
+    private var displayedItems: [PatchLibraryItem] {
+        if folders.count <= 1 { return gameItems }
+        guard let s = selectedFolder else { return gameItems }
+        return gameItems.filter { folderName(for: $0) == s }
+    }
     
     private var renameBinding: Binding<Bool> { Binding(get: { renameItem != nil }, set: { if !$0 { renameItem = nil } }) }
     private var tagBinding: Binding<Bool> { Binding(get: { tagPickerItem != nil }, set: { if !$0 { tagPickerItem = nil } }) }
@@ -659,15 +762,29 @@ struct PatchGameDetailView: View {
     private func displayName(for i: PatchLibraryItem) -> String { if let m = meta(for: i), !m.displayName.isEmpty { return m.displayName }; if let n = i.project?.name, !n.isEmpty { return n }; var b = i.packageURL.deletingPathExtension().lastPathComponent; b = b.replacingOccurrences(of: "_VIP", with: "").replacingOccurrences(of: "_FREE", with: ""); return b }
     private func currentTag(for i: PatchLibraryItem) -> String { if let m = meta(for: i), !m.tag.isEmpty { return m.tag }; return i.packageURL.deletingPathExtension().lastPathComponent.hasSuffix("_VIP") ? "VIP" : "FREE" }
     private func currentNote(for i: PatchLibraryItem) -> String { meta(for: i)?.note ?? "" }
-    private func folderName(for i: PatchLibraryItem) -> String { if let m = meta(for: i), !m.folder.isEmpty { return m.folder }; return "CHƯA PHÂN LOẠI" }
+    
+    // Tối ưu hóa phân loại folder chính xác dựa trên metadata từ server hoặc đường dẫn file
+    private func folderName(for i: PatchLibraryItem) -> String {
+        if let m = meta(for: i), !m.folder.isEmpty { return m.folder }
+        let comps = i.packageURL.pathComponents
+        if let idx = comps.firstIndex(where: { $0 == "ffmax" || $0 == "ffnormal" || $0 == "silent" }), idx + 1 < comps.count {
+            let next = comps[idx + 1]
+            if next == "ffmax" || next == "ffnormal", idx + 2 < comps.count {
+                return comps[idx + 2]
+            }
+            if next != "ffmax" && next != "ffnormal" {
+                return next
+            }
+        }
+        return "CHUNG"
+    }
 
     private func commitRename() { guard let i = renameItem else { return }; let t = renameText.trimmingCharacters(in: .whitespacesAndNewlines); guard !t.isEmpty else { renameItem = nil; return }; let ln = localKey(for: i); guard var m = PatchMetaStore.get(localName: ln) else { renameItem = nil; return }; m.displayName = t; m.nameOverride = true; PatchMetaStore.set(m, localName: ln); store.reload(); renameItem = nil }
     private func commitTag(_ tag: String) { guard let i = tagPickerItem else { return }; let ln = localKey(for: i); guard var m = PatchMetaStore.get(localName: ln) else { tagPickerItem = nil; return }; m.tag = tag; m.tagOverride = true; PatchMetaStore.set(m, localName: ln); store.reload(); tagPickerItem = nil }
     private func commitNote() { guard let i = noteItem else { return }; let t = noteText.trimmingCharacters(in: .whitespacesAndNewlines); let ln = localKey(for: i); guard var m = PatchMetaStore.get(localName: ln) else { noteItem = nil; return }; m.note = t; m.noteOverride = true; PatchMetaStore.set(m, localName: ln); store.reload(); noteItem = nil }
 
-    // Toggle patch trực tiếp không cần popup "Đã hiểu" nữa
     private func togglePatch(item: PatchLibraryItem, activate: Bool) {
-        workingFileID = item.id.uuidString
+        workingFileID = item.id.uuidString; let nameSnap = displayName(for: item); let tagSnap = currentTag(for: item); let noteSnap = currentNote(for: item)
         let targetFolder = folderName(for: item); let gp = game.prefix
         let conflictIDs: [UUID] = activate ? store.items.compactMap { o in guard o.id != item.id, GameTypeHelper.prefixOf(o) == gp, folderName(for: o) == targetFolder, DevicePatchService.latestReceipt(projectID: o.id) != nil else { return nil }; return o.id } : []
 
@@ -675,16 +792,16 @@ struct PatchGameDetailView: View {
             for cid in conflictIDs { if let r = DevicePatchService.latestReceipt(projectID: cid) { try? DevicePatchService.restore(receipt: r) } }
             if !activate {
                 do { if let r = DevicePatchService.latestReceipt(projectID: item.id) { try DevicePatchService.restore(receipt: r) }; await MainActor.run { store.reload(); workingFileID = nil } }
-                catch { await MainActor.run { workingFileID = nil; SoundFX.error() } }
+                catch { await MainActor.run { workingFileID = nil; SoundFX.error(); activationInfo = ActivationInfo(patchName: nameSnap, tag: tagSnap, note: noteSnap, success: false, errorMessage: "Lỗi tắt: \(error.localizedDescription)") } }
                 return
             }
             await MainActor.run { MaxShield.shared.activate(duration: 12.0) }
             do {
                 guard let p = item.project else { await MainActor.run { MaxShield.shared.deactivate(); workingFileID = nil }; return }
                 _ = try DevicePatchService.apply(project: p); try? await Task.sleep(nanoseconds: 2_000_000_000)
-                await MainActor.run { MaxShield.shared.deactivate(); store.reload(); workingFileID = nil; SoundFX.success() }
+                await MainActor.run { MaxShield.shared.deactivate(); store.reload(); workingFileID = nil; SoundFX.success(); activationInfo = ActivationInfo(patchName: nameSnap, tag: tagSnap, note: noteSnap, success: true, errorMessage: nil) }
             } catch {
-                await MainActor.run { MaxShield.shared.deactivate(); store.reload(); workingFileID = nil; SoundFX.error() }
+                await MainActor.run { MaxShield.shared.deactivate(); store.reload(); workingFileID = nil; SoundFX.error(); activationInfo = ActivationInfo(patchName: nameSnap, tag: tagSnap, note: noteSnap, success: false, errorMessage: error.localizedDescription) }
             }
         }
     }
