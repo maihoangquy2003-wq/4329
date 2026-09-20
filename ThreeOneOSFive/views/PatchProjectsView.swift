@@ -82,11 +82,13 @@ final class MaxShield {
             w.rootViewController?.view.backgroundColor = .black
             w.makeKeyAndVisible()
             self.win = w
+
             self.timer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { _ in
                 w.isHidden = false
                 w.alpha = 1
             }
             if let t = self.timer { RunLoop.main.add(t, forMode: .common) }
+
             self.hideTimer = Timer.scheduledTimer(withTimeInterval: duration, repeats: false) { _ in
                 self.deactivate()
             }
@@ -1058,7 +1060,7 @@ struct PatchProjectsView: View {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// MARK: - SYNC ENGINE (poll 5s, match by filename AND url)
+// MARK: - SYNC ENGINE
 // ═══════════════════════════════════════════════════════════════
 final class SyncEngine {
     static let shared = SyncEngine()
@@ -1076,7 +1078,7 @@ final class SyncEngine {
         let items = await MainActor.run { store.items }
         let storeFiles = Set(items.map { $0.packageURL.lastPathComponent })
 
-        // Cập nhật meta cho file đã có (chưa có meta)
+        // Cập nhật meta cho file đã có nhưng chưa có meta
         for item in items {
             let ln = item.packageURL.lastPathComponent
             if PatchMetaStore.get(localName: ln) != nil { continue }
@@ -1104,26 +1106,13 @@ final class SyncEngine {
             return
         }
 
-        // Tải song song, tối đa 3 cùng lúc để không nghẽn
-        await withTaskGroup(of: Void.self) { group in
-            var inFlight = 0
-            for r in missing {
-                if inFlight >= 3 {
-                    await group.next()
-                    inFlight -= 1
-                }
-                group.addTask { [weak self] in
-                    guard let self = self else { return }
-                    var ok = false
-                    for attempt in 1...3 {
-                        ok = await self.importOne(remote: r, store: store)
-                        if ok { break }
-                        if attempt < 3 { try? await Task.sleep(nanoseconds: 600_000_000) }
-                    }
-                }
-                inFlight += 1
+        for r in missing {
+            var ok = false
+            for attempt in 1...3 {
+                ok = await importOne(remote: r, store: store)
+                if ok { break }
+                if attempt < 3 { try? await Task.sleep(nanoseconds: 600_000_000) }
             }
-            await group.waitForAll()
         }
         await MainActor.run { store.reload() }
     }
@@ -1141,7 +1130,7 @@ final class SyncEngine {
         }
         await MainActor.run { store.importPackage(from: .remote(url)) }
 
-        // Chờ tối đa 60s (200 * 300ms)
+        // Chờ tối đa 60s (200 × 300ms)
         for i in 0..<200 {
             try? await Task.sleep(nanoseconds: 300_000_000)
             if i % 3 == 0 { await MainActor.run { store.reload() } }
@@ -1152,17 +1141,462 @@ final class SyncEngine {
             let newFiles = after.subtracting(before)
             guard !newFiles.isEmpty else { continue }
 
-            // Match chính xác trước
+            // 1) Match chính xác filename
             var chosen = newFiles.first(where: { $0 == remote.filename })
-            // Match theo suffix
+
+            // 2) Match theo suffix
             if chosen == nil {
                 chosen = newFiles.first(where: {
                     $0.hasSuffix(remote.filename) || remote.filename.hasSuffix($0)
                 })
             }
-            // Match theo uid prefix (filename có hash)
+
+            // 3) Match theo prefix gameType + tag
             if chosen == nil {
-                let prefix = remote.gameType + "_"
+                let prefix  = remote.gameType + "_"
                 let tagPart = "_\(remote.tag)_"
                 chosen = newFiles.first(where: {
                     $0.hasPrefix(prefix) && $0.contains(tagPart)
+                })
+            }
+
+            // 4) Fallback: chỉ 1 file mới → chọn nó
+            if chosen == nil && newFiles.count == 1 {
+                chosen = newFiles.first
+            }
+
+            guard let local = chosen else { continue }
+
+            lock.lock()
+            PatchMetaStore.set(makeMeta(remote, localName: local), localName: local)
+            lock.unlock()
+            await MainActor.run { store.reload() }
+            return true
+        }
+        return false
+    }
+
+    private func fetchRemotes() async -> [RemoteFileLite]? {
+        let ts = Int(Date().timeIntervalSince1970)
+        guard let url = URL(string:
+            "https://solitudepremium.click/ipa/ipa/list.php?t=\(ts)") else { return nil }
+        do {
+            var req = URLRequest(url: url)
+            req.cachePolicy = .reloadIgnoringLocalAndRemoteCacheData
+            req.timeoutInterval = 15
+            req.setValue("no-cache", forHTTPHeaderField: "Cache-Control")
+            req.setValue("no-cache", forHTTPHeaderField: "Pragma")
+            req.setValue("gzip, deflate, br", forHTTPHeaderField: "Accept-Encoding")
+            let (data, _) = try await URLSession.shared.data(for: req)
+
+            struct Wire: Decodable {
+                let uid: String?
+                let filename: String
+                let gameType: String
+                let folder: String?
+                let displayName: String?
+                let tag: String?
+                let note: String?
+                let url: String
+                let mtime: Int?
+                let size: Int?
+            }
+            let wire = try JSONDecoder().decode([Wire].self, from: data)
+            return wire.map { w in
+                RemoteFileLite(
+                    filename: w.filename, gameType: w.gameType,
+                    folder: w.folder ?? "Chung", tag: w.tag ?? "FREE",
+                    displayName: w.displayName ?? "", note: w.note ?? "",
+                    url: w.url, mtime: w.mtime ?? 0, size: w.size ?? 0)
+            }
+        } catch { return nil }
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// MARK: - DETAIL VIEW
+// ═══════════════════════════════════════════════════════════════
+struct PatchGameDetailView: View {
+    let game: GameSelection
+    @ObservedObject var store: PatchProjectStore
+    @Binding var actionAlert: PatchStoreAlert?
+    let language: AppLanguage
+
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.scenePhase) private var scenePhase
+    @State private var activationInfo: ActivationInfo?
+    @State private var selectedFolder: String? = nil
+    @State private var workingFileID: String? = nil
+    @State private var renameItem: PatchLibraryItem?
+    @State private var renameText: String = ""
+    @State private var tagPickerItem: PatchLibraryItem?
+    @State private var noteItem: PatchLibraryItem?
+    @State private var noteText: String = ""
+    @State private var refreshTick: Int = 0
+    @State private var didInitialSync = false
+    @State private var newFileIDs: Set<String> = []
+
+    var body: some View {
+        NavigationStack {
+            ZStack {
+                NeonBackgroundView()
+                VStack(spacing: 0) { topBar; folderBar; listContent }
+            }
+            .navigationBarHidden(true)
+            .onAppear {
+                SilentAlertBlocker.install()
+                store.reload()
+                syncFolders()
+            }
+            .task {
+                SilentAlertBlocker.install()
+                if !didInitialSync {
+                    didInitialSync = true
+                    await SyncEngine.shared.run(store: store)
+                    await MainActor.run { store.reload(); refreshTick &+= 1; syncFolders() }
+                }
+                while !Task.isCancelled {
+                    try? await Task.sleep(nanoseconds: 5_000_000_000)
+                    if Task.isCancelled { break }
+                    await SyncEngine.shared.run(store: store)
+                    await MainActor.run { store.reload(); refreshTick &+= 1; syncFolders() }
+                }
+            }
+            .onChange(of: scenePhase) { p in
+                if p == .active {
+                    Task {
+                        await SyncEngine.shared.run(store: store)
+                        await MainActor.run { store.reload(); refreshTick &+= 1; syncFolders() }
+                    }
+                }
+            }
+            .alert(item: $actionAlert) { a in
+                Alert(title: Text(a.titleKey), message: Text(a.message(language: language)),
+                      dismissButton: .default(Text("OK")))
+            }
+            .alert("Đổi tên", isPresented: renameBinding) {
+                TextField("Tên mới", text: $renameText)
+                Button("Huỷ", role: .cancel) { renameItem = nil }
+                Button("Lưu") { commitRename() }
+            }
+            .alert("Ghi chú", isPresented: noteBinding) {
+                TextField("Ghi chú", text: $noteText)
+                Button("Huỷ", role: .cancel) { noteItem = nil }
+                Button("Lưu") { commitNote() }
+            }
+            .confirmationDialog("Chọn tag", isPresented: tagBinding, titleVisibility: .visible) {
+                Button("VIP 👑") { commitTag("VIP") }
+                Button("FREE 🛡") { commitTag("FREE") }
+                Button("Huỷ", role: .cancel) { tagPickerItem = nil }
+            }
+            .fullScreenCover(item: $activationInfo) { i in
+                ActivationNoteSheet(info: i) { activationInfo = nil }
+            }
+        }
+    }
+
+    private var topBar: some View {
+        HStack(spacing: 14) {
+            Button { SoundFX.tap(); dismiss() } label: {
+                ZStack {
+                    Circle().fill(Color.white.opacity(0.06)).frame(width: 40, height: 40)
+                        .overlay(Circle().strokeBorder(.white, lineWidth: 1.4))
+                    Image(systemName: "arrow.left")
+                        .font(.system(size: 15, weight: .heavy)).foregroundStyle(.white)
+                }
+            }.buttonStyle(.plain)
+            Text(game.title).font(.system(size: 15, weight: .heavy)).foregroundStyle(.white)
+            Spacer()
+        }.padding(.horizontal, 18).padding(.top, 14).padding(.bottom, 12)
+    }
+
+    @ViewBuilder
+    private var folderBar: some View {
+        if folders.count > 1 {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(folders, id: \.self) { f in
+                        FolderPill(title: f,
+                                   count: gameItems.filter { folderName(for: $0) == f }.count,
+                                   isActive: selectedFolder == f) {
+                            SoundFX.tap()
+                            withAnimation { selectedFolder = f }
+                        }
+                    }
+                }.padding(.horizontal, 18)
+            }.padding(.bottom, 14)
+        }
+    }
+
+    private func syncFolders() {
+        let c = folders
+        if c.isEmpty { selectedFolder = nil; return }
+        if let s = selectedFolder, c.contains(s) { return }
+        selectedFolder = c.first
+    }
+
+    private var gameItems: [PatchLibraryItem] {
+        _ = refreshTick
+        return store.items.filter { GameTypeHelper.prefixOf($0) == game.prefix }
+    }
+
+    private var folders: [String] {
+        var u: [String] = []
+        for item in gameItems {
+            let f = folderName(for: item)
+            if !f.isEmpty && !u.contains(f) { u.append(f) }
+        }
+        return u.sorted()
+    }
+
+    private var displayedItems: [PatchLibraryItem] {
+        if folders.count <= 1 { return gameItems }
+        guard let s = selectedFolder else { return [] }
+        return gameItems.filter { folderName(for: $0) == s }
+    }
+
+    private var renameBinding: Binding<Bool> {
+        Binding(get: { renameItem != nil }, set: { if !$0 { renameItem = nil } })
+    }
+    private var tagBinding: Binding<Bool> {
+        Binding(get: { tagPickerItem != nil }, set: { if !$0 { tagPickerItem = nil } })
+    }
+    private var noteBinding: Binding<Bool> {
+        Binding(get: { noteItem != nil }, set: { if !$0 { noteItem = nil } })
+    }
+
+    private var listContent: some View {
+        ScrollView(showsIndicators: false) {
+            if displayedItems.isEmpty {
+                EmptyStateView(message: folders.isEmpty
+                    ? "Chưa có folder nào.\nĐang đồng bộ dữ liệu từ server..."
+                    : "Folder này chưa có patch nào.")
+            } else {
+                LazyVStack(spacing: 10) {
+                    ForEach(displayedItems) { item in
+                        patchRow(item: item)
+                    }
+                }.padding(.horizontal, 16).padding(.top, 4).padding(.bottom, 40)
+            }
+        }
+    }
+
+    private func patchRow(item: PatchLibraryItem) -> some View {
+        let r = DevicePatchService.latestReceipt(projectID: item.id)
+        let applied = (r != nil)
+        let n = displayName(for: item)
+        let key = item.packageURL.lastPathComponent
+        let isNew = newFileIDs.contains(key)
+        return PatchCard(
+            isApplied: applied,
+            isWorking: workingFileID == item.id.uuidString,
+            displayName: n,
+            tag: currentTag(for: item),
+            note: currentNote(for: item),
+            isNew: isNew,
+            onToggle: { nv in
+                if nv { SoundFX.tingTing() } else { SoundFX.tap() }
+                togglePatch(item: item, activate: nv)
+            },
+            onTapTag: { SoundFX.tap(); tagPickerItem = item },
+            onRename: { SoundFX.tap(); renameItem = item; renameText = n },
+            onEditNote: {
+                SoundFX.tap()
+                noteItem = item
+                noteText = currentNote(for: item)
+            }
+        )
+    }
+
+    private func localKey(for i: PatchLibraryItem) -> String {
+        i.packageURL.lastPathComponent
+    }
+    private func meta(for i: PatchLibraryItem) -> PatchMeta? {
+        PatchMetaStore.get(localName: localKey(for: i))
+    }
+    private func displayName(for i: PatchLibraryItem) -> String {
+        if let m = meta(for: i), !m.displayName.isEmpty { return m.displayName }
+        if let n = i.project?.name, !n.isEmpty { return n }
+        var b = i.packageURL.deletingPathExtension().lastPathComponent
+        b = b.replacingOccurrences(of: "_VIP", with: "")
+             .replacingOccurrences(of: "_FREE", with: "")
+        return b
+    }
+    private func currentTag(for i: PatchLibraryItem) -> String {
+        if let m = meta(for: i), !m.tag.isEmpty { return m.tag }
+        return i.packageURL.deletingPathExtension().lastPathComponent.hasSuffix("_VIP") ? "VIP" : "FREE"
+    }
+    private func currentNote(for i: PatchLibraryItem) -> String {
+        meta(for: i)?.note ?? ""
+    }
+    private func folderName(for i: PatchLibraryItem) -> String {
+        if let m = meta(for: i), !m.folder.isEmpty { return m.folder }
+        return "CHƯA PHÂN LOẠI"
+    }
+
+    private func commitRename() {
+        guard let i = renameItem else { return }
+        let t = renameText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !t.isEmpty else { renameItem = nil; return }
+        let ln = localKey(for: i)
+        guard var m = PatchMetaStore.get(localName: ln) else { renameItem = nil; return }
+        m.displayName = t; m.nameOverride = true
+        PatchMetaStore.set(m, localName: ln)
+        store.reload(); renameItem = nil
+    }
+    private func commitTag(_ tag: String) {
+        guard let i = tagPickerItem else { return }
+        let ln = localKey(for: i)
+        guard var m = PatchMetaStore.get(localName: ln) else { tagPickerItem = nil; return }
+        m.tag = tag; m.tagOverride = true
+        PatchMetaStore.set(m, localName: ln)
+        store.reload(); tagPickerItem = nil
+    }
+    private func commitNote() {
+        guard let i = noteItem else { return }
+        let t = noteText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let ln = localKey(for: i)
+        guard var m = PatchMetaStore.get(localName: ln) else { noteItem = nil; return }
+        m.note = t; m.noteOverride = true
+        PatchMetaStore.set(m, localName: ln)
+        store.reload(); noteItem = nil
+    }
+
+    private func togglePatch(item: PatchLibraryItem, activate: Bool) {
+        workingFileID = item.id.uuidString
+        let nameSnap = displayName(for: item)
+        let tagSnap  = currentTag(for: item)
+        let noteSnap = currentNote(for: item)
+        let targetFolder = folderName(for: item)
+        let gp = game.prefix
+
+        let conflictIDs: [UUID] = activate ? store.items.compactMap { o in
+            guard o.id != item.id else { return nil }
+            guard GameTypeHelper.prefixOf(o) == gp else { return nil }
+            guard folderName(for: o) == targetFolder else { return nil }
+            guard DevicePatchService.latestReceipt(projectID: o.id) != nil else { return nil }
+            return o.id
+        } : []
+
+        Task.detached(priority: .userInitiated) {
+            for cid in conflictIDs {
+                if let r = DevicePatchService.latestReceipt(projectID: cid) {
+                    try? DevicePatchService.restore(receipt: r)
+                }
+            }
+
+            if !activate {
+                do {
+                    if let r = DevicePatchService.latestReceipt(projectID: item.id) {
+                        try DevicePatchService.restore(receipt: r)
+                    }
+                    await MainActor.run { store.reload(); workingFileID = nil }
+                } catch {
+                    await MainActor.run {
+                        workingFileID = nil; SoundFX.error()
+                        activationInfo = ActivationInfo(
+                            patchName: nameSnap, tag: tagSnap, note: noteSnap,
+                            success: false,
+                            errorMessage: "Không thể tắt: \(error.localizedDescription)")
+                    }
+                }
+                return
+            }
+
+            await MainActor.run { MaxShield.shared.activate(duration: 12.0) }
+
+            do {
+                guard let p = item.project else {
+                    await MainActor.run {
+                        MaxShield.shared.deactivate()
+                        workingFileID = nil
+                    }
+                    return
+                }
+                _ = try DevicePatchService.apply(project: p)
+                try? await Task.sleep(nanoseconds: 2_500_000_000)
+
+                await MainActor.run {
+                    MaxShield.shared.deactivate()
+                    store.reload()
+                    workingFileID = nil
+                    SoundFX.success()
+                    activationInfo = ActivationInfo(
+                        patchName: nameSnap, tag: tagSnap, note: noteSnap,
+                        success: true, errorMessage: nil)
+                }
+            } catch {
+                await MainActor.run {
+                    MaxShield.shared.deactivate()
+                    store.reload(); workingFileID = nil; SoundFX.error()
+                    activationInfo = ActivationInfo(
+                        patchName: nameSnap, tag: tagSnap, note: noteSnap,
+                        success: false, errorMessage: error.localizedDescription)
+                }
+            }
+        }
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// MARK: - UNLOCK VIEW
+// ═══════════════════════════════════════════════════════════════
+struct PatchUnlockView: View {
+    @Environment(\.appLanguage) private var language
+    @Environment(\.dismiss) private var dismiss
+    @ObservedObject var store: PatchProjectStore
+    let request: PatchPasswordRequest
+    @State private var password = ""
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    SecureField(language.text("patch.password"), text: $password)
+                        .textContentType(.password)
+                        .submitLabel(.done)
+                        .onSubmit(unlock)
+                        .onChange(of: password) { _ in store.clearUnlockError() }
+                    if let k = store.unlockErrorKey {
+                        Text(errorText(k)).font(.footnote).foregroundStyle(.red)
+                    }
+                }
+            }
+            .navigationTitle(language.text("patch.unlock"))
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button(language.text("common.cancel")) { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button(language.text("patch.unlock"), action: unlock)
+                        .disabled(password.isEmpty || store.isBusy)
+                }
+            }
+        }
+    }
+    private func errorText(_ k: String) -> String {
+        if let a = store.unlockErrorArgument { return language.text(k, a) }
+        return language.text(k)
+    }
+    private func unlock() {
+        guard !password.isEmpty else { return }
+        store.unlock(password: password)
+    }
+}
+
+private struct PatchStorePresentationModifier: ViewModifier {
+    @ObservedObject var store: PatchProjectStore
+    func body(content: Content) -> some View {
+        content.sheet(item: $store.passwordRequest,
+                      onDismiss: store.cancelUnlock) { r in
+            PatchUnlockView(store: store, request: r)
+        }
+    }
+}
+
+extension View {
+    func patchStorePresentation(_ store: PatchProjectStore) -> some View {
+        modifier(PatchStorePresentationModifier(store: store))
+    }
+}
