@@ -140,7 +140,8 @@ struct NeonBackgroundView: View {
     var body: some View {
         ZStack {
             Theme.bg
-            LinearGradient(colors: [Color.blue.opacity(0.08), Color.purple.opacity(0.05), Color.clear], startAngle: .topLeading, endAngle: .bottomTrailing).ignoresSafeArea()
+            // Đã sửa startAngle/endAngle thành startPoint/endPoint chuẩn xác cho LinearGradient
+            LinearGradient(colors: [Color.blue.opacity(0.08), Color.purple.opacity(0.05), Color.clear], startPoint: .topLeading, endPoint: .bottomTrailing).ignoresSafeArea()
         }.ignoresSafeArea()
     }
 }
@@ -172,7 +173,7 @@ struct ActivationInfo: Identifiable, Equatable {
 }
 
 enum PatchMetaStore {
-    private static let key = "patch_meta_v86"
+    private static let key = "patch_meta_v87"
     static func all() -> [String: PatchMeta] { guard let d = UserDefaults.standard.data(forKey: key), let x = try? JSONDecoder().decode([String: PatchMeta].self, from: d) else { return [:] }; return x }
     static func save(_ d: [String: PatchMeta]) { if let x = try? JSONEncoder().encode(d) { UserDefaults.standard.set(x, forKey: key) } }
     static func set(_ m: PatchMeta, localName: String) { var d = all(); d[localName] = m; save(d) }
