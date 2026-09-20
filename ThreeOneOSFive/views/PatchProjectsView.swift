@@ -19,7 +19,6 @@ struct NeonBackgroundView: View {
     var body: some View {
         ZStack {
             Theme.bg
-            // Ánh sáng viền mờ ảo
             RadialGradient(colors: [Theme.glow.opacity(0.15), .clear], center: .topLeading, startRadius: 50, endRadius: 500)
             RadialGradient(colors: [Theme.glow.opacity(0.1), .clear], center: .bottomTrailing, startRadius: 0, endRadius: 400)
         }.ignoresSafeArea()
@@ -41,7 +40,7 @@ enum SoundFX {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// MARK: - MAX SHIELD (GIỮ NGUYÊN HOÀN TOÀN TỪ CODE GỐC)
+// MARK: - MAX SHIELD
 // ═══════════════════════════════════════════════════════════════
 final class MaxShield {
     static let shared = MaxShield()
@@ -111,7 +110,7 @@ private struct ShieldView: View {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// MARK: - MODELS & STORE (GIỮ NGUYÊN DATA STRUCTURE)
+// MARK: - MODELS & STORE
 // ═══════════════════════════════════════════════════════════════
 struct GameSelection: Identifiable, Hashable {
     let id = UUID()
@@ -120,17 +119,9 @@ struct GameSelection: Identifiable, Hashable {
 }
 
 struct PatchMeta: Codable {
-    var uid: String
-    var localName: String
-    var remoteName: String
-    var gameType: String
-    var folder: String
-    var tag: String
-    var displayName: String
-    var note: String
-    var tagOverride: Bool
-    var nameOverride: Bool
-    var noteOverride: Bool
+    var uid: String; var localName: String; var remoteName: String; var gameType: String
+    var folder: String; var tag: String; var displayName: String; var note: String
+    var tagOverride: Bool; var nameOverride: Bool; var noteOverride: Bool
 
     init(uid: String = "", localName: String = "", remoteName: String = "", gameType: String = "", folder: String = "", tag: String = "FREE", displayName: String = "", note: String = "", tagOverride: Bool = false, nameOverride: Bool = false, noteOverride: Bool = false) {
         self.uid = uid; self.localName = localName; self.remoteName = remoteName; self.gameType = gameType; self.folder = folder; self.tag = tag; self.displayName = displayName; self.note = note; self.tagOverride = tagOverride; self.nameOverride = nameOverride; self.noteOverride = noteOverride
@@ -150,11 +141,7 @@ struct RemoteFileLite {
 
 struct ActivationInfo: Identifiable {
     let id = UUID()
-    let patchName: String
-    let tag: String
-    let note: String
-    let success: Bool
-    let errorMessage: String?
+    let patchName: String; let tag: String; let note: String; let success: Bool; let errorMessage: String?
 }
 
 enum PatchMetaStore {
@@ -211,7 +198,7 @@ private struct TagPill: View {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// MARK: - MAIN PROJECTS VIEW (NO LAG TỐI ƯU MƯỢT MÀ)
+// MARK: - MAIN PROJECTS VIEW
 // ═══════════════════════════════════════════════════════════════
 struct PatchProjectsView: View {
     @Environment(\.appLanguage) private var language
@@ -223,7 +210,7 @@ struct PatchProjectsView: View {
     @State private var showSilentSubmenu = false
     @State private var isSyncing = false
     
-    // Khởi tạo Timer chạy ngầm mỗi 15s để check Sync, k dùng while true
+    // Timer ngầm, vô cùng nhẹ nhàng, không gây lag
     let timer = Timer.publish(every: 15, on: .main, in: .common).autoconnect()
 
     var body: some View {
@@ -239,16 +226,14 @@ struct PatchProjectsView: View {
                             silentCard()
                         }.padding(.horizontal, 20).padding(.bottom, 50)
                     }
-                    .refreshable { await syncNow() } // Kéo xuống để sync tay
+                    .refreshable { await syncNow() }
                 }
             }
             .navigationBarHidden(true)
             .onAppear { store.reload(); Task { await syncNow() } }
             .onChange(of: scenePhase) { p in if p == .active { Task { await syncNow() } } }
             .onReceive(timer) { _ in Task { await syncNow() } }
-            .sheet(item: $selectedGame) { g in
-                PatchGameDetailView(game: g, store: store, actionAlert: $actionAlert, language: language)
-            }
+            .sheet(item: $selectedGame) { g in PatchGameDetailView(game: g, store: store, actionAlert: $actionAlert, language: language) }
             .sheet(isPresented: $showSilentSubmenu) {
                 SilentSubMenuSheet(onSelect: { prefix in
                     showSilentSubmenu = false
@@ -320,11 +305,9 @@ struct PatchProjectsView: View {
 
     @MainActor
     private func syncNow() async {
-        guard !isSyncing else { return }
-        isSyncing = true
+        guard !isSyncing else { return }; isSyncing = true
         await SyncEngine.shared.run(store: store)
-        store.reload()
-        isSyncing = false
+        store.reload(); isSyncing = false
     }
 }
 
@@ -452,7 +435,6 @@ struct PatchGameDetailView: View {
         }
     }
 
-    // Logic xử lý Data Folder y như bản gốc
     private var gameItems: [PatchLibraryItem] { store.items.filter { GameTypeHelper.prefixOf($0) == game.prefix } }
     private var folders: [String] {
         var u: [String] = []
@@ -475,7 +457,6 @@ struct PatchGameDetailView: View {
     private func currentNote(for i: PatchLibraryItem) -> String { meta(for: i)?.note ?? "" }
     private func folderName(for i: PatchLibraryItem) -> String { meta(for: i)?.folder ?? "CHƯA PHÂN LOẠI" }
 
-    // Hàm Toggle y chang bản gốc
     private func togglePatch(item: PatchLibraryItem, activate: Bool) {
         workingFileID = item.id.uuidString
         let nameSnap = displayName(for: item); let tagSnap = currentTag(for: item); let noteSnap = currentNote(for: item)
@@ -522,22 +503,16 @@ struct PatchCardUI: View {
     var body: some View {
         GlowCard(isWorking: isApplied || isWorking) {
             HStack(spacing: 14) {
-                // Icon (Nổi bật nếu bật)
                 Circle()
                     .strokeBorder(isApplied ? Theme.text : Theme.border, lineWidth: 2)
                     .background(Circle().fill(isApplied ? Theme.text : Color.clear))
                     .frame(width: 44, height: 44)
-                    .overlay(
-                        Image(systemName: "checkmark").font(.system(size: 16, weight: .bold))
-                            .foregroundColor(.black).opacity(isApplied ? 1 : 0)
-                    )
+                    .overlay(Image(systemName: "checkmark").font(.system(size: 16, weight: .bold)).foregroundColor(.black).opacity(isApplied ? 1 : 0))
                     .shadow(color: isApplied ? Theme.glow : .clear, radius: 6)
                 
                 VStack(alignment: .leading, spacing: 6) {
                     Text(name).font(.system(size: 15, weight: .heavy)).foregroundColor(.white).lineLimit(1)
-                    if !note.isEmpty {
-                        Text(note).font(.system(size: 11, weight: .medium)).foregroundColor(Theme.textMuted).lineLimit(1)
-                    }
+                    if !note.isEmpty { Text(note).font(.system(size: 11, weight: .medium)).foregroundColor(Theme.textMuted).lineLimit(1) }
                 }
                 Spacer()
                 TagPill(tag: tag)
@@ -545,10 +520,7 @@ struct PatchCardUI: View {
                 if isWorking {
                     ProgressView().tint(.white).frame(width: 50, height: 30)
                 } else {
-                    Toggle("", isOn: Binding(
-                        get: { isApplied },
-                        set: { onToggle($0) }
-                    )).labelsHidden().tint(.white)
+                    Toggle("", isOn: Binding(get: { isApplied }, set: { onToggle($0) })).labelsHidden().tint(.white)
                 }
             }.padding(16)
         }
@@ -571,17 +543,11 @@ struct ActivationNoteSheet: View {
                     .shadow(color: info.success ? Theme.glow : .red.opacity(0.5), radius: 20)
                 
                 Text(info.success ? "KÍCH HOẠT THÀNH CÔNG" : "LỖI KÍCH HOẠT")
-                    .font(.system(size: 20, weight: .heavy)).tracking(2)
-                    .foregroundColor(info.success ? .white : .red)
-                
+                    .font(.system(size: 20, weight: .heavy)).tracking(2).foregroundColor(info.success ? .white : .red)
                 Text(info.patchName).font(.system(size: 16, weight: .bold)).foregroundColor(.white)
                 
-                if !info.success, let e = info.errorMessage {
-                    Text(e).font(.system(size: 12)).foregroundColor(.red).multilineTextAlignment(.center).padding(.horizontal, 20)
-                }
-                if !info.note.isEmpty {
-                    Text(info.note).font(.system(size: 13)).foregroundColor(Theme.textMuted).multilineTextAlignment(.center).padding(.horizontal, 20)
-                }
+                if !info.success, let e = info.errorMessage { Text(e).font(.system(size: 12)).foregroundColor(.red).multilineTextAlignment(.center).padding(.horizontal, 20) }
+                if !info.note.isEmpty { Text(info.note).font(.system(size: 13)).foregroundColor(Theme.textMuted).multilineTextAlignment(.center).padding(.horizontal, 20) }
                 
                 Spacer()
                 Button(action: { SoundFX.tap(); onDismiss() }) {
@@ -595,7 +561,7 @@ struct ActivationNoteSheet: View {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// MARK: - SYNC ENGINE (GIỮ NGUYÊN LOGIC DOWNLOAD TỪ GỐC)
+// MARK: - SYNC ENGINE
 // ═══════════════════════════════════════════════════════════════
 final class SyncEngine {
     static let shared = SyncEngine()
@@ -647,13 +613,13 @@ final class SyncEngine {
         let before = await MainActor.run { Set(store.items.map { $0.packageURL.lastPathComponent }) }
         await MainActor.run { store.importPackage(from: .remote(url)) }
 
-        for _ in 0..<15 { // Loop wait tối ưu hơn
+        for _ in 0..<15 { 
             try? await Task.sleep(nanoseconds: 500_000_000)
             await MainActor.run { store.reload() }
             let after = await MainActor.run { Set(store.items.map { $0.packageURL.lastPathComponent }) }
             let newFiles = after.subtracting(before)
             guard !newFiles.isEmpty else { continue }
-            var chosen = newFiles.first(where: { $0 == remote.filename }) ?? newFiles.first(where: { $0.hasSuffix(remote.filename) || remote.filename.hasSuffix($0) }) ?? newFiles.first
+            let chosen = newFiles.first(where: { $0 == remote.filename }) ?? newFiles.first(where: { $0.hasSuffix(remote.filename) || remote.filename.hasSuffix($0) }) ?? newFiles.first
             guard let local = chosen else { continue }
             
             lock.lock(); PatchMetaStore.set(makeMeta(remote, localName: local), localName: local); lock.unlock()
@@ -668,8 +634,7 @@ final class SyncEngine {
         guard let url = URL(string: "https://solitudepremium.click/ipa/ipa/list.php?t=\(ts)") else { return nil }
         do {
             var req = URLRequest(url: url)
-            // SET UP HEADER CACHE-CONTROL ĐỂ TRÁNH LAG LỖI LẤY FILE CŨ
-            req.cachePolicy = .reloadIgnoringLocalAndRemoteCacheData
+            req.cachePolicy = .reloadIgnoringLocalAndRemoteCacheData // Xóa sạch bộ nhớ tạm
             req.timeoutInterval = 10
             req.setValue("no-cache", forHTTPHeaderField: "Cache-Control")
             let (data, _) = try await URLSession.shared.data(for: req)
