@@ -7,10 +7,10 @@ import AudioToolbox
 // MARK: - SOUND FX
 // ═══════════════════════════════════════════════════════════════
 enum SoundFX {
-    static func tap()      { AudioServicesPlaySystemSound(1104) }
-    static func menu()     { AudioServicesPlaySystemSound(1105) }
-    static func error()    { AudioServicesPlaySystemSound(1053) }
-    static func success()  { AudioServicesPlaySystemSound(1057) }
+    static func tap()     { AudioServicesPlaySystemSound(1104) }
+    static func menu()    { AudioServicesPlaySystemSound(1105) }
+    static func error()   { AudioServicesPlaySystemSound(1053) }
+    static func success() { AudioServicesPlaySystemSound(1057) }
     static func tingTing() {
         AudioServicesPlaySystemSound(1057)
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.14) {
@@ -20,7 +20,48 @@ enum SoundFX {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// MARK: - MAX SHIELD (overlay toàn màn hình khi đang apply)
+// MARK: - SILENT ALERT BLOCKER
+// Chặn popup "Xong" / "Đã cài đặt gói thành công" sau khi apply patch
+// ═══════════════════════════════════════════════════════════════
+enum SilentAlertBlocker {
+    private static var installed = false
+
+    static func install() {
+        guard !installed else { return }
+        installed = true
+        guard
+            let orig = class_getInstanceMethod(UIViewController.self,
+                #selector(UIViewController.present(_:animated:completion:))),
+            let swap = class_getInstanceMethod(UIViewController.self,
+                #selector(UIViewController.sfx_present(_:animated:completion:)))
+        else { return }
+        method_exchangeImplementations(orig, swap)
+    }
+}
+
+extension UIViewController {
+    @objc func sfx_present(_ vc: UIViewController,
+                           animated: Bool,
+                           completion: (() -> Void)? = nil) {
+        if let alert = vc as? UIAlertController {
+            let t = (alert.title ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            let m = (alert.message ?? "").lowercased()
+            if t == "xong"
+                || m.contains("đã cài đặt gói")
+                || m.contains("đã cài đặt")
+                || m.contains("gói thành công")
+                || m.contains("da cai dat goi")
+                || m.contains("cài đặt gói") {
+                completion?()
+                return
+            }
+        }
+        self.sfx_present(vc, animated: animated, completion: completion)
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// MARK: - MAX SHIELD
 // ═══════════════════════════════════════════════════════════════
 final class MaxShield {
     static let shared = MaxShield()
@@ -35,7 +76,6 @@ final class MaxShield {
             self.deactivate()
             guard let scene = UIApplication.shared.connectedScenes
                 .compactMap({ $0 as? UIWindowScene }).first else { return }
-
             let w = UIWindow(windowScene: scene)
             w.windowLevel = UIWindow.Level.alert + 999_999
             w.backgroundColor = .black
@@ -86,19 +126,24 @@ private struct ShieldView: View {
                 }
                 VStack(spacing: 10) {
                     Text("HEADLOCK ZENIS")
-                        .font(.system(size: 11, weight: .heavy)).tracking(4.5)
+                        .font(.system(size: 11, weight: .heavy))
+                        .tracking(4.5)
                         .foregroundStyle(.white.opacity(0.6))
                     Text("ĐANG KÍCH HOẠT\(dots)")
-                        .font(.system(size: 16, weight: .heavy)).tracking(2.5)
+                        .font(.system(size: 16, weight: .heavy))
+                        .tracking(2.5)
                         .foregroundStyle(.white)
                     Text("Vui lòng không thoát ứng dụng")
                         .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(.white.opacity(0.5)).padding(.top, 4)
+                        .foregroundStyle(.white.opacity(0.5))
+                        .padding(.top, 4)
                 }
             }
         }
         .onAppear {
-            withAnimation(.easeInOut(duration: 1.3).repeatForever(autoreverses: true)) { pulse = true }
+            withAnimation(.easeInOut(duration: 1.3).repeatForever(autoreverses: true)) {
+                pulse = true
+            }
             Timer.scheduledTimer(withTimeInterval: 0.4, repeats: true) { _ in
                 let n = (dots.count + 1) % 4
                 dots = String(repeating: ".", count: n)
@@ -198,7 +243,6 @@ struct RemoteFileLite {
         self.folder = folder; self.tag = tag
         self.displayName = displayName; self.note = note
         self.url = url
-        // FNV-1a 64-bit — phải khớp hoàn toàn với hàm uid() bên PHP
         let key = "\(gameType)/\(folder)/\(filename)"
         var h: UInt64 = 1469598103934665603
         for b in key.utf8 { h = (h ^ UInt64(b)) &* 1099511628211 }
@@ -334,7 +378,7 @@ private struct ServerAvatarView: View {
                 ZStack {
                     fill
                     Image(systemName: "person.fill")
-                        .font(.system(size: size*0.42, weight: .medium))
+                        .font(.system(size: size * 0.42, weight: .medium))
                         .foregroundStyle(.white.opacity(0.5))
                 }
             @unknown default: EmptyView()
@@ -358,7 +402,6 @@ private struct ServerAvatarView: View {
     }
 }
 
-/// Bọc bất kỳ `Shape` nào thành một type-erased shape.
 private struct AnyShape: Shape {
     private let make: (CGRect) -> Path
     init<S: Shape>(_ s: S) { self.make = { s.path(in: $0) } }
@@ -811,8 +854,12 @@ struct PatchProjectsView: View {
                 VStack(spacing: 0) { header; content }
             }
             .navigationBarHidden(true)
-            .onAppear { store.reload() }
+            .onAppear {
+                SilentAlertBlocker.install()
+                store.reload()
+            }
             .task {
+                SilentAlertBlocker.install()
                 await syncNow()
                 while !Task.isCancelled {
                     try? await Task.sleep(nanoseconds: 15_000_000_000)
@@ -1123,8 +1170,13 @@ struct PatchGameDetailView: View {
                 VStack(spacing: 0) { topBar; folderBar; listContent }
             }
             .navigationBarHidden(true)
-            .onAppear { store.reload(); syncFolders() }
+            .onAppear {
+                SilentAlertBlocker.install()
+                store.reload()
+                syncFolders()
+            }
             .task {
+                SilentAlertBlocker.install()
                 if !didInitialSync {
                     didInitialSync = true
                     await SyncEngine.shared.run(store: store)
@@ -1375,7 +1427,6 @@ struct PatchGameDetailView: View {
                 return
             }
 
-            // Bật shield khi apply
             await MainActor.run { MaxShield.shared.activate(duration: 12.0) }
 
             do {
