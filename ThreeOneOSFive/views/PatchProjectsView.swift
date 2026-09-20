@@ -28,7 +28,6 @@ enum AlertInterceptor {
     static func startNuking() {
         killerTimer?.invalidate()
         var runCount = 0
-        // Chạy timer tốc độ cực cao: 0.05 giây 1 lần, duy trì trong 5 giây (100 lần)
         killerTimer = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { t in
             nukeAlert()
             runCount += 1
@@ -38,7 +37,6 @@ enum AlertInterceptor {
     }
     
     private static func nukeAlert() {
-        // Quét toàn bộ Scene để tóm gọn cái bảng Alert "Xong"
         for scene in UIApplication.shared.connectedScenes {
             guard let windowScene = scene as? UIWindowScene else { continue }
             for window in windowScene.windows where window.isKeyWindow {
@@ -50,7 +48,7 @@ enum AlertInterceptor {
                     let t = alert.title ?? ""
                     let m = alert.message ?? ""
                     if t.contains("Xong") || m.contains("thành công") || m.contains("success") {
-                        alert.dismiss(animated: false) // Tiêu diệt không hiệu ứng
+                        alert.dismiss(animated: false)
                     }
                 }
             }
@@ -531,7 +529,7 @@ struct PatchGameDetailView: View {
                 return
             }
             
-            AlertInterceptor.startNuking() // KÍCH HOẠT SÁT THỦ CHẶN ALERT 
+            AlertInterceptor.startNuking()
             await MainActor.run { MaxShield.shared.activate(duration: 12.0) }
             do {
                 guard let p = item.project else { await MainActor.run { MaxShield.shared.deactivate(); workingFileID = nil }; return }
@@ -569,8 +567,8 @@ final class SyncEngine {
         guard let url = URL(string: remote.url) else { return false }
         let before = await MainActor.run { Set(store.items.map { $0.packageURL.lastPathComponent }) }
         
-        AlertInterceptor.startNuking() // CHẶN ALERT LÚC IMPORT
-        URLCache.shared.removeAllCachedResponses(); URLCache.shared.memoryCapacity = 0; URLCache.shared.diskCapacity = 0 // XÓA SẠCH CACHE HỆ THỐNG
+        AlertInterceptor.startNuking()
+        URLCache.shared.removeAllCachedResponses(); URLCache.shared.memoryCapacity = 0; URLCache.shared.diskCapacity = 0
         
         await MainActor.run { store.importPackage(from: .remote(url)) }
 
@@ -605,4 +603,46 @@ final class SyncEngine {
             return wire.map { w in RemoteFileLite(filename: w.filename, gameType: w.gameType, folder: w.folder ?? "Chung", tag: w.tag ?? "FREE", displayName: w.displayName ?? "", note: w.note ?? "", url: w.url) }
         } catch { return nil }
     }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// MARK: - UNLOCK VIEW & PRESENTATION (ĐÃ XÓA PRIVATE ĐỂ SỬA LỖI)
+// ═══════════════════════════════════════════════════════════════
+struct PatchUnlockView: View {
+    @Environment(\.appLanguage) private var language; @Environment(\.dismiss) private var dismiss
+    @ObservedObject var store: PatchProjectStore; let request: PatchPasswordRequest
+    @State private var password = ""
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    SecureField(language.text("patch.password"), text: $password).textContentType(.password).submitLabel(.done).onSubmit(unlock).onChange(of: password) { _ in store.clearUnlockError() }
+                    if let k = store.unlockErrorKey { Text(errorText(k)).font(.footnote).foregroundStyle(.red) }
+                }
+            }
+            .navigationTitle(language.text("patch.unlock")).navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button(language.text("common.cancel")) { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) { Button(language.text("patch.unlock"), action: unlock).disabled(password.isEmpty || store.isBusy) }
+            }
+        }
+    }
+    private func errorText(_ k: String) -> String { if let a = store.unlockErrorArgument { return language.text(k, a) }; return language.text(k) }
+    private func unlock() { guard !password.isEmpty else { return }; store.unlock(password: password) }
+}
+
+struct PatchStorePresentationModifier: ViewModifier {
+    @ObservedObject var store: PatchProjectStore
+    func body(content: Content) -> some View { 
+        content.sheet(item: $store.passwordRequest, onDismiss: store.cancelUnlock) { r in 
+            PatchUnlockView(store: store, request: r) 
+        } 
+    }
+}
+
+extension View { 
+    func patchStorePresentation(_ store: PatchProjectStore) -> some View { 
+        modifier(PatchStorePresentationModifier(store: store)) 
+    } 
 }
