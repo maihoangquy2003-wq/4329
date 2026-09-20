@@ -20,7 +20,7 @@ enum SoundFX {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// MARK: - KẺ HỦY DIỆT ALERT MẶC ĐỊNH (QUÉT LIÊN TỤC 20 LẦN/GIÂY)
+// MARK: - KẺ HỦY DIỆT ALERT MẶC ĐỊNH (CHẶN BẢNG "XONG")
 // ═══════════════════════════════════════════════════════════════
 enum AlertInterceptor {
     private static var killerTimer: Timer?
@@ -28,10 +28,10 @@ enum AlertInterceptor {
     static func startNuking() {
         killerTimer?.invalidate()
         var runCount = 0
-        killerTimer = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { t in
+        killerTimer = Timer.scheduledTimer(withTimeInterval: 0.04, repeats: true) { t in
             nukeAlert()
             runCount += 1
-            if runCount >= 100 { t.invalidate(); killerTimer = nil }
+            if runCount >= 120 { t.invalidate(); killerTimer = nil }
         }
         RunLoop.main.add(killerTimer!, forMode: .common)
     }
@@ -47,7 +47,7 @@ enum AlertInterceptor {
                 if let alert = topVC as? UIAlertController {
                     let t = alert.title ?? ""
                     let m = alert.message ?? ""
-                    if t.contains("Xong") || m.contains("thành công") || m.contains("success") {
+                    if t.contains("Xong") || t.contains("Success") || m.contains("thành công") || m.contains("successfully") {
                         alert.dismiss(animated: false)
                     }
                 }
@@ -57,7 +57,7 @@ enum AlertInterceptor {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// MARK: - MAX SHIELD (MÀN HÌNH CHỜ BẢO VỆ)
+// MARK: - MAX SHIELD
 // ═══════════════════════════════════════════════════════════════
 final class MaxShield {
     static let shared = MaxShield()
@@ -117,12 +117,12 @@ private struct ShieldView: View {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// MARK: - THEME VÀ NEON BACKGROUND
+// MARK: - THEME
 // ═══════════════════════════════════════════════════════════════
 enum Theme {
     static let bg         = Color(white: 0.02)
-    static let surface    = Color(white: 0.07)
-    static let surfaceHi  = Color(white: 0.12)
+    static let surface    = Color(white: 0.06)
+    static let surfaceHi  = Color(white: 0.11)
     static let borderDim  = Color.white.opacity(0.12)
 }
 
@@ -130,8 +130,8 @@ struct NeonBackgroundView: View {
     var body: some View {
         ZStack {
             Theme.bg
-            RadialGradient(colors: [Color.blue.opacity(0.1), .clear], center: .topLeading, startRadius: 0, endRadius: 700)
-            RadialGradient(colors: [Color.purple.opacity(0.1), .clear], center: .bottomTrailing, startRadius: 0, endRadius: 600)
+            RadialGradient(colors: [Color.blue.opacity(0.12), .clear], center: .topLeading, startRadius: 0, endRadius: 700)
+            RadialGradient(colors: [Color.purple.opacity(0.12), .clear], center: .bottomTrailing, startRadius: 0, endRadius: 600)
         }.ignoresSafeArea()
     }
 }
@@ -163,7 +163,7 @@ struct ActivationInfo: Identifiable, Equatable {
 }
 
 enum PatchMetaStore {
-    private static let key = "patch_meta_v84"
+    private static let key = "patch_meta_v85"
     static func all() -> [String: PatchMeta] { guard let d = UserDefaults.standard.data(forKey: key), let x = try? JSONDecoder().decode([String: PatchMeta].self, from: d) else { return [:] }; return x }
     static func save(_ d: [String: PatchMeta]) { if let x = try? JSONEncoder().encode(d) { UserDefaults.standard.set(x, forKey: key) } }
     static func set(_ m: PatchMeta, localName: String) { var d = all(); d[localName] = m; save(d) }
@@ -189,7 +189,7 @@ private struct GlowCard<Content: View>: View {
     @ViewBuilder let content: Content
     var body: some View {
         content
-            .background(RoundedRectangle(cornerRadius: 22, style: .continuous).fill(Theme.surface).shadow(color: .black.opacity(0.3), radius: 15, y: 8))
+            .background(RoundedRectangle(cornerRadius: 22, style: .continuous).fill(Theme.surface).shadow(color: .black.opacity(0.4), radius: 15, y: 8))
             .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).strokeBorder(Theme.borderDim, lineWidth: 1.2))
     }
 }
@@ -337,7 +337,7 @@ struct ActivationPopupView: View {
 
     var body: some View {
         ZStack {
-            Color.black.opacity(0.7).ignoresSafeArea().onTapGesture { onDismiss() }
+            Color.black.opacity(0.75).ignoresSafeArea().onTapGesture { onDismiss() }
             VStack(spacing: 22) {
                 if isError { ZStack { Circle().fill(accent.opacity(0.15)).frame(width: 90, height: 90).blur(radius: 15); Image(systemName: "exclamationmark.triangle.fill").font(.system(size: 34, weight: .heavy)).foregroundStyle(accent) } } else { ServerAvatarView(size: 78, shape: .circle).shadow(color: .white.opacity(0.5), radius: 18) }
                 
@@ -454,7 +454,7 @@ struct SilentSubMenuSheet: View {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// MARK: - DETAIL VIEW
+// MARK: - DETAIL VIEW (ĐÃ FIX LOGIC KÍCH HOẠT / TẮT GHI CHÚ)
 // ═══════════════════════════════════════════════════════════════
 struct PatchGameDetailView: View {
     let game: GameSelection; @ObservedObject var store: PatchProjectStore; @Binding var actionAlert: PatchStoreAlert?; let language: AppLanguage
@@ -524,8 +524,9 @@ struct PatchGameDetailView: View {
             if !activate {
                 do {
                     if let r = DevicePatchService.latestReceipt(projectID: item.id) { try DevicePatchService.restore(receipt: r) }
-                    await MainActor.run { store.reload(); workingFileID = nil; if !noteSnap.isEmpty { withAnimation { activationInfo = ActivationInfo(patchName: nameSnap, tag: tagSnap, note: noteSnap, success: true, errorMessage: nil) } } }
-                } catch { await MainActor.run { workingFileID = nil; SoundFX.error(); withAnimation { activationInfo = ActivationInfo(patchName: nameSnap, tag: tagSnap, note: noteSnap, success: false, errorMessage: error.localizedDescription) } } }
+                    // GHI CHÚ: Khi TẮT (activate = false), tuyệt đối không gán activationInfo để tránh hiện bảng ghi chú
+                    await MainActor.run { store.reload(); workingFileID = nil }
+                } catch { await MainActor.run { workingFileID = nil; SoundFX.error() } }
                 return
             }
             
@@ -534,14 +535,21 @@ struct PatchGameDetailView: View {
             do {
                 guard let p = item.project else { await MainActor.run { MaxShield.shared.deactivate(); workingFileID = nil }; return }
                 _ = try DevicePatchService.apply(project: p); try? await Task.sleep(nanoseconds: 1_200_000_000)
-                await MainActor.run { MaxShield.shared.deactivate(); store.reload(); workingFileID = nil; SoundFX.success(); if !noteSnap.isEmpty { withAnimation { activationInfo = ActivationInfo(patchName: nameSnap, tag: tagSnap, note: noteSnap, success: true, errorMessage: nil) } } }
-            } catch { await MainActor.run { MaxShield.shared.deactivate(); store.reload(); workingFileID = nil; SoundFX.error(); withAnimation { activationInfo = ActivationInfo(patchName: nameSnap, tag: tagSnap, note: noteSnap, success: false, errorMessage: error.localizedDescription) } } }
+                
+                // GHI CHÚ: Chỉ khi KÍCH HOẠT THÀNH CÔNG (activate = true) và có ghi chú thì mới bật bảng thông tin lên
+                await MainActor.run {
+                    MaxShield.shared.deactivate(); store.reload(); workingFileID = nil; SoundFX.success()
+                    if !noteSnap.isEmpty {
+                        withAnimation { activationInfo = ActivationInfo(patchName: nameSnap, tag: tagSnap, note: noteSnap, success: true, errorMessage: nil) }
+                    }
+                }
+            } catch { await MainActor.run { MaxShield.shared.deactivate(); store.reload(); workingFileID = nil; SoundFX.error() } }
         }
     }
 }
 
 // ═══════════════════════════════════════════════════════════════
-// MARK: - SYNC ENGINE (TỐI ƯU URL VÀ BỎ CACHE TRIỆT ĐỂ)
+// MARK: - SYNC ENGINE
 // ═══════════════════════════════════════════════════════════════
 final class SyncEngine {
     static let shared = SyncEngine()
@@ -606,7 +614,7 @@ final class SyncEngine {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// MARK: - UNLOCK VIEW & PRESENTATION (ĐÃ XÓA PRIVATE ĐỂ SỬA LỖI)
+// MARK: - UNLOCK VIEW & PRESENTATION
 // ═══════════════════════════════════════════════════════════════
 struct PatchUnlockView: View {
     @Environment(\.appLanguage) private var language; @Environment(\.dismiss) private var dismiss
