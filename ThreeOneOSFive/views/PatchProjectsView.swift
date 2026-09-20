@@ -110,8 +110,8 @@ struct NeonBackgroundView: View {
     var body: some View {
         ZStack {
             Theme.bg
-            RadialGradient(colors: [Color.white.opacity(0.1), .clear], center: .topLeading, startRadius: 0, endRadius: 600)
-            RadialGradient(colors: [Color.white.opacity(0.05), .clear], center: .bottomTrailing, startRadius: 0, endRadius: 500)
+            RadialGradient(colors: [Color.white.opacity(0.12), .clear], center: .topLeading, startRadius: 0, endRadius: 650)
+            RadialGradient(colors: [Color.white.opacity(0.06), .clear], center: .bottomTrailing, startRadius: 0, endRadius: 550)
         }.ignoresSafeArea()
     }
 }
@@ -142,13 +142,14 @@ struct RemoteFileLite {
     }
 }
 
-struct ActivationInfo: Identifiable {
+struct ToastMessage: Identifiable {
     let id = UUID()
-    let patchName: String; let tag: String; let note: String; let success: Bool; let errorMessage: String?
+    let text: String
+    let isError: Bool
 }
 
 enum PatchMetaStore {
-    private static let key = "patch_meta_v70"
+    private static let key = "patch_meta_v72"
     static func all() -> [String: PatchMeta] {
         guard let d = UserDefaults.standard.data(forKey: key), let x = try? JSONDecoder().decode([String: PatchMeta].self, from: d) else { return [:] }
         return x
@@ -179,7 +180,7 @@ private struct GlowCard<Content: View>: View {
         content
             .background(RoundedRectangle(cornerRadius: 20, style: .continuous).fill(Theme.surface))
             .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).strokeBorder(Theme.borderDim, lineWidth: 1.2))
-            .shadow(color: .white.opacity(0.08), radius: 10, y: 4)
+            .shadow(color: .white.opacity(0.12), radius: 12, y: 5)
     }
 }
 
@@ -203,7 +204,7 @@ private struct ServerAvatarView: View {
             }
         }
         .frame(width: size, height: size).clipShape(clip)
-        .overlay(clip.strokeBorder(.white.opacity(0.8), lineWidth: 1.5))
+        .overlay(clip.strokeBorder(.white.opacity(0.9), lineWidth: 1.6))
     }
     private var clip: AnyShape {
         switch shape {
@@ -224,16 +225,16 @@ private struct AvatarView: View {
     @State private var pulse = false
     var body: some View {
         ZStack {
-            Circle().fill(Color.white.opacity(0.1)).frame(width: pulse ? 128 : 110, height: pulse ? 128 : 110).blur(radius: 20)
-            Circle().strokeBorder(Color.white.opacity(0.3), style: StrokeStyle(lineWidth: 1, dash: [3, 6]))
-                .frame(width: 116, height: 116).rotationEffect(.degrees(rotate ? 360 : 0))
-            Circle().strokeBorder(Color.white.opacity(0.8), lineWidth: 2).frame(width: 96, height: 96)
+            Circle().fill(Color.white.opacity(0.12)).frame(width: pulse ? 132 : 112, height: pulse ? 132 : 112).blur(radius: 22)
+            Circle().strokeBorder(Color.white.opacity(0.35), style: StrokeStyle(lineWidth: 1.2, dash: [3, 6]))
+                .frame(width: 118, height: 118).rotationEffect(.degrees(rotate ? 360 : 0))
+            Circle().strokeBorder(Color.white.opacity(0.85), lineWidth: 2).frame(width: 96, height: 96)
             ServerAvatarView(size: 80, shape: .circle)
         }
-        .frame(width: 130, height: 130)
+        .frame(width: 135, height: 135)
         .onAppear {
-            withAnimation(.linear(duration: 20).repeatForever(autoreverses: false)) { rotate = true }
-            withAnimation(.easeInOut(duration: 2).repeatForever(autoreverses: true)) { pulse = true }
+            withAnimation(.linear(duration: 18).repeatForever(autoreverses: false)) { rotate = true }
+            withAnimation(.easeInOut(duration: 2.2).repeatForever(autoreverses: true)) { pulse = true }
         }
     }
 }
@@ -260,14 +261,14 @@ private struct GameLogoView: View {
             }
         }
         .frame(width: 60, height: 60)
-        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(.white, lineWidth: 1.4))
+        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(.white, lineWidth: 1.5))
     }
 }
 
 private struct ChevronCircle: View {
     var body: some View {
         ZStack {
-            Circle().fill(.white).frame(width: 34, height: 34).shadow(color: .white.opacity(0.4), radius: 8)
+            Circle().fill(.white).frame(width: 36, height: 36).shadow(color: .white.opacity(0.5), radius: 10)
             Image(systemName: "arrow.up.right").font(.system(size: 13, weight: .heavy)).foregroundStyle(.black)
         }
     }
@@ -283,9 +284,9 @@ private struct TagPill: View {
         }
         .padding(.horizontal, 8).padding(.vertical, 4)
         .foregroundStyle(isVIP ? .black : .white)
-        .background(Capsule().fill(isVIP ? .white : Color.white.opacity(0.1)))
-        .overlay(Capsule().strokeBorder(isVIP ? .white : .white.opacity(0.5), lineWidth: 1.2))
-        .shadow(color: isVIP ? .white.opacity(0.6) : .clear, radius: 6)
+        .background(Capsule().fill(isVIP ? .white : Color.white.opacity(0.12)))
+        .overlay(Capsule().strokeBorder(isVIP ? .white : .white.opacity(0.55), lineWidth: 1.2))
+        .shadow(color: isVIP ? .white.opacity(0.65) : .clear, radius: 6)
     }
 }
 
@@ -298,8 +299,8 @@ private struct PatchIconView: View {
                 ServerAvatarView(size: 54, shape: .circle)
             } else {
                 ZStack {
-                    RoundedRectangle(cornerRadius: 15, style: .continuous).fill(Color.white.opacity(0.05)).frame(width: 54, height: 54)
-                    RoundedRectangle(cornerRadius: 15, style: .continuous).strokeBorder(isVIP ? .white : Color.white.opacity(0.3), lineWidth: 1.5).frame(width: 54, height: 54)
+                    RoundedRectangle(cornerRadius: 15, style: .continuous).fill(Color.white.opacity(0.06)).frame(width: 54, height: 54)
+                    RoundedRectangle(cornerRadius: 15, style: .continuous).strokeBorder(isVIP ? .white : Color.white.opacity(0.35), lineWidth: 1.5).frame(width: 54, height: 54)
                     Image(systemName: isVIP ? "crown.fill" : "shield.lefthalf.filled").font(.system(size: 22, weight: .bold)).foregroundStyle(.white)
                 }
             }
@@ -312,15 +313,15 @@ private struct CustomToggle: View {
     var body: some View {
         Button { if !disabled { action(!isOn) } } label: {
             ZStack {
-                Capsule().fill(isOn ? Color.white : Color.white.opacity(0.1)).frame(width: 54, height: 32)
+                Capsule().fill(isOn ? Color.white : Color.white.opacity(0.12)).frame(width: 56, height: 32)
                     .overlay(Capsule().strokeBorder(isOn ? .white : Color.white.opacity(0.4), lineWidth: 1.4))
-                    .shadow(color: isOn ? .white.opacity(0.6) : .clear, radius: 10)
+                    .shadow(color: isOn ? .white.opacity(0.65) : .clear, radius: 10)
                 HStack {
                     if isOn { Spacer(); Circle().fill(.black).frame(width: 24, height: 24).padding(.trailing, 3) }
                     else { Circle().fill(.white).frame(width: 24, height: 24).padding(.leading, 3); Spacer() }
-                }.frame(width: 54, height: 32)
+                }.frame(width: 56, height: 32)
             }
-            .animation(.spring(response: 0.26, dampingFraction: 0.72), value: isOn)
+            .animation(.spring(response: 0.25, dampingFraction: 0.7), value: isOn)
             .opacity(disabled ? 0.5 : 1.0)
         }.buttonStyle(.plain).disabled(disabled)
     }
@@ -331,14 +332,14 @@ private struct FolderPill: View {
     var body: some View {
         Button(action: action) {
             HStack(spacing: 8) {
-                Circle().fill(isActive ? Color.black : Color.white.opacity(0.5)).frame(width: 6, height: 6)
+                Circle().fill(isActive ? Color.black : Color.white.opacity(0.6)).frame(width: 6, height: 6)
                 Text(title).font(.system(size: 12, weight: .heavy)).tracking(1.0).foregroundStyle(isActive ? .black : .white)
                 Text("\(count)").font(.system(size: 10, weight: .heavy)).foregroundStyle(isActive ? .black.opacity(0.6) : .white.opacity(0.4)).padding(.leading, 2)
             }
             .padding(.horizontal, 14).padding(.vertical, 10)
-            .background(Capsule().fill(isActive ? Color.white : Color.white.opacity(0.04)))
-            .overlay(Capsule().strokeBorder(isActive ? Color.white : Color.white.opacity(0.2), lineWidth: 1.2))
-            .shadow(color: isActive ? .white.opacity(0.6) : .clear, radius: 10)
+            .background(Capsule().fill(isActive ? Color.white : Color.white.opacity(0.05)))
+            .overlay(Capsule().strokeBorder(isActive ? Color.white : Color.white.opacity(0.25), lineWidth: 1.2))
+            .shadow(color: isActive ? .white.opacity(0.65) : .clear, radius: 10)
         }.buttonStyle(.plain)
     }
 }
@@ -358,18 +359,18 @@ private struct PatchCard: View {
                 if !note.isEmpty {
                     HStack(alignment: .top, spacing: 5) {
                         Image(systemName: "text.alignleft").font(.system(size: 9, weight: .bold)).foregroundStyle(.white.opacity(0.5)).padding(.top, 2)
-                        Text(note).font(.system(size: 11, weight: .medium)).foregroundStyle(.white.opacity(0.7)).lineLimit(2).multilineTextAlignment(.leading)
+                        Text(note).font(.system(size: 11, weight: .medium)).foregroundStyle(.white.opacity(0.75)).lineLimit(2).multilineTextAlignment(.leading)
                     }
                 }
             }
             Spacer(minLength: 4)
-            if isWorking { ProgressView().tint(.white).scaleEffect(0.8).frame(width: 54, height: 32) }
+            if isWorking { ProgressView().tint(.white).scaleEffect(0.8).frame(width: 56, height: 32) }
             else { CustomToggle(isOn: isApplied, disabled: false) { onToggle($0) } }
         }
         .padding(14)
-        .background(RoundedRectangle(cornerRadius: 18, style: .continuous).fill(isApplied ? Color.white.opacity(0.1) : Color.white.opacity(0.02)))
-        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(isApplied ? .white : Theme.borderDim, lineWidth: isApplied ? 1.5 : 1))
-        .shadow(color: isApplied ? .white.opacity(0.25) : .black.opacity(0.3), radius: isApplied ? 14 : 8, y: 4)
+        .background(RoundedRectangle(cornerRadius: 18, style: .continuous).fill(isApplied ? Color.white.opacity(0.12) : Color.white.opacity(0.03)))
+        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(isApplied ? .white : Theme.borderDim, lineWidth: isApplied ? 1.6 : 1))
+        .shadow(color: isApplied ? .white.opacity(0.3) : .black.opacity(0.35), radius: isApplied ? 16 : 8, y: 4)
         .contextMenu {
             Button(action: onRename) { Label("Đổi tên", systemImage: "pencil") }
             Button(action: onTapTag) { Label("Đổi VIP/FREE", systemImage: "crown") }
@@ -568,88 +569,12 @@ struct SilentSubMenuSheet: View {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// MARK: - SHEET THÔNG BÁO BẬT TẮT & COPY GHI CHÚ
-// ═══════════════════════════════════════════════════════════════
-struct ActivationNoteSheet: View {
-    let info: ActivationInfo; let onDismiss: () -> Void
-    @State private var copied = false
-
-    private var isError: Bool { !info.success }
-    private var accent: Color { isError ? Color(red: 1.0, green: 0.3, blue: 0.3) : .white }
-    private var hasNote: Bool { !info.note.trimmingCharacters(in: .whitespaces).isEmpty }
-
-    var body: some View {
-        ZStack {
-            NeonBackgroundView()
-            ScrollView(showsIndicators: false) {
-                VStack(spacing: 22) {
-                    Spacer(minLength: 50)
-                    if isError {
-                        ZStack {
-                            Circle().fill(accent.opacity(0.15)).frame(width: 130, height: 130).blur(radius: 20)
-                            Circle().fill(accent).frame(width: 92, height: 92).shadow(color: accent.opacity(0.6), radius: 24)
-                            Image(systemName: "exclamationmark.triangle.fill").font(.system(size: 38, weight: .heavy)).foregroundStyle(.white)
-                        }
-                    } else {
-                        ZStack {
-                            Circle().fill(Color.white.opacity(0.15)).frame(width: 130, height: 130).blur(radius: 24)
-                            ServerAvatarView(size: 100, shape: .circle).shadow(color: .white.opacity(0.55), radius: 24)
-                        }
-                    }
-                    
-                    VStack(spacing: 12) {
-                        Text("HEADLOCK ZENIS").font(.system(size: 11, weight: .heavy)).tracking(4.5).foregroundStyle(.white.opacity(0.6))
-                        Text(isError ? "LỖI KÍCH HOẠT" : "KÍCH HOẠT THÀNH CÔNG").font(.system(size: 18, weight: .heavy)).tracking(2).foregroundStyle(accent).multilineTextAlignment(.center).padding(.horizontal, 20)
-                        Text(info.patchName).font(.system(size: 16, weight: .heavy)).foregroundStyle(.white).multilineTextAlignment(.center).padding(.horizontal, 28)
-                        if !info.tag.isEmpty { TagPill(tag: info.tag).padding(.top, 4) }
-                    }
-
-                    if isError, let e = info.errorMessage, !e.isEmpty {
-                        VStack(alignment: .leading, spacing: 10) {
-                            Text("LÝ DO LỖI").font(.system(size: 10, weight: .heavy)).tracking(2.2).foregroundStyle(accent)
-                            Text(e).font(.system(size: 12.5, weight: .medium)).foregroundStyle(.white.opacity(0.9)).fixedSize(horizontal: false, vertical: true)
-                        }.padding(16).frame(maxWidth: .infinity, alignment: .leading).background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(accent.opacity(0.1))).overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(accent.opacity(0.5), lineWidth: 1.3)).padding(.horizontal, 24)
-                    }
-
-                    if hasNote {
-                        VStack(alignment: .leading, spacing: 14) {
-                            HStack(spacing: 8) {
-                                Image(systemName: "note.text").font(.system(size: 12, weight: .bold)).foregroundStyle(.white)
-                                Text("GHI CHÚ").font(.system(size: 10, weight: .heavy)).tracking(2.2).foregroundStyle(.white)
-                                Spacer()
-                            }
-                            Text(info.note).font(.system(size: 13.5, weight: .medium)).foregroundStyle(.white.opacity(0.95)).fixedSize(horizontal: false, vertical: true).frame(maxWidth: .infinity, alignment: .leading).padding(14).background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color.white.opacity(0.05))).overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(.white.opacity(0.25), style: StrokeStyle(lineWidth: 1, dash: [4, 4])))
-                            
-                            Button {
-                                SoundFX.tap()
-                                UIPasteboard.general.string = info.note
-                                withAnimation { copied = true }
-                                DispatchQueue.main.asyncAfter(deadline: .now() + 1.6) { withAnimation { copied = false } }
-                            } label: {
-                                HStack(spacing: 8) {
-                                    Image(systemName: copied ? "checkmark" : "doc.on.doc.fill").font(.system(size: 12, weight: .heavy))
-                                    Text(copied ? "ĐÃ COPY" : "COPY GHI CHÚ").font(.system(size: 11.5, weight: .heavy)).tracking(1.8)
-                                }.foregroundStyle(copied ? .black : .white).frame(maxWidth: .infinity).padding(.vertical, 13).background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(copied ? Color.white : Color.white.opacity(0.06))).overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(.white, lineWidth: 1.4))
-                            }.buttonStyle(.plain)
-                        }.padding(18).background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Theme.surface)).overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(.white.opacity(0.3), lineWidth: 1.3)).padding(.horizontal, 22)
-                    }
-                    
-                    Button { SoundFX.tap(); onDismiss() } label: {
-                        Text("ĐÃ HIỂU").font(.system(size: 14, weight: .heavy)).tracking(3).foregroundStyle(.black).frame(maxWidth: .infinity).padding(.vertical, 16).background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(.white)).padding(.horizontal, 40)
-                    }.buttonStyle(.plain).padding(.bottom, 50).padding(.top, 10)
-                }
-            }
-        }
-    }
-}
-
-// ═══════════════════════════════════════════════════════════════
-// MARK: - DETAIL VIEW
+// MARK: - DETAIL VIEW (SIÊU TỐC, KHÔNG POPUP CHẮN MÀN HÌNH)
 // ═══════════════════════════════════════════════════════════════
 struct PatchGameDetailView: View {
     let game: GameSelection; @ObservedObject var store: PatchProjectStore; @Binding var actionAlert: PatchStoreAlert?; let language: AppLanguage
     @Environment(\.dismiss) private var dismiss; @Environment(\.scenePhase) private var scenePhase
-    @State private var activationInfo: ActivationInfo?; @State private var selectedFolder: String? = nil
+    @State private var toastMessage: ToastMessage?; @State private var selectedFolder: String? = nil
     @State private var workingFileID: String? = nil; @State private var renameItem: PatchLibraryItem?; @State private var renameText: String = ""
     @State private var tagPickerItem: PatchLibraryItem?; @State private var noteItem: PatchLibraryItem?; @State private var noteText: String = ""
     @State private var refreshTick: Int = 0
@@ -659,6 +584,31 @@ struct PatchGameDetailView: View {
             ZStack {
                 NeonBackgroundView()
                 VStack(spacing: 0) { topBar; folderBar; listContent }
+                
+                // FLOATING TOAST NOTIFICATION
+                if let t = toastMessage {
+                    VStack {
+                        Spacer()
+                        HStack(spacing: 10) {
+                            Image(systemName: t.isError ? "exclamationmark.triangle.fill" : "checkmark.circle.fill")
+                                .font(.system(size: 14, weight: .heavy))
+                                .foregroundStyle(t.isError ? Color.red : Color.white)
+                            Text(t.text)
+                                .font(.system(size: 12, weight: .heavy))
+                                .tracking(1)
+                                .foregroundStyle(.white)
+                        }
+                        .padding(.horizontal, 18)
+                        .padding(.vertical, 12)
+                        .background(Capsule().fill(Color.black.opacity(0.85)))
+                        .overlay(Capsule().strokeBorder(t.isError ? Color.red.opacity(0.8) : Color.white.opacity(0.4), lineWidth: 1.3))
+                        .shadow(color: t.isError ? Color.red.opacity(0.3) : Color.white.opacity(0.2), radius: 10)
+                        .padding(.bottom, 35)
+                    }
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                    .animation(.spring(response: 0.3, dampingFraction: 0.7), value: toastMessage != nil)
+                    .zIndex(99)
+                }
             }
             .navigationBarHidden(true)
             .onAppear { store.reload(); syncFolders() }
@@ -672,7 +622,6 @@ struct PatchGameDetailView: View {
             .confirmationDialog("Chọn tag", isPresented: tagBinding, titleVisibility: .visible) {
                 Button("VIP 👑") { commitTag("VIP") }; Button("FREE 🛡") { commitTag("FREE") }; Button("Huỷ", role: .cancel) { tagPickerItem = nil }
             }
-            .fullScreenCover(item: $activationInfo) { i in ActivationNoteSheet(info: i) { activationInfo = nil } }
         }
     }
 
@@ -763,7 +712,6 @@ struct PatchGameDetailView: View {
     private func currentTag(for i: PatchLibraryItem) -> String { if let m = meta(for: i), !m.tag.isEmpty { return m.tag }; return i.packageURL.deletingPathExtension().lastPathComponent.hasSuffix("_VIP") ? "VIP" : "FREE" }
     private func currentNote(for i: PatchLibraryItem) -> String { meta(for: i)?.note ?? "" }
     
-    // Tối ưu hóa phân loại folder chính xác dựa trên metadata từ server hoặc đường dẫn file
     private func folderName(for i: PatchLibraryItem) -> String {
         if let m = meta(for: i), !m.folder.isEmpty { return m.folder }
         let comps = i.packageURL.pathComponents
@@ -783,32 +731,43 @@ struct PatchGameDetailView: View {
     private func commitTag(_ tag: String) { guard let i = tagPickerItem else { return }; let ln = localKey(for: i); guard var m = PatchMetaStore.get(localName: ln) else { tagPickerItem = nil; return }; m.tag = tag; m.tagOverride = true; PatchMetaStore.set(m, localName: ln); store.reload(); tagPickerItem = nil }
     private func commitNote() { guard let i = noteItem else { return }; let t = noteText.trimmingCharacters(in: .whitespacesAndNewlines); let ln = localKey(for: i); guard var m = PatchMetaStore.get(localName: ln) else { noteItem = nil; return }; m.note = t; m.noteOverride = true; PatchMetaStore.set(m, localName: ln); store.reload(); noteItem = nil }
 
+    private func showToast(_ text: String, isError: Bool = false) {
+        toastMessage = ToastMessage(text: text, isError: isError)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) {
+            if toastMessage?.text == text { toastMessage = nil }
+        }
+    }
+
     private func togglePatch(item: PatchLibraryItem, activate: Bool) {
-        workingFileID = item.id.uuidString; let nameSnap = displayName(for: item); let tagSnap = currentTag(for: item); let noteSnap = currentNote(for: item)
+        workingFileID = item.id.uuidString; let nameSnap = displayName(for: item)
         let targetFolder = folderName(for: item); let gp = game.prefix
         let conflictIDs: [UUID] = activate ? store.items.compactMap { o in guard o.id != item.id, GameTypeHelper.prefixOf(o) == gp, folderName(for: o) == targetFolder, DevicePatchService.latestReceipt(projectID: o.id) != nil else { return nil }; return o.id } : []
 
         Task.detached(priority: .userInitiated) {
             for cid in conflictIDs { if let r = DevicePatchService.latestReceipt(projectID: cid) { try? DevicePatchService.restore(receipt: r) } }
             if !activate {
-                do { if let r = DevicePatchService.latestReceipt(projectID: item.id) { try DevicePatchService.restore(receipt: r) }; await MainActor.run { store.reload(); workingFileID = nil } }
-                catch { await MainActor.run { workingFileID = nil; SoundFX.error(); activationInfo = ActivationInfo(patchName: nameSnap, tag: tagSnap, note: noteSnap, success: false, errorMessage: "Lỗi tắt: \(error.localizedDescription)") } }
+                do {
+                    if let r = DevicePatchService.latestReceipt(projectID: item.id) { try DevicePatchService.restore(receipt: r) }
+                    await MainActor.run { store.reload(); workingFileID = nil; showToast("Đã tắt: \(nameSnap)") }
+                } catch {
+                    await MainActor.run { workingFileID = nil; SoundFX.error(); showToast("Lỗi tắt: \(error.localizedDescription)", isError: true) }
+                }
                 return
             }
             await MainActor.run { MaxShield.shared.activate(duration: 12.0) }
             do {
                 guard let p = item.project else { await MainActor.run { MaxShield.shared.deactivate(); workingFileID = nil }; return }
                 _ = try DevicePatchService.apply(project: p); try? await Task.sleep(nanoseconds: 2_000_000_000)
-                await MainActor.run { MaxShield.shared.deactivate(); store.reload(); workingFileID = nil; SoundFX.success(); activationInfo = ActivationInfo(patchName: nameSnap, tag: tagSnap, note: noteSnap, success: true, errorMessage: nil) }
+                await MainActor.run { MaxShield.shared.deactivate(); store.reload(); workingFileID = nil; SoundFX.success(); showToast("Kích hoạt thành công: \(nameSnap)") }
             } catch {
-                await MainActor.run { MaxShield.shared.deactivate(); store.reload(); workingFileID = nil; SoundFX.error(); activationInfo = ActivationInfo(patchName: nameSnap, tag: tagSnap, note: noteSnap, success: false, errorMessage: error.localizedDescription) }
+                await MainActor.run { MaxShield.shared.deactivate(); store.reload(); workingFileID = nil; SoundFX.error(); showToast(error.localizedDescription, isError: true) }
             }
         }
     }
 }
 
 // ═══════════════════════════════════════════════════════════════
-// MARK: - SYNC ENGINE
+// MARK: - SYNC ENGINE (ĐÃ FIX: CẬP NHẬT LẬP TỨC METADATA TỪ WEB)
 // ═══════════════════════════════════════════════════════════════
 final class SyncEngine {
     static let shared = SyncEngine()
@@ -824,16 +783,20 @@ final class SyncEngine {
         let items = await MainActor.run { store.items }
         let storeFiles = Set(items.map { $0.packageURL.lastPathComponent })
 
+        // Luôn cập nhật metadata mới nhất từ server cho các file đã có trong app
         for item in items {
             let ln = item.packageURL.lastPathComponent
-            if PatchMetaStore.get(localName: ln) != nil { continue }
-            if let r = remotes.first(where: { $0.filename == ln }) { syncQueue.sync { PatchMetaStore.set(makeMeta(r, localName: ln), localName: ln) } }
+            if let r = remotes.first(where: { $0.filename == ln }) {
+                syncQueue.sync { PatchMetaStore.set(makeMeta(r, localName: ln), localName: ln) }
+            }
         }
 
         var missing: [RemoteFileLite] = []
         for r in remotes {
             if !storeFiles.contains(r.filename) { missing.append(r) }
-            else if PatchMetaStore.get(localName: r.filename) == nil { syncQueue.sync { PatchMetaStore.set(makeMeta(r, localName: r.filename), localName: r.filename) } }
+            else {
+                syncQueue.sync { PatchMetaStore.set(makeMeta(r, localName: r.filename), localName: r.filename) }
+            }
         }
 
         guard !missing.isEmpty else { await MainActor.run { store.reload() }; return }
