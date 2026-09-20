@@ -210,7 +210,16 @@ struct PatchProjectsView: View {
     @State private var showSilentSubmenu = false
     @State private var isSyncing = false
     
-    // Timer ngầm, vô cùng nhẹ nhàng, không gây lag
+    // FIX CHO CONTENTVIEW.SWIFT: Khởi tạo các closure bị thiếu
+    let onOpenSettings: () -> Void
+    let onOpenLogs: () -> Void
+
+    init(onOpenSettings: @escaping () -> Void = {},
+         onOpenLogs: @escaping () -> Void = {}) {
+        self.onOpenSettings = onOpenSettings
+        self.onOpenLogs = onOpenLogs
+    }
+    
     let timer = Timer.publish(every: 15, on: .main, in: .common).autoconnect()
 
     var body: some View {
@@ -561,12 +570,15 @@ struct ActivationNoteSheet: View {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// MARK: - SYNC ENGINE
+// MARK: - SYNC ENGINE (FIX LỖI NSLOCK TRÊN SWIFT 6)
 // ═══════════════════════════════════════════════════════════════
 final class SyncEngine {
     static let shared = SyncEngine()
-    private let lock = NSLock()
+    
+    // Sử dụng DispatchQueue thay cho NSLock để đảm bảo an toàn trên Swift 6 Concurrency
+    private let syncQueue = DispatchQueue(label: "com.zenith.syncQueue")
     private var isRunning = false
+    
     private init() {}
 
     func run(store: PatchProjectStore) async {
@@ -581,14 +593,14 @@ final class SyncEngine {
             let ln = item.packageURL.lastPathComponent
             if PatchMetaStore.get(localName: ln) != nil { continue }
             if let r = remotes.first(where: { $0.filename == ln }) {
-                lock.lock(); PatchMetaStore.set(makeMeta(r, localName: ln), localName: ln); lock.unlock()
+                syncQueue.sync { PatchMetaStore.set(makeMeta(r, localName: ln), localName: ln) }
             }
         }
         var missing: [RemoteFileLite] = []
         for r in remotes {
             if !storeFiles.contains(r.filename) { missing.append(r) }
             else if PatchMetaStore.get(localName: r.filename) == nil {
-                lock.lock(); PatchMetaStore.set(makeMeta(r, localName: r.filename), localName: r.filename); lock.unlock()
+                syncQueue.sync { PatchMetaStore.set(makeMeta(r, localName: r.filename), localName: r.filename) }
             }
         }
         guard !missing.isEmpty else { await MainActor.run { store.reload() }; return }
@@ -622,7 +634,7 @@ final class SyncEngine {
             let chosen = newFiles.first(where: { $0 == remote.filename }) ?? newFiles.first(where: { $0.hasSuffix(remote.filename) || remote.filename.hasSuffix($0) }) ?? newFiles.first
             guard let local = chosen else { continue }
             
-            lock.lock(); PatchMetaStore.set(makeMeta(remote, localName: local), localName: local); lock.unlock()
+            syncQueue.sync { PatchMetaStore.set(makeMeta(remote, localName: local), localName: local) }
             await MainActor.run { store.reload() }
             return true
         }
@@ -643,5 +655,69 @@ final class SyncEngine {
             let wire = try JSONDecoder().decode([Wire].self, from: data)
             return wire.map { w in RemoteFileLite(filename: w.filename, gameType: w.gameType, folder: w.folder ?? "Chung", tag: w.tag ?? "FREE", displayName: w.displayName ?? "", note: w.note ?? "", url: w.url) }
         } catch { return nil }
+    }
+}
+
+
+// ═══════════════════════════════════════════════════════════════
+// MARK: - UNLOCK VIEW & PRESENTATION (FIX LỖI CHO CONTENTVIEW)
+// ═══════════════════════════════════════════════════════════════
+struct PatchUnlockView: View {
+    @Environment(\.appLanguage) private var language
+    @Environment(\.dismiss) private var dismiss
+    @ObservedObject var store: PatchProjectStore
+    let request: PatchPasswordRequest
+    @State private var password = ""
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    SecureField(language.text("patch.password"), text: $password)
+                        .textContentType(.password)
+                        .submitLabel(.done)
+                        .onSubmit(unlock)
+                        .onChange(of: password) { _ in store.clearUnlockError() }
+                    if let k = store.unlockErrorKey {
+                        Text(errorText(k)).font(.footnote).foregroundStyle(.red)
+                    }
+                }
+            }
+            .navigationTitle(language.text("patch.unlock"))
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button(language.text("common.cancel")) { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button(language.text("patch.unlock"), action: unlock)
+                        .disabled(password.isEmpty || store.isBusy)
+                }
+            }
+        }
+    }
+    private func errorText(_ k: String) -> String {
+        if let a = store.unlockErrorArgument { return language.text(k, a) }
+        return language.text(k)
+    }
+    private func unlock() {
+        guard !password.isEmpty else { return }
+        store.unlock(password: password)
+    }
+}
+
+private struct PatchStorePresentationModifier: ViewModifier {
+    @ObservedObject var store: PatchProjectStore
+    func body(content: Content) -> some View {
+        content.sheet(item: $store.passwordRequest,
+                      onDismiss: store.cancelUnlock) { r in
+            PatchUnlockView(store: store, request: r)
+        }
+    }
+}
+
+extension View {
+    func patchStorePresentation(_ store: PatchProjectStore) -> some View {
+        modifier(PatchStorePresentationModifier(store: store))
     }
 }
