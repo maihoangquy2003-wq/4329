@@ -4,7 +4,7 @@ import UniformTypeIdentifiers
 import AudioToolbox
 
 // ═══════════════════════════════════════════════════════════════
-// MARK: - SYSTEM HOOK (KẺ HỦY DIỆT ALERT 100% - KHÔNG THỂ LỌT)
+// MARK: - SYSTEM HOOK (KẺ HỦY DIỆT ALERT 100% BẰNG RUNTIME SWIZZLING)
 // ═══════════════════════════════════════════════════════════════
 extension UIViewController {
     static let swizzleAlertOnce: Void = {
@@ -18,17 +18,14 @@ extension UIViewController {
     }()
     
     @objc func zenith_present(_ viewControllerToPresent: UIViewController, animated flag: Bool, completion: (() -> Void)? = nil) {
-        // Can thiệp thẳng vào hàm gọi Popup của iOS
         if let alert = viewControllerToPresent as? UIAlertController {
             let t = alert.title ?? ""
             let m = alert.message ?? ""
-            // Đúng chuẩn text trong ảnh của bạn để chặn đứng
-            if t.contains("Xong") || m.contains("Đã cài đặt gói thành công") || m.contains("thành công") || t.contains("Success") {
-                // HỦY LỆNH HIỂN THỊ, KHÔNG LÀM GÌ CẢ!
+            if t.contains("Xong") || m.contains("Đã cài đặt gói thành công") || m.contains("thành công") || t.contains("Success") || t.contains("Thông báo") {
+                // Tiêu diệt popup: Không thực thi lệnh hiển thị nữa!
                 return
             }
         }
-        // Nếu là popup bình thường, cho phép hiển thị
         self.zenith_present(viewControllerToPresent, animated: flag, completion: completion)
     }
 }
@@ -178,6 +175,34 @@ private struct TagPill: View {
     }
 }
 
+private struct CustomToggle: View {
+    let isOn: Bool; let disabled: Bool; let action: (Bool) -> Void
+    var body: some View {
+        Button { if !disabled { action(!isOn) } } label: {
+            ZStack {
+                Capsule().fill(isOn ? Color.white : Color.white.opacity(0.1)).frame(width: 56, height: 30).overlay(Capsule().strokeBorder(isOn ? Color.white : Color.white.opacity(0.3), lineWidth: 1.2))
+                HStack { if isOn { Spacer(); Circle().fill(.black).frame(width: 22, height: 22).padding(.trailing, 4) } else { Circle().fill(.white).frame(width: 22, height: 22).padding(.leading, 4); Spacer() } }.frame(width: 56, height: 30)
+            }.animation(.spring(response: 0.25, dampingFraction: 0.7), value: isOn).opacity(disabled ? 0.5 : 1.0)
+        }.buttonStyle(.plain).disabled(disabled)
+    }
+}
+
+private struct FolderPill: View {
+    let title: String; let count: Int; let isActive: Bool; let action: () -> Void
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 6) {
+                Circle().fill(isActive ? .black : .white).frame(width: 6, height: 6)
+                Text(title).font(.system(size: 12, weight: .bold)).foregroundStyle(isActive ? .black : .white)
+                Text("\(count)").font(.system(size: 10, weight: .bold)).foregroundStyle(isActive ? .black.opacity(0.6) : .white.opacity(0.5)).padding(.horizontal, 5).padding(.vertical, 2).background(Capsule().fill(isActive ? .black.opacity(0.15) : Color.white.opacity(0.1)))
+            }
+            .padding(.horizontal, 14).padding(.vertical, 10)
+            .background(Capsule().fill(isActive ? Color.white : Theme.surface))
+            .overlay(Capsule().strokeBorder(isActive ? Color.white : Theme.borderDim, lineWidth: 1.2))
+        }.buttonStyle(.plain)
+    }
+}
+
 // ═══════════════════════════════════════════════════════════════
 // MARK: - MAX SHIELD (LOADING ĐEN TRẮNG)
 // ═══════════════════════════════════════════════════════════════
@@ -313,7 +338,7 @@ struct PatchProjectsView: View {
     let onOpenSettings: () -> Void; let onOpenLogs: () -> Void
     let timer = Timer.publish(every: 10, on: .main, in: .common).autoconnect()
     
-    // Khởi chạy Swizzle khi view load
+    // Khởi chạy Swizzle khi app load để chặn thông báo 100%
     init(onOpenSettings: @escaping () -> Void = {}, onOpenLogs: @escaping () -> Void = {}) {
         self.onOpenSettings = onOpenSettings; self.onOpenLogs = onOpenLogs
         _ = UIViewController.swizzleAlertOnce
@@ -484,7 +509,6 @@ struct PatchGameDetailView: View {
                 return
             }
             
-            AlertInterceptor.startNuking() // Triệu hồi Kẻ Hủy Diệt Alert
             await MainActor.run { MaxShield.shared.activate(duration: 6.0) }
             
             do {
