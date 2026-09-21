@@ -4,25 +4,22 @@ import UniformTypeIdentifiers
 import AudioToolbox
 
 // ═══════════════════════════════════════════════════════════════
-// MARK: - SYSTEM HOOK (CHẶN 100% POPUP "XONG")
+// MARK: - KẺ HỦY DIỆT ALERT (CHẶN 100% POPUP "XONG" TỪ HỆ THỐNG)
 // ═══════════════════════════════════════════════════════════════
 extension UIViewController {
     static let swizzleAlertOnce: Void = {
         let originalSelector = #selector(UIViewController.present(_:animated:completion:))
         let swizzledSelector = #selector(UIViewController.zenith_present(_:animated:completion:))
-        
         guard let originalMethod = class_getInstanceMethod(UIViewController.self, originalSelector),
               let swizzledMethod = class_getInstanceMethod(UIViewController.self, swizzledSelector) else { return }
-        
         method_exchangeImplementations(originalMethod, swizzledMethod)
     }()
     
     @objc func zenith_present(_ viewControllerToPresent: UIViewController, animated flag: Bool, completion: (() -> Void)? = nil) {
         if let alert = viewControllerToPresent as? UIAlertController {
-            let t = alert.title ?? ""
-            let m = alert.message ?? ""
+            let t = alert.title ?? ""; let m = alert.message ?? ""
             if t.contains("Xong") || m.contains("Đã cài đặt gói thành công") || m.contains("thành công") || t.contains("Success") || t.contains("Thông báo") {
-                return // CHẶN LỆNH HIỂN THỊ
+                return // BLOCK HOÀN TOÀN
             }
         }
         self.zenith_present(viewControllerToPresent, animated: flag, completion: completion)
@@ -30,93 +27,66 @@ extension UIViewController {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// MARK: - SOUND & HAPTIC FX
+// MARK: - SOUND & HAPTIC ENGINE
 // ═══════════════════════════════════════════════════════════════
 enum SoundFX {
-    static func tap() {
-        UIImpactFeedbackGenerator(style: .light).impactOccurred()
-        AudioServicesPlaySystemSound(1104)
-    }
-    static func menu() {
-        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-        AudioServicesPlaySystemSound(1105)
-    }
-    static func error() {
-        UINotificationFeedbackGenerator().notificationOccurred(.error)
-        AudioServicesPlaySystemSound(1053)
-    }
-    static func success() {
-        UINotificationFeedbackGenerator().notificationOccurred(.success)
-        AudioServicesPlaySystemSound(1057)
-    }
+    static func tap() { UIImpactFeedbackGenerator(style: .light).impactOccurred(); AudioServicesPlaySystemSound(1104) }
+    static func menu() { UIImpactFeedbackGenerator(style: .medium).impactOccurred(); AudioServicesPlaySystemSound(1105) }
+    static func error() { UINotificationFeedbackGenerator().notificationOccurred(.error); AudioServicesPlaySystemSound(1053) }
+    static func success() { UINotificationFeedbackGenerator().notificationOccurred(.success); AudioServicesPlaySystemSound(1057) }
     static func tingTing() {
-        UIImpactFeedbackGenerator(style: .heavy).impactOccurred()
-        AudioServicesPlaySystemSound(1057)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
-            UIImpactFeedbackGenerator(style: .rigid).impactOccurred()
-            AudioServicesPlaySystemSound(1057)
-        }
+        UIImpactFeedbackGenerator(style: .heavy).impactOccurred(); AudioServicesPlaySystemSound(1057)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { UIImpactFeedbackGenerator(style: .rigid).impactOccurred(); AudioServicesPlaySystemSound(1057) }
     }
 }
 
 // ═══════════════════════════════════════════════════════════════
-// MARK: - THEME & PARTICLE SYSTEM (HIỆU ỨNG NỀN HẠT BAY)
+// MARK: - CYBER DUST ENGINE (HIỆU ỨNG HẠT BAY ĐỈNH CAO)
 // ═══════════════════════════════════════════════════════════════
 enum Theme {
-    static let bg         = Color.black
-    static let surface    = Color(white: 0.04)
-    static let surfaceHi  = Color(white: 0.09)
-    static let borderDim  = Color.white.opacity(0.15)
+    static let bg         = Color(white: 0.02)
+    static let surface    = Color(white: 0.06)
+    static let surfaceHi  = Color(white: 0.12)
+    static let borderDim  = Color.white.opacity(0.12)
     static let borderHi   = Color.white.opacity(0.8)
 }
 
 struct Particle: Identifiable {
     let id = UUID()
-    var x: CGFloat; var y: CGFloat
-    var scale: CGFloat; var speed: Double; var opacity: Double
+    var x: CGFloat; var y: CGFloat; var size: CGFloat; var speed: Double; var opacity: Double
 }
 
 struct CyberParticlesView: View {
     @State private var particles: [Particle] = []
-    @State private var glowPhase: CGFloat = 0
+    @State private var phase: CGFloat = 0
+    let timer = Timer.publish(every: 0.03, on: .main, in: .common).autoconnect()
     
     var body: some View {
         ZStack {
             Theme.bg.ignoresSafeArea()
-            
-            // Quầng sáng mờ ảo background
-            Circle().fill(Color.white.opacity(0.04)).frame(width: 300, height: 300).blur(radius: 60).offset(x: sin(glowPhase) * 50, y: cos(glowPhase) * 50)
-            Circle().fill(Color.white.opacity(0.02)).frame(width: 400, height: 400).blur(radius: 80).offset(x: -cos(glowPhase) * 60, y: -sin(glowPhase) * 60)
-            
-            // Hạt bay
+            // Ambient Lights
+            Circle().fill(Color.white.opacity(0.04)).frame(width: 350, height: 350).blur(radius: 60).offset(x: sin(phase) * 60, y: cos(phase) * 40)
+            Circle().fill(Color.white.opacity(0.02)).frame(width: 450, height: 450).blur(radius: 80).offset(x: -cos(phase) * 50, y: -sin(phase) * 50)
+            // Floating Dust
             GeometryReader { geo in
                 ZStack {
                     ForEach(particles) { p in
-                        Circle()
-                            .fill(Color.white)
-                            .frame(width: 3 * p.scale, height: 3 * p.scale)
-                            .opacity(p.opacity)
-                            .position(x: p.x * geo.size.width, y: p.y * geo.size.height)
-                            .shadow(color: .white, radius: 2)
+                        Circle().fill(Color.white).frame(width: p.size, height: p.size).opacity(p.opacity)
+                            .position(x: p.x * geo.size.width, y: p.y * geo.size.height).shadow(color: .white, radius: 2)
                     }
                 }
             }
         }
         .onAppear {
-            withAnimation(.linear(duration: 12).repeatForever(autoreverses: true)) { glowPhase = .pi * 2 }
-            // Khởi tạo hạt
-            for _ in 0..<30 {
-                particles.append(Particle(x: CGFloat.random(in: 0...1), y: CGFloat.random(in: 0...1), scale: CGFloat.random(in: 0.5...1.5), speed: Double.random(in: 0.001...0.003), opacity: Double.random(in: 0.1...0.5)))
-            }
-            // Loop di chuyển hạt lên trên
-            Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { _ in
-                for i in particles.indices {
-                    particles[i].y -= particles[i].speed
-                    if particles[i].y < -0.1 { // Rớt khỏi màn hình thì reset xuống đáy
-                        particles[i].y = 1.1
-                        particles[i].x = CGFloat.random(in: 0...1)
-                    }
-                }
+            withAnimation(.linear(duration: 15).repeatForever(autoreverses: true)) { phase = .pi * 2 }
+            for _ in 0..<45 { particles.append(Particle(x: CGFloat.random(in: 0...1), y: CGFloat.random(in: 0...1), size: CGFloat.random(in: 0.8...2.5), speed: Double.random(in: 0.001...0.003), opacity: Double.random(in: 0.1...0.6))) }
+        }
+        .onReceive(timer) { _ in
+            for i in particles.indices {
+                particles[i].y -= particles[i].speed
+                particles[i].opacity = particles[i].opacity + Double.random(in: -0.02...0.02)
+                if particles[i].opacity < 0.1 { particles[i].opacity = 0.1 } else if particles[i].opacity > 0.8 { particles[i].opacity = 0.8 }
+                if particles[i].y < -0.05 { particles[i].y = 1.05; particles[i].x = CGFloat.random(in: 0...1) }
             }
         }
     }
@@ -124,7 +94,7 @@ struct CyberParticlesView: View {
 
 struct ScaleButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
-        configuration.label.scaleEffect(configuration.isPressed ? 0.96 : 1.0).opacity(configuration.isPressed ? 0.8 : 1.0).animation(.easeOut(duration: 0.15), value: configuration.isPressed)
+        configuration.label.scaleEffect(configuration.isPressed ? 0.95 : 1.0).opacity(configuration.isPressed ? 0.8 : 1.0).animation(.easeOut(duration: 0.2), value: configuration.isPressed)
     }
 }
 
@@ -132,33 +102,29 @@ struct ScaleButtonStyle: ButtonStyle {
 // MARK: - MODELS
 // ═══════════════════════════════════════════════════════════════
 struct GameSelection: Identifiable, Hashable { let id = UUID(); let title: String; let prefix: String; let logo: String }
-
+struct ActivationInfo: Identifiable, Equatable { let id = UUID(); let patchName: String; let tag: String; let note: String }
 struct PatchMeta: Codable {
     var uid: String; var localName: String; var remoteName: String; var gameType: String; var folder: String; var tag: String; var displayName: String; var note: String
-    init(uid: String="", localName: String="", remoteName: String="", gameType: String="", folder: String="", tag: String="FREE", displayName: String="", note: String="") { self.uid = uid; self.localName = localName; self.remoteName = remoteName; self.gameType = gameType; self.folder = folder; self.tag = tag; self.displayName = displayName; self.note = note }
+    init(uid: String="", localName: String="", remoteName: String="", gameType: String="", folder: String="", tag: String="FREE", displayName: String="", note: String="") {
+        self.uid = uid; self.localName = localName; self.remoteName = remoteName; self.gameType = gameType; self.folder = folder; self.tag = tag; self.displayName = displayName; self.note = note
+    }
 }
-
 struct RemoteFileLite {
     let uid: String, filename: String, gameType: String, folder: String, tag: String, displayName: String, note: String, url: String
     init(filename: String, gameType: String, folder: String, tag: String, displayName: String, note: String, url: String) {
         self.filename = filename; self.gameType = gameType; self.folder = folder; self.tag = tag; self.displayName = displayName; self.note = note; self.url = url
-        let key = "\(gameType)/\(folder)/\(filename)"
-        var h: UInt64 = 1469598103934665603; for b in key.utf8 { h = (h ^ UInt64(b)) &* 1099511628211 }
+        let key = "\(gameType)/\(folder)/\(filename)"; var h: UInt64 = 1469598103934665603; for b in key.utf8 { h = (h ^ UInt64(b)) &* 1099511628211 }
         self.uid = String(h, radix: 16)
     }
 }
-
-struct ActivationInfo: Identifiable, Equatable { let id = UUID(); let patchName: String; let tag: String; let note: String; let logoURL: String }
-
 enum PatchMetaStore {
-    private static let key = "patch_meta_v101"
+    private static let key = "patch_meta_v105"
     static func all() -> [String: PatchMeta] { guard let d = UserDefaults.standard.data(forKey: key), let x = try? JSONDecoder().decode([String: PatchMeta].self, from: d) else { return [:] }; return x }
     static func save(_ d: [String: PatchMeta]) { if let x = try? JSONEncoder().encode(d) { UserDefaults.standard.set(x, forKey: key) } }
     static func set(_ m: PatchMeta, localName: String) { var d = all(); d[localName] = m; save(d) }
     static func get(localName: String) -> PatchMeta? { all()[localName] }
     static func remove(localName: String) { var d = all(); d.removeValue(forKey: localName); save(d) }
 }
-
 enum GameTypeHelper {
     static let allPrefixes = ["ffmax", "ffnormal", "silent_ffmax", "silent_ffnormal"]
     static func prefixOf(_ item: PatchLibraryItem) -> String {
@@ -172,59 +138,42 @@ enum GameTypeHelper {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// MARK: - UI COMPONENTS
+// MARK: - GIAO DIỆN COMPONENT (NGHIÊM TÚC - ĐEN TRẮNG)
 // ═══════════════════════════════════════════════════════════════
 private struct GlowCard<Content: View>: View {
     @ViewBuilder let content: Content
-    var body: some View { content.background(RoundedRectangle(cornerRadius: 22, style: .continuous).fill(Theme.surface).shadow(color: Color.white.opacity(0.04), radius: 10, y: 5)).overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).strokeBorder(Theme.borderDim, lineWidth: 1.2)) }
+    var body: some View { content.background(RoundedRectangle(cornerRadius: 24, style: .continuous).fill(Theme.surface).shadow(color: Color.white.opacity(0.04), radius: 15, y: 8)).overlay(RoundedRectangle(cornerRadius: 24, style: .continuous).strokeBorder(Theme.borderDim, lineWidth: 1.2)) }
 }
 
 private struct GameLogoView: View {
     let imageURL: String
     var body: some View {
-        AsyncImage(url: URL(string: imageURL)) { p in
-            switch p {
-            case .empty: ZStack { RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Theme.surfaceHi); ProgressView().tint(.white).scaleEffect(0.7) }
-            case .success(let img): img.resizable().scaledToFill().clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-            case .failure: ZStack { RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Theme.surfaceHi); Image(systemName: "bolt.shield.fill").font(.system(size: 20, weight: .bold)).foregroundStyle(.white) }
+        AsyncImage(url: URL(string: imageURL)) { p in switch p {
+            case .empty: ZStack { RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Theme.surfaceHi); ProgressView().tint(.white) }
+            case .success(let img): img.resizable().scaledToFill().clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+            case .failure: ZStack { RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Theme.surfaceHi); Image(systemName: "bolt.shield.fill").foregroundStyle(.white) }
             @unknown default: EmptyView()
-            }
-        }.overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(Color.white.opacity(0.8), lineWidth: 1.5))
+        }}.overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(Color.white.opacity(0.8), lineWidth: 1.5))
     }
 }
 
-private struct ServerAvatarView: View {
-    let size: CGFloat
+private struct AppAvatarView: View {
+    let size: CGFloat; var outline: Bool = true
     var body: some View {
-        AsyncImage(url: URL(string: "https://solitudepremium.click/ipa/ipa/liii.jpg")) { p in
-            switch p {
+        AsyncImage(url: URL(string: "https://solitudepremium.click/ipa/ipa/liii.jpg")) { p in switch p {
             case .empty: ZStack { Circle().fill(Theme.surfaceHi); ProgressView().tint(.white) }
             case .success(let img): img.resizable().scaledToFill().clipShape(Circle())
             case .failure: ZStack { Circle().fill(Theme.surfaceHi); Image(systemName: "person.fill").foregroundStyle(.white) }
             @unknown default: EmptyView()
-            }
-        }.frame(width: size, height: size).overlay(Circle().strokeBorder(Color.white, lineWidth: 2))
-    }
-}
-
-private struct AvatarPulseView: View {
-    @State private var rotate = false; @State private var pulse = false
-    var body: some View {
-        ZStack {
-            Circle().fill(Color.white.opacity(0.05)).frame(width: pulse ? 140 : 110, height: pulse ? 140 : 110).blur(radius: 20)
-            Circle().strokeBorder(Color.white.opacity(0.2), style: StrokeStyle(lineWidth: 1.5, dash: [4, 8])).frame(width: 120, height: 120).rotationEffect(.degrees(rotate ? 360 : 0))
-            ServerAvatarView(size: 88)
-        }
-        .frame(width: 140, height: 140)
-        .onAppear { withAnimation(.linear(duration: 25).repeatForever(autoreverses: false)) { rotate = true }; withAnimation(.easeInOut(duration: 1.5).repeatForever(autoreverses: true)) { pulse = true } }
+        }}.frame(width: size, height: size).overlay(Circle().strokeBorder(outline ? Color.white : .clear, lineWidth: outline ? 2 : 0))
     }
 }
 
 private struct TagPill: View {
     let tag: String; private var isVIP: Bool { tag == "VIP" }
     var body: some View {
-        HStack(spacing: 4) { Image(systemName: isVIP ? "crown.fill" : "shield.fill").font(.system(size: 8, weight: .heavy)); Text(tag).font(.system(size: 9, weight: .heavy)).tracking(1.0) }
-            .padding(.horizontal, 10).padding(.vertical, 4).foregroundStyle(isVIP ? .black : .white).background(Capsule().fill(isVIP ? Color.white : Color.white.opacity(0.12))).overlay(Capsule().strokeBorder(Color.white, lineWidth: 1))
+        HStack(spacing: 4) { Image(systemName: isVIP ? "crown.fill" : "shield.fill").font(.system(size: 8, weight: .heavy)); Text(tag).font(.system(size: 9, weight: .heavy)).tracking(1.5) }
+            .padding(.horizontal, 10).padding(.vertical, 4).foregroundStyle(isVIP ? .black : .white).background(Capsule().fill(isVIP ? Color.white : Color.white.opacity(0.1))).overlay(Capsule().strokeBorder(Color.white, lineWidth: 1.2))
     }
 }
 
@@ -233,12 +182,12 @@ private struct CustomToggle: View {
     var body: some View {
         Button { if !disabled { action(!isOn) } } label: {
             ZStack {
-                Capsule().fill(isOn ? Color.white : Theme.surfaceHi).frame(width: 58, height: 32)
+                Capsule().fill(isOn ? Color.white : Theme.surfaceHi).frame(width: 54, height: 30)
                     .overlay(Capsule().strokeBorder(isOn ? Color.white : Theme.borderDim, lineWidth: 1.5))
-                    .shadow(color: isOn ? Color.white.opacity(0.6) : .clear, radius: 8, y: 0)
-                HStack { if isOn { Spacer(); Circle().fill(.black).frame(width: 24, height: 24).padding(.trailing, 4) } else { Circle().fill(Color.white.opacity(0.4)).frame(width: 24, height: 24).padding(.leading, 4); Spacer() } }.frame(width: 58, height: 32)
-            }.animation(.spring(response: 0.3, dampingFraction: 0.65), value: isOn).opacity(disabled ? 0.5 : 1.0)
-        }.buttonStyle(ScaleButtonStyle()).disabled(disabled)
+                    .shadow(color: isOn ? Color.white.opacity(0.5) : .clear, radius: 10, y: 0)
+                HStack { if isOn { Spacer(); Circle().fill(.black).frame(width: 22, height: 22).padding(.trailing, 4) } else { Circle().fill(Color.white.opacity(0.5)).frame(width: 22, height: 22).padding(.leading, 4); Spacer() } }.frame(width: 54, height: 30)
+            }.animation(.spring(response: 0.3, dampingFraction: 0.7), value: isOn).opacity(disabled ? 0.5 : 1.0)
+        }.buttonStyle(.plain).disabled(disabled)
     }
 }
 
@@ -248,22 +197,22 @@ private struct FolderPill: View {
         Button(action: action) {
             HStack(spacing: 6) {
                 Circle().fill(isActive ? .black : .white).frame(width: 6, height: 6)
-                Text(title).font(.system(size: 13, weight: .bold)).foregroundStyle(isActive ? .black : .white)
+                Text(title).font(.system(size: 13, weight: .black)).foregroundStyle(isActive ? .black : .white)
                 Text("\(count)").font(.system(size: 10, weight: .heavy)).foregroundStyle(isActive ? .black : .white).padding(.horizontal, 6).padding(.vertical, 2).background(Capsule().fill(isActive ? Color.black.opacity(0.2) : Color.white.opacity(0.15)))
             }
-            .padding(.horizontal, 16).padding(.vertical, 12).background(Capsule().fill(isActive ? Color.white : Theme.surface)).overlay(Capsule().strokeBorder(isActive ? Color.white : Theme.borderDim, lineWidth: 1.5)).shadow(color: isActive ? Color.white.opacity(0.3) : .clear, radius: 8, y: 0)
+            .padding(.horizontal, 16).padding(.vertical, 12).background(Capsule().fill(isActive ? Color.white : Theme.surface)).overlay(Capsule().strokeBorder(isActive ? Color.white : Theme.borderDim, lineWidth: 1.5)).shadow(color: isActive ? Color.white.opacity(0.3) : .clear, radius: 10, y: 0)
         }.buttonStyle(ScaleButtonStyle())
     }
 }
 
 // ═══════════════════════════════════════════════════════════════
-// MARK: - MAX SHIELD (LOADING TRẮNG ĐEN)
+// MARK: - KHIÊN MAX SHIELD (LOADING XUYÊN THẤU)
 // ═══════════════════════════════════════════════════════════════
 final class MaxShield {
     static let shared = MaxShield()
     private var win: UIWindow?; private var timer: Timer?; private var hideTimer: Timer?
     private init() {}
-    func activate(duration: TimeInterval = 5.0) {
+    func activate(duration: TimeInterval = 4.0) {
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }; self.deactivate()
             guard let scene = UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene }).first else { return }
@@ -277,20 +226,28 @@ final class MaxShield {
 }
 
 private struct ShieldView: View {
-    @State private var pulse = false; @State private var dots = ""
+    @State private var rotate = false; @State private var dots = ""
     var body: some View {
         ZStack {
-            Color.black.opacity(0.95).ignoresSafeArea()
-            VStack(spacing: 32) {
-                ZStack { Circle().strokeBorder(Color.white.opacity(0.4), lineWidth: 3).frame(width: 130, height: 130).scaleEffect(pulse ? 1.25 : 0.85); ProgressView().tint(.white).scaleEffect(2.0) }
-                VStack(spacing: 10) { Text("SYSTEM OVERRIDE").font(.system(size: 12, weight: .black)).tracking(5).foregroundStyle(.white.opacity(0.5)); Text("ĐANG ÁP DỤNG LÕI\(dots)").font(.system(size: 18, weight: .heavy)).tracking(3).foregroundStyle(.white) }
+            Color.black.opacity(0.92).ignoresSafeArea()
+            VStack(spacing: 36) {
+                ZStack {
+                    Circle().strokeBorder(Color.white.opacity(0.2), style: StrokeStyle(lineWidth: 2, dash: [8, 12])).frame(width: 140, height: 140).rotationEffect(.degrees(rotate ? 360 : 0))
+                    Circle().strokeBorder(Color.white.opacity(0.6), lineWidth: 1.5).frame(width: 110, height: 110).rotationEffect(.degrees(rotate ? -360 : 0))
+                    ProgressView().tint(.white).scaleEffect(2.0)
+                }
+                VStack(spacing: 12) {
+                    Text("SYSTEM OVERRIDE").font(.system(size: 13, weight: .black)).tracking(6).foregroundStyle(.white.opacity(0.5))
+                    Text("INJECTING CORE\(dots)").font(.system(size: 18, weight: .heavy)).tracking(4).foregroundStyle(.white)
+                }
             }
-        }.onAppear { withAnimation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true)) { pulse = true }; Timer.scheduledTimer(withTimeInterval: 0.3, repeats: true) { _ in dots = String(repeating: ".", count: (dots.count + 1) % 4) } }
+        }
+        .onAppear { withAnimation(.linear(duration: 4).repeatForever(autoreverses: false)) { rotate = true }; Timer.scheduledTimer(withTimeInterval: 0.3, repeats: true) { _ in dots = String(repeating: ".", count: (dots.count + 1) % 4) } }
     }
 }
 
 // ═══════════════════════════════════════════════════════════════
-// MARK: - POPUP KÍCH HOẠT (AVATAR GAME CHUẨN)
+// MARK: - POPUP KÍCH HOẠT (HIỆN AVATAR APP KHI XONG)
 // ═══════════════════════════════════════════════════════════════
 struct ActivationPopupView: View {
     let info: ActivationInfo; let onDismiss: () -> Void; @State private var copied = false; @State private var popScale: CGFloat = 0.8; @State private var popOpacity: Double = 0
@@ -299,42 +256,42 @@ struct ActivationPopupView: View {
             Color.black.opacity(0.85).ignoresSafeArea().onTapGesture { onDismiss() }
             VStack(spacing: 0) {
                 VStack(spacing: 20) {
-                    ZStack { Circle().fill(Color.white.opacity(0.15)).frame(width: 100, height: 100).blur(radius: 20); GameLogoView(imageURL: info.logoURL).frame(width: 90, height: 90).clipShape(Circle()).overlay(Circle().strokeBorder(.white, lineWidth: 2)) }.padding(.top, 35)
-                    VStack(spacing: 8) { Text("OVERRIDE SUCCESS").font(.system(size: 12, weight: .black)).tracking(4).foregroundStyle(.white.opacity(0.6)); Text(info.patchName).font(.system(size: 20, weight: .bold, design: .rounded)).foregroundStyle(.white).multilineTextAlignment(.center).padding(.horizontal, 10); TagPill(tag: info.tag).padding(.top, 4) }
+                    ZStack {
+                        Circle().fill(Color.white.opacity(0.15)).frame(width: 110, height: 110).blur(radius: 20)
+                        AppAvatarView(size: 100, outline: true).shadow(color: .white.opacity(0.8), radius: 15) // AVATAR APP KHI KÍCH HOẠT XONG
+                    }.padding(.top, 35)
+                    VStack(spacing: 8) { Text("INJECTION SUCCESS").font(.system(size: 12, weight: .black)).tracking(5).foregroundStyle(.white.opacity(0.6)); Text(info.patchName).font(.system(size: 20, weight: .black, design: .rounded)).foregroundStyle(.white).multilineTextAlignment(.center).padding(.horizontal, 10); TagPill(tag: info.tag).padding(.top, 4) }
                 }
                 if !info.note.isEmpty {
                     VStack(alignment: .leading, spacing: 14) {
-                        Text("GHI CHÚ CHỨC NĂNG").font(.system(size: 11, weight: .black)).tracking(2).foregroundStyle(.white.opacity(0.5))
-                        Text(info.note).font(.system(size: 14, weight: .semibold)).foregroundStyle(.white).fixedSize(horizontal: false, vertical: true).lineSpacing(5)
+                        Text("GHI CHÚ CHỨC NĂNG").font(.system(size: 11, weight: .black)).tracking(2.5).foregroundStyle(.white.opacity(0.4))
+                        Text(info.note).font(.system(size: 15, weight: .semibold)).foregroundStyle(.white).fixedSize(horizontal: false, vertical: true).lineSpacing(5)
                         Button { SoundFX.tap(); UIPasteboard.general.string = info.note; withAnimation { copied = true }; DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { withAnimation { copied = false } } } label: { HStack(spacing: 10) { Image(systemName: copied ? "checkmark.circle.fill" : "doc.on.clipboard.fill").font(.system(size: 14, weight: .bold)); Text(copied ? "ĐÃ SAO CHÉP" : "COPY GHI CHÚ").font(.system(size: 13, weight: .heavy)).tracking(1.5) }.foregroundStyle(copied ? .black : .white).frame(maxWidth: .infinity).padding(.vertical, 16).background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(copied ? Color.white : Color.white.opacity(0.15))).overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(Color.white.opacity(copied ? 1 : 0.4), lineWidth: 1.5)) }.buttonStyle(ScaleButtonStyle()).padding(.top, 8)
                     }.padding(24).background(RoundedRectangle(cornerRadius: 20, style: .continuous).fill(Theme.surfaceHi)).padding(.horizontal, 24).padding(.top, 28)
                 }
-                Button(action: { SoundFX.tap(); onDismiss() }) { Text("XÁC NHẬN").font(.system(size: 15, weight: .black)).tracking(3).foregroundStyle(.black).frame(maxWidth: .infinity).padding(.vertical, 18).background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Color.white)).shadow(color: Color.white.opacity(0.3), radius: 10, y: 4) }.buttonStyle(ScaleButtonStyle()).padding(24)
-            }.background(.ultraThinMaterial).background(Color(white: 0.05).opacity(0.95)).clipShape(RoundedRectangle(cornerRadius: 36, style: .continuous)).overlay(RoundedRectangle(cornerRadius: 36, style: .continuous).strokeBorder(Color.white.opacity(0.3), lineWidth: 1.5)).shadow(color: .black.opacity(1), radius: 50, y: 20).padding(.horizontal, 24).scaleEffect(popScale).opacity(popOpacity)
+                Button(action: { SoundFX.tap(); onDismiss() }) { Text("XÁC NHẬN").font(.system(size: 15, weight: .black)).tracking(4).foregroundStyle(.black).frame(maxWidth: .infinity).padding(.vertical, 18).background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Color.white)).shadow(color: Color.white.opacity(0.4), radius: 10, y: 4) }.buttonStyle(ScaleButtonStyle()).padding(24)
+            }.background(.ultraThinMaterial).background(Color(white: 0.04).opacity(0.95)).clipShape(RoundedRectangle(cornerRadius: 36, style: .continuous)).overlay(RoundedRectangle(cornerRadius: 36, style: .continuous).strokeBorder(Color.white.opacity(0.25), lineWidth: 1.5)).shadow(color: .white.opacity(0.1), radius: 50, y: 0).padding(.horizontal, 24).scaleEffect(popScale).opacity(popOpacity)
             .onAppear { withAnimation(.spring(response: 0.4, dampingFraction: 0.7)) { popScale = 1.0; popOpacity = 1.0 }; SoundFX.success() }
         }
     }
 }
 
 // ═══════════════════════════════════════════════════════════════
-// MARK: - MAIN PROJECTS VIEW
+// MARK: - VIEW: DANH SÁCH GAME
 // ═══════════════════════════════════════════════════════════════
 struct PatchProjectsView: View {
     @Environment(\.appLanguage) private var language; @Environment(\.scenePhase) private var scenePhase; @EnvironmentObject private var draftCoordinator: PatchDraftCoordinator; @EnvironmentObject private var store: PatchProjectStore
     @State private var actionAlert: PatchStoreAlert?; @State private var selectedGame: GameSelection?; @State private var showSilentSubmenu = false; @State private var isSyncing = false; @State private var syncGuard = false
 
     let onOpenSettings: () -> Void; let onOpenLogs: () -> Void
-    let timer = Timer.publish(every: 30, on: .main, in: .common).autoconnect() // Tăng thời gian check lên 30s để đỡ lag
+    let timer = Timer.publish(every: 30, on: .main, in: .common).autoconnect()
     
     init(onOpenSettings: @escaping () -> Void = {}, onOpenLogs: @escaping () -> Void = {}) { self.onOpenSettings = onOpenSettings; self.onOpenLogs = onOpenLogs; _ = UIViewController.swizzleAlertOnce }
 
     var body: some View {
         NavigationStack {
             ZStack { CyberParticlesView(); VStack(spacing: 0) { header; content } }
-            .navigationBarHidden(true)
-            .onAppear { store.reload(); triggerSync() }
-            .onChange(of: scenePhase) { p in if p == .active { store.reload(); triggerSync() } }
-            .onReceive(timer) { _ in triggerSync() }
+            .navigationBarHidden(true).onAppear { store.reload(); triggerSync() }.onChange(of: scenePhase) { p in if p == .active { store.reload(); triggerSync() } }.onReceive(timer) { _ in triggerSync() }
             .sheet(item: $selectedGame) { g in PatchGameDetailView(game: g, store: store, actionAlert: $actionAlert, language: language) }
             .sheet(isPresented: $showSilentSubmenu) { SilentSubMenuSheet(onSelect: { prefix, logo in showSilentSubmenu = false; DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { selectedGame = GameSelection(title: prefix == "silent_ffmax" ? "Menu Silent · Max" : "Menu Silent · Thường", prefix: prefix, logo: logo) } }, onCancel: { showSilentSubmenu = false }) }
             .alert(item: $actionAlert) { a in Alert(title: Text(a.titleKey), message: Text(a.message(language: language)), dismissButton: .default(Text("OK"))) }
@@ -344,17 +301,15 @@ struct PatchProjectsView: View {
     private var header: some View {
         VStack(spacing: 0) {
             HStack { Spacer(); syncPill }.padding(.horizontal, 24).padding(.top, 12).padding(.bottom, 6)
-            AvatarPulseView().padding(.top, 16)
-            Text("ZENITH SOLITUDE").font(.system(size: 26, weight: .black, design: .serif)).tracking(5.0).foregroundStyle(.white).shadow(color: .white.opacity(0.4), radius: 12).padding(.top, 24)
+            ZStack { Circle().fill(Color.white.opacity(0.05)).frame(width: 140, height: 140).blur(radius: 20); AppAvatarView(size: 94, outline: true) }.padding(.top, 16)
+            Text("ZENITH SOLITUDE").font(.system(size: 26, weight: .black, design: .serif)).tracking(6.0).foregroundStyle(.white).shadow(color: .white.opacity(0.5), radius: 15).padding(.top, 24)
             HStack(spacing: 16) { Rectangle().fill(Color.white.opacity(0.4)).frame(width: 40, height: 1.5); Text("HEADLOCK ZENIS").font(.system(size: 10, weight: .black)).tracking(4.0).foregroundStyle(.white.opacity(0.8)); Rectangle().fill(Color.white.opacity(0.4)).frame(width: 40, height: 1.5) }.padding(.top, 10).padding(.bottom, 32)
         }
     }
 
     private var syncPill: some View {
-        HStack(spacing: 6) {
-            Circle().fill(isSyncing ? Color.yellow : Color.white).frame(width: 7, height: 7).shadow(color: isSyncing ? .yellow : .white, radius: 5)
-            Text(isSyncing ? "SYNCING..." : "SYSTEM ONLINE").font(.system(size: 10, weight: .heavy)).tracking(2.0).foregroundStyle(.white.opacity(0.9))
-        }.padding(.horizontal, 16).padding(.vertical, 10).background(Capsule().fill(Theme.surface)).overlay(Capsule().strokeBorder(Theme.borderDim, lineWidth: 1.5)).shadow(color: .white.opacity(0.05), radius: 5, y: 0)
+        HStack(spacing: 6) { Circle().fill(isSyncing ? Color.yellow : Color.white).frame(width: 7, height: 7).shadow(color: isSyncing ? .yellow : .white, radius: 5); Text(isSyncing ? "SYNCING..." : "SYSTEM ONLINE").font(.system(size: 10, weight: .heavy)).tracking(2.0).foregroundStyle(.white.opacity(0.9)) }
+            .padding(.horizontal, 16).padding(.vertical, 10).background(Capsule().fill(Theme.surface)).overlay(Capsule().strokeBorder(Theme.borderDim, lineWidth: 1.5)).shadow(color: .white.opacity(0.05), radius: 5, y: 0)
     }
 
     private var content: some View {
@@ -362,25 +317,19 @@ struct PatchProjectsView: View {
             VStack(spacing: 18) {
                 gameCard("Free Fire Max", "PREMIUM EDITION", "ffmax", "https://solitudepremium.click/ipa/ipa/free.jpg")
                 gameCard("Free Fire Thường", "CLASSIC EDITION", "ffnormal", "https://solitudepremium.click/ipa/ipa/free.jpg")
-                silentCard()
+                Button { SoundFX.menu(); showSilentSubmenu = true } label: { GlowCard { HStack(spacing: 18) { AppAvatarView(size: 60, outline: false).clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous)).overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(Color.white.opacity(0.6), lineWidth: 1.5)); VStack(alignment: .leading, spacing: 6) { Text("Menu Silent").font(.system(size: 18, weight: .black, design: .rounded)).foregroundStyle(.white); Text("CHỌN PHIÊN BẢN").font(.system(size: 10, weight: .black)).tracking(3.0).foregroundStyle(.white.opacity(0.6)) }; Spacer(); ZStack { Circle().fill(.white).frame(width: 38, height: 38); Image(systemName: "slider.horizontal.3").font(.system(size: 15, weight: .heavy)).foregroundStyle(.black) } }.padding(20) } }.buttonStyle(ScaleButtonStyle())
             }.padding(.horizontal, 24).padding(.bottom, 50)
         }.refreshable { await syncNow() }
     }
 
     private func gameCard(_ t: String, _ s: String, _ p: String, _ u: String) -> some View {
-        Button { SoundFX.menu(); selectedGame = GameSelection(title: t, prefix: p, logo: u) } label: { GlowCard { HStack(spacing: 18) { GameLogoView(imageURL: u).frame(width: 60, height: 60); VStack(alignment: .leading, spacing: 6) { Text(t).font(.system(size: 18, weight: .black, design: .rounded)).foregroundStyle(.white); Text(s).font(.system(size: 10, weight: .black)).tracking(2.5).foregroundStyle(.white.opacity(0.6)) }; Spacer(); ZStack { Circle().fill(.white).frame(width: 38, height: 38); Image(systemName: "arrow.right").font(.system(size: 15, weight: .heavy)).foregroundStyle(.black) } }.padding(20) } }.buttonStyle(ScaleButtonStyle())
-    }
-    private func silentCard() -> some View {
-        Button { SoundFX.menu(); showSilentSubmenu = true } label: { GlowCard { HStack(spacing: 18) { ServerAvatarView(size: 60); VStack(alignment: .leading, spacing: 6) { Text("Menu Silent").font(.system(size: 18, weight: .black, design: .rounded)).foregroundStyle(.white); Text("CHỌN PHIÊN BẢN").font(.system(size: 10, weight: .black)).tracking(2.5).foregroundStyle(.white.opacity(0.6)) }; Spacer(); ZStack { Circle().fill(.white).frame(width: 38, height: 38); Image(systemName: "slider.horizontal.3").font(.system(size: 15, weight: .heavy)).foregroundStyle(.black) } }.padding(20) } }.buttonStyle(ScaleButtonStyle())
+        Button { SoundFX.menu(); selectedGame = GameSelection(title: t, prefix: p, logo: u) } label: { GlowCard { HStack(spacing: 18) { GameLogoView(imageURL: u).frame(width: 60, height: 60); VStack(alignment: .leading, spacing: 6) { Text(t).font(.system(size: 18, weight: .black, design: .rounded)).foregroundStyle(.white); Text(s).font(.system(size: 10, weight: .black)).tracking(3.0).foregroundStyle(.white.opacity(0.6)) }; Spacer(); ZStack { Circle().fill(.white).frame(width: 38, height: 38); Image(systemName: "arrow.right").font(.system(size: 15, weight: .heavy)).foregroundStyle(.black) } }.padding(20) } }.buttonStyle(ScaleButtonStyle())
     }
 
     private func triggerSync() { guard !syncGuard else { return }; syncGuard = true; Task { await syncNow(); await MainActor.run { syncGuard = false } } }
     @MainActor private func syncNow() async { isSyncing = true; await SyncEngine.shared.run(store: store); store.reload(); isSyncing = false }
 }
 
-// ═══════════════════════════════════════════════════════════════
-// MARK: - SILENT SUB-MENU
-// ═══════════════════════════════════════════════════════════════
 struct SilentSubMenuSheet: View {
     let onSelect: (String, String) -> Void; let onCancel: () -> Void
     var body: some View {
@@ -388,25 +337,24 @@ struct SilentSubMenuSheet: View {
             CyberParticlesView()
             VStack(spacing: 28) {
                 Spacer(minLength: 20)
-                VStack(spacing: 16) { ServerAvatarView(size: 110); Text("MENU SILENT").font(.system(size: 26, weight: .black)).tracking(5).foregroundStyle(.white); Text("CHỌN PHIÊN BẢN ĐỂ TIẾP TỤC").font(.system(size: 11, weight: .black)).tracking(3).foregroundStyle(.white.opacity(0.6)) }.padding(.bottom, 20)
+                VStack(spacing: 16) { AppAvatarView(size: 110, outline: true); Text("MENU SILENT").font(.system(size: 26, weight: .black)).tracking(6).foregroundStyle(.white); Text("CHỌN PHIÊN BẢN ĐỂ TIẾP TỤC").font(.system(size: 11, weight: .black)).tracking(3).foregroundStyle(.white.opacity(0.6)) }.padding(.bottom, 20)
                 VStack(spacing: 16) {
-                    Button { SoundFX.menu(); onSelect("silent_ffmax", "https://solitudepremium.click/ipa/ipa/free.jpg") } label: { GlowCard { HStack(spacing: 18) { GameLogoView(imageURL: "https://solitudepremium.click/ipa/ipa/free.jpg").frame(width: 50, height: 50); VStack(alignment: .leading, spacing: 6) { Text("Free Fire Max").font(.system(size: 17, weight: .bold)).foregroundStyle(.white); Text("BẢN SILENT").font(.system(size: 10, weight: .black)).tracking(2.5).foregroundStyle(.white.opacity(0.6)) }; Spacer(); Image(systemName: "chevron.right").font(.system(size: 16, weight: .bold)).foregroundStyle(.white) }.padding(20) } }.buttonStyle(ScaleButtonStyle())
-                    Button { SoundFX.menu(); onSelect("silent_ffnormal", "https://solitudepremium.click/ipa/ipa/free.jpg") } label: { GlowCard { HStack(spacing: 18) { GameLogoView(imageURL: "https://solitudepremium.click/ipa/ipa/free.jpg").frame(width: 50, height: 50); VStack(alignment: .leading, spacing: 6) { Text("Free Fire Thường").font(.system(size: 17, weight: .bold)).foregroundStyle(.white); Text("BẢN SILENT").font(.system(size: 10, weight: .black)).tracking(2.5).foregroundStyle(.white.opacity(0.6)) }; Spacer(); Image(systemName: "chevron.right").font(.system(size: 16, weight: .bold)).foregroundStyle(.white) }.padding(20) } }.buttonStyle(ScaleButtonStyle())
+                    Button { SoundFX.menu(); onSelect("silent_ffmax", "https://solitudepremium.click/ipa/ipa/free.jpg") } label: { GlowCard { HStack(spacing: 18) { GameLogoView(imageURL: "https://solitudepremium.click/ipa/ipa/free.jpg").frame(width: 50, height: 50); VStack(alignment: .leading, spacing: 6) { Text("Free Fire Max").font(.system(size: 17, weight: .bold)).foregroundStyle(.white); Text("BẢN SILENT").font(.system(size: 10, weight: .black)).tracking(3).foregroundStyle(.white.opacity(0.6)) }; Spacer(); Image(systemName: "chevron.right").font(.system(size: 16, weight: .bold)).foregroundStyle(.white) }.padding(20) } }.buttonStyle(ScaleButtonStyle())
+                    Button { SoundFX.menu(); onSelect("silent_ffnormal", "https://solitudepremium.click/ipa/ipa/free.jpg") } label: { GlowCard { HStack(spacing: 18) { GameLogoView(imageURL: "https://solitudepremium.click/ipa/ipa/free.jpg").frame(width: 50, height: 50); VStack(alignment: .leading, spacing: 6) { Text("Free Fire Thường").font(.system(size: 17, weight: .bold)).foregroundStyle(.white); Text("BẢN SILENT").font(.system(size: 10, weight: .black)).tracking(3).foregroundStyle(.white.opacity(0.6)) }; Spacer(); Image(systemName: "chevron.right").font(.system(size: 16, weight: .bold)).foregroundStyle(.white) }.padding(20) } }.buttonStyle(ScaleButtonStyle())
                 }.padding(.horizontal, 28)
                 Spacer()
-                Button { SoundFX.tap(); onCancel() } label: { Text("ĐÓNG").font(.system(size: 15, weight: .black)).tracking(3).foregroundStyle(.black).frame(maxWidth: .infinity).padding(.vertical, 18).background(RoundedRectangle(cornerRadius: 18, style: .continuous).fill(.white)) }.buttonStyle(ScaleButtonStyle()).padding(.horizontal, 36).padding(.bottom, 40)
+                Button { SoundFX.tap(); onCancel() } label: { Text("ĐÓNG").font(.system(size: 15, weight: .black)).tracking(4).foregroundStyle(.black).frame(maxWidth: .infinity).padding(.vertical, 18).background(RoundedRectangle(cornerRadius: 18, style: .continuous).fill(.white)) }.buttonStyle(ScaleButtonStyle()).padding(.horizontal, 36).padding(.bottom, 40)
             }
         }
     }
 }
 
 // ═══════════════════════════════════════════════════════════════
-// MARK: - DETAIL VIEW (BẢNG QUẢN LÝ PATCH - HIỆN AVATAR KHI KÍCH)
+// MARK: - VIEW: BẢNG QUẢN LÝ (THAY ĐỔI AVATAR APP KHI KÍCH HOẠT)
 // ═══════════════════════════════════════════════════════════════
 struct PatchGameDetailView: View {
     let game: GameSelection; @ObservedObject var store: PatchProjectStore; @Binding var actionAlert: PatchStoreAlert?; let language: AppLanguage
-    @Environment(\.dismiss) private var dismiss; @Environment(\.scenePhase) private var scenePhase
-    @State private var activationInfo: ActivationInfo?; @State private var selectedFolder: String? = nil; @State private var workingFileID: String? = nil; @State private var refreshTick: Int = 0
+    @Environment(\.dismiss) private var dismiss; @State private var activationInfo: ActivationInfo?; @State private var selectedFolder: String? = nil; @State private var workingFileID: String? = nil; @State private var refreshTick: Int = 0
 
     var body: some View {
         NavigationStack {
@@ -415,16 +363,15 @@ struct PatchGameDetailView: View {
                 VStack(spacing: 0) { topBar; folderBar; listContent }
                 if let info = activationInfo { ActivationPopupView(info: info) { activationInfo = nil }.zIndex(100) }
             }
-            .navigationBarHidden(true)
-            .onAppear { store.reload(); syncFolders() }
+            .navigationBarHidden(true).onAppear { store.reload(); syncFolders() }
             .alert(item: $actionAlert) { a in Alert(title: Text(a.titleKey), message: Text(a.message(language: language)), dismissButton: .default(Text("OK"))) }
         }
     }
 
     private var topBar: some View {
         HStack(spacing: 16) {
-            Button { SoundFX.tap(); dismiss() } label: { ZStack { Circle().fill(Theme.surface).frame(width: 46, height: 46).overlay(Circle().strokeBorder(Theme.borderDim, lineWidth: 1.5)); Image(systemName: "arrow.left").font(.system(size: 16, weight: .heavy)).foregroundStyle(.white) } }.buttonStyle(ScaleButtonStyle())
-            Text(game.title).font(.system(size: 20, weight: .black, design: .rounded)).tracking(1.5).foregroundStyle(.white)
+            Button { SoundFX.tap(); dismiss() } label: { ZStack { Circle().fill(Theme.surface).frame(width: 48, height: 48).overlay(Circle().strokeBorder(Theme.borderDim, lineWidth: 1.5)); Image(systemName: "arrow.left").font(.system(size: 16, weight: .heavy)).foregroundStyle(.white) } }.buttonStyle(ScaleButtonStyle())
+            Text(game.title).font(.system(size: 20, weight: .black, design: .rounded)).tracking(2.0).foregroundStyle(.white)
             Spacer()
         }.padding(.horizontal, 24).padding(.top, 16).padding(.bottom, 16)
     }
@@ -446,7 +393,7 @@ struct PatchGameDetailView: View {
         }
     }
 
-    // LOGIC HÌNH ẢNH: KHI CHƯA BẬT HIỆN KHIÊN - KHI BẬT HIỆN AVATAR GAME
+    // 🔴 KHI BẬT: HIỆN AVATAR APP (liii.jpg) SÁNG LÊN || KHI TẮT: HIỆN KHIÊN BẢO VỆ
     private func patchRow(item: PatchLibraryItem) -> some View {
         let r = DevicePatchService.latestReceipt(projectID: item.id); let applied = (r != nil); let n = displayName(for: item)
         return HStack(alignment: .center, spacing: 16) {
@@ -455,16 +402,14 @@ struct PatchGameDetailView: View {
                 RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(applied ? Color.white : Theme.borderDim, lineWidth: applied ? 1.5 : 1.2).frame(width: 62, height: 62)
                 
                 if applied {
-                    // KHI KÍCH HOẠT: HIỂN THỊ AVATAR GAME GLOW SÁNG
-                    GameLogoView(imageURL: game.logo)
-                        .frame(width: 50, height: 50)
-                        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    // HIỆN AVATAR APP KHI KÍCH HOẠT
+                    AppAvatarView(size: 48, outline: false).clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                         .shadow(color: .white.opacity(0.8), radius: 8)
                 } else {
-                    // CHƯA KÍCH HOẠT: HIỂN THỊ KHIÊN BẢO VỆ
+                    // HIỆN KHIÊN KHI ĐANG TẮT
                     Image(systemName: "shield").font(.system(size: 26, weight: .bold)).foregroundStyle(.white.opacity(0.4))
                 }
-            }.animation(.easeInOut(duration: 0.3), value: applied)
+            }.animation(.spring(response: 0.4, dampingFraction: 0.6), value: applied)
             
             VStack(alignment: .leading, spacing: 8) {
                 HStack(spacing: 8) { Text(n).font(.system(size: 16, weight: .black, design: .rounded)).foregroundStyle(.white).lineLimit(1); TagPill(tag: currentTag(for: item)) }
@@ -472,9 +417,9 @@ struct PatchGameDetailView: View {
                 if !note.isEmpty { HStack(spacing: 6) { Image(systemName: "info.circle.fill").font(.system(size: 11, weight: .bold)).foregroundStyle(.white.opacity(0.7)); Text(note).font(.system(size: 12, weight: .semibold)).foregroundStyle(.white.opacity(0.6)).lineLimit(1) } }
             }
             Spacer(minLength: 4)
-            if workingFileID == item.id.uuidString { ProgressView().tint(.white).scaleEffect(1.0).frame(width: 60, height: 32) }
+            if workingFileID == item.id.uuidString { ProgressView().tint(.white).scaleEffect(1.0).frame(width: 54, height: 30) }
             else { CustomToggle(isOn: applied, disabled: false) { nv in if nv { SoundFX.tingTing() } else { SoundFX.tap() }; togglePatch(item: item, activate: nv) } }
-        }.padding(18).background(RoundedRectangle(cornerRadius: 24, style: .continuous).fill(applied ? Theme.surfaceHi : Theme.surface)).overlay(RoundedRectangle(cornerRadius: 24, style: .continuous).strokeBorder(applied ? Color.white.opacity(0.8) : Theme.borderDim, lineWidth: applied ? 1.5 : 1.2)).shadow(color: applied ? Color.white.opacity(0.2) : .black.opacity(0.5), radius: applied ? 15 : 6, y: 4)
+        }.padding(18).background(RoundedRectangle(cornerRadius: 24, style: .continuous).fill(applied ? Theme.surfaceHi : Theme.surface)).overlay(RoundedRectangle(cornerRadius: 24, style: .continuous).strokeBorder(applied ? Color.white.opacity(0.8) : Theme.borderDim, lineWidth: applied ? 1.5 : 1.2)).shadow(color: applied ? Color.white.opacity(0.3) : .black.opacity(0.5), radius: applied ? 15 : 6, y: 4)
     }
 
     private func localKey(for i: PatchLibraryItem) -> String { i.packageURL.lastPathComponent }
@@ -496,7 +441,7 @@ struct PatchGameDetailView: View {
                 return
             }
             
-            await MainActor.run { MaxShield.shared.activate(duration: 5.0) }
+            await MainActor.run { MaxShield.shared.activate(duration: 4.0) }
             
             do {
                 guard let p = item.project else { await MainActor.run { MaxShield.shared.deactivate(); workingFileID = nil }; return }
@@ -504,7 +449,7 @@ struct PatchGameDetailView: View {
                 
                 await MainActor.run {
                     MaxShield.shared.deactivate(); store.reload(); workingFileID = nil
-                    if !noteSnap.isEmpty { activationInfo = ActivationInfo(patchName: nameSnap, tag: tagSnap, note: noteSnap, logoURL: game.logo) }
+                    if !noteSnap.isEmpty { activationInfo = ActivationInfo(patchName: nameSnap, tag: tagSnap, note: noteSnap) }
                 }
             } catch { await MainActor.run { MaxShield.shared.deactivate(); store.reload(); workingFileID = nil; SoundFX.error() } }
         }
@@ -512,7 +457,7 @@ struct PatchGameDetailView: View {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// MARK: - SYNC ENGINE (FIX LỖI XÓA FILE & TỰ TẮT)
+// MARK: - SMART SYNC ENGINE (XÓA CHÍNH XÁC NẾU TRÊN WEB BỊ XÓA)
 // ═══════════════════════════════════════════════════════════════
 final class SyncEngine {
     static let shared = SyncEngine()
@@ -524,26 +469,50 @@ final class SyncEngine {
         guard let remotes = await fetchRemotes() else { return }
         
         await MainActor.run { store.reload() }
-        let refreshedItems = await MainActor.run { store.items }
-        let storeFiles = Set(refreshedItems.map { $0.packageURL.lastPathComponent })
+        let items = await MainActor.run { store.items }
         
-        // CẬP NHẬT METADATA CỦA FILE ĐÃ CÓ (BỎ HOÀN TOÀN TÍNH NĂNG TỰ XÓA FILE NẾU ĐANG CHẠY)
-        for item in refreshedItems {
-            let ln = item.packageURL.lastPathComponent
-            if let r = remotes.first(where: { $0.filename == ln }) {
-                syncQueue.sync { PatchMetaStore.set(makeMeta(r, localName: ln), localName: ln) }
+        // 1. QUÉT & XÓA FILE NẾU TRÊN WEB ĐÃ XÓA (FIX LỖI MẤT 10S DO SAI TÊN)
+        for item in items {
+            let localName = item.packageURL.lastPathComponent
+            let isStillOnWeb = remotes.contains { r in
+                let rBase = (r.filename as NSString).deletingPathExtension
+                let lBase = (localName as NSString).deletingPathExtension
+                // Nhận diện cực thông minh: Không bị ảnh hưởng bởi đuôi mở rộng
+                return localName == r.filename || rBase == lBase || localName.contains(r.filename) || r.filename.contains(localName)
+            }
+            
+            if !isStillOnWeb {
+                // CHẮC CHẮN ĐÃ XÓA TRÊN WEB -> THÌ MỚI XÓA DƯỚI APP
+                if let r = DevicePatchService.latestReceipt(projectID: item.id) { try? DevicePatchService.restore(receipt: r) }
+                syncQueue.sync { PatchMetaStore.remove(localName: localName) }
+                try? FileManager.default.removeItem(at: item.packageURL)
             }
         }
-
-        // CHỈ TẢI XUỐNG CÁC FILE CHƯA CÓ
-        var missing: [RemoteFileLite] = []
-        for r in remotes {
-            if !storeFiles.contains(r.filename) { missing.append(r) }
-            else { syncQueue.sync { PatchMetaStore.set(makeMeta(r, localName: r.filename), localName: r.filename) } }
-        }
         
-        guard !missing.isEmpty else { await MainActor.run { store.reload() }; return }
-        for r in missing { _ = await downloadAndImport(remote: r, store: store) }
+        // 2. CẬP NHẬT & TẢI FILE MỚI
+        await MainActor.run { store.reload() }
+        let refreshedItems = await MainActor.run { store.items }
+        let storeFiles = refreshedItems.map { $0.packageURL.lastPathComponent }
+
+        for r in remotes {
+            let isDownloaded = storeFiles.contains { localName in
+                let rBase = (r.filename as NSString).deletingPathExtension
+                let lBase = (localName as NSString).deletingPathExtension
+                return localName == r.filename || rBase == lBase || localName.contains(r.filename) || r.filename.contains(localName)
+            }
+            
+            if !isDownloaded {
+                _ = await downloadAndImport(remote: r, store: store)
+            } else {
+                if let matchedLocal = storeFiles.first(where: { lName in
+                    let rBase = (r.filename as NSString).deletingPathExtension
+                    let lBase = (lName as NSString).deletingPathExtension
+                    return lName == r.filename || rBase == lBase || lName.contains(r.filename) || r.filename.contains(lName)
+                }) {
+                    syncQueue.sync { PatchMetaStore.set(makeMeta(r, localName: matchedLocal), localName: matchedLocal) }
+                }
+            }
+        }
         await MainActor.run { store.reload() }
     }
 
