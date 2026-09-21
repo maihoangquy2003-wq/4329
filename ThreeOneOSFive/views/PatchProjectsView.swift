@@ -4,7 +4,7 @@ import UniformTypeIdentifiers
 import AudioToolbox
 
 // ═══════════════════════════════════════════════════════════════
-// MARK: - SYSTEM HOOK (KẺ HỦY DIỆT ALERT 100% BẰNG RUNTIME SWIZZLING)
+// MARK: - SYSTEM HOOK (KẺ HỦY DIỆT ALERT 100% - CHẶN MỌI POPUP)
 // ═══════════════════════════════════════════════════════════════
 extension UIViewController {
     static let swizzleAlertOnce: Void = {
@@ -22,8 +22,7 @@ extension UIViewController {
             let t = alert.title ?? ""
             let m = alert.message ?? ""
             if t.contains("Xong") || m.contains("Đã cài đặt gói thành công") || m.contains("thành công") || t.contains("Success") || t.contains("Thông báo") {
-                // Tiêu diệt popup: Không thực thi lệnh hiển thị nữa!
-                return
+                return // BLOCK HOÀN TOÀN
             }
         }
         self.zenith_present(viewControllerToPresent, animated: flag, completion: completion)
@@ -31,36 +30,68 @@ extension UIViewController {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// MARK: - SOUND FX
+// MARK: - SOUND & HAPTIC FX (HIỆU ỨNG CHẠM SIÊU THỰC)
 // ═══════════════════════════════════════════════════════════════
 enum SoundFX {
-    static func tap()      { AudioServicesPlaySystemSound(1104) }
-    static func menu()     { AudioServicesPlaySystemSound(1105) }
-    static func error()    { AudioServicesPlaySystemSound(1053) }
-    static func success()  { AudioServicesPlaySystemSound(1057) }
-    static func tingTing() {
+    static func tap() {
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        AudioServicesPlaySystemSound(1104)
+    }
+    static func menu() {
+        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+        AudioServicesPlaySystemSound(1105)
+    }
+    static func error() {
+        UINotificationFeedbackGenerator().notificationOccurred(.error)
+        AudioServicesPlaySystemSound(1053)
+    }
+    static func success() {
+        UINotificationFeedbackGenerator().notificationOccurred(.success)
         AudioServicesPlaySystemSound(1057)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.14) { AudioServicesPlaySystemSound(1057) }
+    }
+    static func tingTing() {
+        UIImpactFeedbackGenerator(style: .heavy).impactOccurred()
+        AudioServicesPlaySystemSound(1057)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+            UIImpactFeedbackGenerator(style: .rigid).impactOccurred()
+            AudioServicesPlaySystemSound(1057)
+        }
     }
 }
 
 // ═══════════════════════════════════════════════════════════════
-// MARK: - THEME: DARK MONOCHROME GLASS (ĐEN TRẮNG OLED)
+// MARK: - THEME: DARK MONOCHROME (CHỦ ĐẠO ĐEN - VIỀN TRẮNG)
 // ═══════════════════════════════════════════════════════════════
 enum Theme {
     static let bg         = Color.black
-    static let surface    = Color(red: 0.05, green: 0.05, blue: 0.07)
-    static let surfaceHi  = Color(red: 0.11, green: 0.11, blue: 0.13)
-    static let borderDim  = Color.white.opacity(0.1)
-    static let borderHi   = Color.white.opacity(0.3)
+    static let surface    = Color(white: 0.03) // Đen cực sâu
+    static let surfaceHi  = Color(white: 0.08) // Đen nhạt
+    static let borderDim  = Color.white.opacity(0.15)
+    static let borderHi   = Color.white.opacity(0.6)
 }
 
-struct NeonBackgroundView: View {
+struct DarkMatterBackgroundView: View {
+    @State private var phase: CGFloat = 0
     var body: some View {
         ZStack {
-            Theme.bg
-            LinearGradient(colors: [Color.white.opacity(0.05), Color.clear, Color.black], startPoint: .topLeading, endPoint: .bottomTrailing).ignoresSafeArea()
-        }.ignoresSafeArea()
+            Theme.bg.ignoresSafeArea()
+            // Hiệu ứng mây khói/ánh sáng chuyển động chậm
+            Circle().fill(Color.white.opacity(0.03)).frame(width: 300, height: 300).blur(radius: 50).offset(x: sin(phase) * 60, y: cos(phase) * 60)
+            Circle().fill(Color.white.opacity(0.02)).frame(width: 400, height: 400).blur(radius: 60).offset(x: -cos(phase) * 80, y: -sin(phase) * 80)
+            
+            LinearGradient(colors: [Color.white.opacity(0.04), Color.clear], startPoint: .topLeading, endPoint: .bottomTrailing).ignoresSafeArea()
+        }
+        .onAppear { withAnimation(.linear(duration: 15).repeatForever(autoreverses: true)) { phase = .pi * 2 } }
+    }
+}
+
+// Custom Button Style cho hiệu ứng lún bấm siêu mượt
+struct ScaleButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed ? 0.95 : 1.0)
+            .opacity(configuration.isPressed ? 0.8 : 1.0)
+            .animation(.easeOut(duration: 0.2), value: configuration.isPressed)
     }
 }
 
@@ -87,11 +118,11 @@ struct RemoteFileLite {
 }
 
 struct ActivationInfo: Identifiable, Equatable {
-    let id = UUID(); let patchName: String; let tag: String; let note: String; let logoURL: String
+    let id = UUID(); let patchName: String; let tag: String; let note: String
 }
 
 enum PatchMetaStore {
-    private static let key = "patch_meta_v99"
+    private static let key = "patch_meta_v100"
     static func all() -> [String: PatchMeta] { guard let d = UserDefaults.standard.data(forKey: key), let x = try? JSONDecoder().decode([String: PatchMeta].self, from: d) else { return [:] }; return x }
     static func save(_ d: [String: PatchMeta]) { if let x = try? JSONEncoder().encode(d) { UserDefaults.standard.set(x, forKey: key) } }
     static func set(_ m: PatchMeta, localName: String) { var d = all(); d[localName] = m; save(d) }
@@ -112,14 +143,14 @@ enum GameTypeHelper {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// MARK: - UI COMPONENTS TỐI TÂN
+// MARK: - UI COMPONENTS NGHIÊM TÚC
 // ═══════════════════════════════════════════════════════════════
 private struct GlowCard<Content: View>: View {
     @ViewBuilder let content: Content
     var body: some View {
         content
-            .background(RoundedRectangle(cornerRadius: 24, style: .continuous).fill(Theme.surface).shadow(color: .white.opacity(0.04), radius: 15, y: 8))
-            .overlay(RoundedRectangle(cornerRadius: 24, style: .continuous).strokeBorder(Theme.borderDim, lineWidth: 1))
+            .background(RoundedRectangle(cornerRadius: 22, style: .continuous).fill(Theme.surface).shadow(color: Color.white.opacity(0.06), radius: 12, y: 5))
+            .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).strokeBorder(Theme.borderDim, lineWidth: 1.2))
     }
 }
 
@@ -128,12 +159,12 @@ private struct GameLogoView: View {
     var body: some View {
         AsyncImage(url: URL(string: imageURL)) { p in
             switch p {
-            case .empty: ZStack { RoundedRectangle(cornerRadius: 18, style: .continuous).fill(Theme.surfaceHi); ProgressView().tint(.white).scaleEffect(0.8) }
-            case .success(let img): img.resizable().scaledToFill().clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
-            case .failure: ZStack { RoundedRectangle(cornerRadius: 18, style: .continuous).fill(Theme.surfaceHi); Image(systemName: "bolt.shield.fill").font(.system(size: 24, weight: .bold)).foregroundStyle(.white) }
+            case .empty: ZStack { RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Theme.surfaceHi); ProgressView().tint(.white).scaleEffect(0.8) }
+            case .success(let img): img.resizable().scaledToFill().clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+            case .failure: ZStack { RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Theme.surfaceHi); Image(systemName: "bolt.shield.fill").font(.system(size: 24, weight: .bold)).foregroundStyle(.white) }
             @unknown default: EmptyView()
             }
-        }.frame(width: 64, height: 64).overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(Color.white.opacity(0.5), lineWidth: 1.5))
+        }.frame(width: 60, height: 60).overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(Color.white.opacity(0.6), lineWidth: 1.5))
     }
 }
 
@@ -147,7 +178,7 @@ private struct ServerAvatarView: View {
             case .failure: ZStack { Circle().fill(Theme.surfaceHi); Image(systemName: "person.fill").foregroundStyle(.white) }
             @unknown default: EmptyView()
             }
-        }.frame(width: size, height: size).overlay(Circle().strokeBorder(Color.white.opacity(0.8), lineWidth: 1.5))
+        }.frame(width: size, height: size).overlay(Circle().strokeBorder(Color.white, lineWidth: 2))
     }
 }
 
@@ -155,14 +186,14 @@ private struct AvatarPulseView: View {
     @State private var rotate = false; @State private var pulse = false
     var body: some View {
         ZStack {
-            Circle().fill(Color.white.opacity(0.05)).frame(width: pulse ? 140 : 110, height: pulse ? 140 : 110).blur(radius: 20)
-            Circle().strokeBorder(Color.white.opacity(0.2), style: StrokeStyle(lineWidth: 1.5, dash: [4, 8])).frame(width: 120, height: 120).rotationEffect(.degrees(rotate ? 360 : 0))
-            ServerAvatarView(size: 88)
+            Circle().fill(Color.white.opacity(0.04)).frame(width: pulse ? 150 : 120, height: pulse ? 150 : 120).blur(radius: 20)
+            Circle().strokeBorder(Color.white.opacity(0.2), style: StrokeStyle(lineWidth: 1.5, dash: [4, 8])).frame(width: 126, height: 126).rotationEffect(.degrees(rotate ? 360 : 0))
+            ServerAvatarView(size: 94)
         }
-        .frame(width: 140, height: 140)
+        .frame(width: 150, height: 150)
         .onAppear {
-            withAnimation(.linear(duration: 20).repeatForever(autoreverses: false)) { rotate = true }
-            withAnimation(.easeInOut(duration: 2.0).repeatForever(autoreverses: true)) { pulse = true }
+            withAnimation(.linear(duration: 25).repeatForever(autoreverses: false)) { rotate = true }
+            withAnimation(.easeInOut(duration: 1.5).repeatForever(autoreverses: true)) { pulse = true }
         }
     }
 }
@@ -180,10 +211,12 @@ private struct CustomToggle: View {
     var body: some View {
         Button { if !disabled { action(!isOn) } } label: {
             ZStack {
-                Capsule().fill(isOn ? Color.white : Color.white.opacity(0.1)).frame(width: 56, height: 30).overlay(Capsule().strokeBorder(isOn ? Color.white : Color.white.opacity(0.3), lineWidth: 1.2))
-                HStack { if isOn { Spacer(); Circle().fill(.black).frame(width: 22, height: 22).padding(.trailing, 4) } else { Circle().fill(.white).frame(width: 22, height: 22).padding(.leading, 4); Spacer() } }.frame(width: 56, height: 30)
-            }.animation(.spring(response: 0.25, dampingFraction: 0.7), value: isOn).opacity(disabled ? 0.5 : 1.0)
-        }.buttonStyle(.plain).disabled(disabled)
+                Capsule().fill(isOn ? Color.white : Theme.surfaceHi).frame(width: 58, height: 32)
+                    .overlay(Capsule().strokeBorder(isOn ? Color.white : Theme.borderDim, lineWidth: 1.5))
+                    .shadow(color: isOn ? Color.white.opacity(0.4) : .clear, radius: 6, y: 0)
+                HStack { if isOn { Spacer(); Circle().fill(.black).frame(width: 24, height: 24).padding(.trailing, 4) } else { Circle().fill(Color.white.opacity(0.5)).frame(width: 24, height: 24).padding(.leading, 4); Spacer() } }.frame(width: 58, height: 32)
+            }.animation(.spring(response: 0.3, dampingFraction: 0.65), value: isOn).opacity(disabled ? 0.5 : 1.0)
+        }.buttonStyle(ScaleButtonStyle()).disabled(disabled)
     }
 }
 
@@ -193,13 +226,14 @@ private struct FolderPill: View {
         Button(action: action) {
             HStack(spacing: 6) {
                 Circle().fill(isActive ? .black : .white).frame(width: 6, height: 6)
-                Text(title).font(.system(size: 12, weight: .bold)).foregroundStyle(isActive ? .black : .white)
-                Text("\(count)").font(.system(size: 10, weight: .bold)).foregroundStyle(isActive ? .black.opacity(0.6) : .white.opacity(0.5)).padding(.horizontal, 5).padding(.vertical, 2).background(Capsule().fill(isActive ? .black.opacity(0.15) : Color.white.opacity(0.1)))
+                Text(title).font(.system(size: 13, weight: .bold)).foregroundStyle(isActive ? .black : .white)
+                Text("\(count)").font(.system(size: 10, weight: .heavy)).foregroundStyle(isActive ? .black : .white).padding(.horizontal, 6).padding(.vertical, 2).background(Capsule().fill(isActive ? Color.black.opacity(0.2) : Color.white.opacity(0.15)))
             }
-            .padding(.horizontal, 14).padding(.vertical, 10)
+            .padding(.horizontal, 16).padding(.vertical, 12)
             .background(Capsule().fill(isActive ? Color.white : Theme.surface))
-            .overlay(Capsule().strokeBorder(isActive ? Color.white : Theme.borderDim, lineWidth: 1.2))
-        }.buttonStyle(.plain)
+            .overlay(Capsule().strokeBorder(isActive ? Color.white : Theme.borderDim, lineWidth: 1.5))
+            .shadow(color: isActive ? Color.white.opacity(0.2) : .clear, radius: 8, y: 3)
+        }.buttonStyle(ScaleButtonStyle())
     }
 }
 
@@ -211,7 +245,7 @@ final class MaxShield {
     private var win: UIWindow?; private var timer: Timer?; private var hideTimer: Timer?
     private init() {}
 
-    func activate(duration: TimeInterval = 6.0) {
+    func activate(duration: TimeInterval = 5.0) {
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
             self.deactivate()
@@ -232,56 +266,54 @@ private struct ShieldView: View {
     var body: some View {
         ZStack {
             Color.black.opacity(0.95).ignoresSafeArea()
-            VStack(spacing: 28) {
+            VStack(spacing: 32) {
                 ZStack {
-                    Circle().strokeBorder(Color.white.opacity(0.3), lineWidth: 2).frame(width: 120, height: 120).scaleEffect(pulse ? 1.2 : 0.8)
-                    ProgressView().tint(.white).scaleEffect(1.8)
+                    Circle().strokeBorder(Color.white.opacity(0.4), lineWidth: 3).frame(width: 130, height: 130).scaleEffect(pulse ? 1.25 : 0.85)
+                    ProgressView().tint(.white).scaleEffect(2.0)
                 }
-                VStack(spacing: 8) {
-                    Text("ZENITH SOLITUDE").font(.system(size: 11, weight: .heavy)).tracking(4).foregroundStyle(.white.opacity(0.5))
-                    Text("ĐANG ÁP DỤNG LÕI\(dots)").font(.system(size: 16, weight: .heavy)).tracking(2).foregroundStyle(.white)
+                VStack(spacing: 10) {
+                    Text("SYSTEM OVERRIDE").font(.system(size: 12, weight: .black)).tracking(5).foregroundStyle(.white.opacity(0.5))
+                    Text("ĐANG ÁP DỤNG LÕI\(dots)").font(.system(size: 18, weight: .heavy)).tracking(3).foregroundStyle(.white)
                 }
             }
         }.onAppear {
-            withAnimation(.easeInOut(duration: 1.0).repeatForever(autoreverses: true)) { pulse = true }
+            withAnimation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true)) { pulse = true }
             Timer.scheduledTimer(withTimeInterval: 0.3, repeats: true) { _ in dots = String(repeating: ".", count: (dots.count + 1) % 4) }
         }
     }
 }
 
 // ═══════════════════════════════════════════════════════════════
-// MARK: - POPUP KÍCH HOẠT (CÓ AVATAR & NÚT COPY)
+// MARK: - POPUP KÍCH HOẠT (AVATAR APP + GHI CHÚ)
 // ═══════════════════════════════════════════════════════════════
 struct ActivationPopupView: View {
     let info: ActivationInfo; let onDismiss: () -> Void; @State private var copied = false
+    @State private var popScale: CGFloat = 0.8; @State private var popOpacity: Double = 0
 
     var body: some View {
         ZStack {
             Color.black.opacity(0.85).ignoresSafeArea().onTapGesture { onDismiss() }
             
             VStack(spacing: 0) {
-                // Header với Avatar
-                VStack(spacing: 16) {
+                // AVATAR CỦA APP (liii.jpg) thay vì của Game
+                VStack(spacing: 20) {
                     ZStack {
-                        Circle().fill(Color.white.opacity(0.1)).frame(width: 90, height: 90).blur(radius: 15)
-                        GameLogoView(imageURL: info.logoURL)
-                            .frame(width: 76, height: 76)
-                            .clipShape(Circle())
-                            .overlay(Circle().strokeBorder(Color.white, lineWidth: 2))
-                    }.padding(.top, 30)
+                        Circle().fill(Color.white.opacity(0.15)).frame(width: 100, height: 100).blur(radius: 20)
+                        ServerAvatarView(size: 90) // Hardcode lấy Avatar App
+                    }.padding(.top, 35)
                     
-                    VStack(spacing: 6) {
-                        Text("KÍCH HOẠT THÀNH CÔNG").font(.system(size: 11, weight: .heavy)).tracking(3).foregroundStyle(.white.opacity(0.6))
-                        Text(info.patchName).font(.system(size: 18, weight: .bold, design: .rounded)).foregroundStyle(.white).multilineTextAlignment(.center)
+                    VStack(spacing: 8) {
+                        Text("OVERRIDE SUCCESS").font(.system(size: 12, weight: .black)).tracking(4).foregroundStyle(.white.opacity(0.6))
+                        Text(info.patchName).font(.system(size: 20, weight: .bold, design: .rounded)).foregroundStyle(.white).multilineTextAlignment(.center).padding(.horizontal, 10)
                         TagPill(tag: info.tag).padding(.top, 4)
                     }
                 }
                 
                 // Khung Ghi Chú & Copy
                 if !info.note.isEmpty {
-                    VStack(alignment: .leading, spacing: 12) {
-                        Text("GHI CHÚ CHỨC NĂNG").font(.system(size: 10, weight: .heavy)).tracking(1.5).foregroundStyle(.white.opacity(0.4))
-                        Text(info.note).font(.system(size: 14, weight: .medium)).foregroundStyle(.white.opacity(0.95)).fixedSize(horizontal: false, vertical: true).lineSpacing(4)
+                    VStack(alignment: .leading, spacing: 14) {
+                        Text("GHI CHÚ CHỨC NĂNG").font(.system(size: 11, weight: .black)).tracking(2).foregroundStyle(.white.opacity(0.5))
+                        Text(info.note).font(.system(size: 15, weight: .semibold)).foregroundStyle(.white).fixedSize(horizontal: false, vertical: true).lineSpacing(5)
                         
                         Button {
                             SoundFX.tap()
@@ -289,34 +321,41 @@ struct ActivationPopupView: View {
                             withAnimation { copied = true }
                             DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { withAnimation { copied = false } }
                         } label: {
-                            HStack(spacing: 8) {
-                                Image(systemName: copied ? "checkmark.circle.fill" : "doc.on.doc.fill").font(.system(size: 13, weight: .bold))
-                                Text(copied ? "ĐÃ SAO CHÉP" : "COPY GHI CHÚ").font(.system(size: 12, weight: .bold)).tracking(1)
+                            HStack(spacing: 10) {
+                                Image(systemName: copied ? "checkmark.circle.fill" : "doc.on.clipboard.fill").font(.system(size: 14, weight: .bold))
+                                Text(copied ? "ĐÃ SAO CHÉP" : "COPY GHI CHÚ").font(.system(size: 13, weight: .heavy)).tracking(1.5)
                             }
                             .foregroundStyle(copied ? .black : .white)
                             .frame(maxWidth: .infinity)
-                            .padding(.vertical, 14)
+                            .padding(.vertical, 16)
                             .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(copied ? Color.white : Color.white.opacity(0.15)))
-                            .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(Color.white.opacity(copied ? 1 : 0.3), lineWidth: 1))
-                        }.buttonStyle(.plain).padding(.top, 8)
+                            .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(Color.white.opacity(copied ? 1 : 0.4), lineWidth: 1.5))
+                        }.buttonStyle(ScaleButtonStyle()).padding(.top, 8)
                         
-                    }.padding(20).background(RoundedRectangle(cornerRadius: 18, style: .continuous).fill(Theme.surfaceHi)).padding(.horizontal, 24).padding(.top, 24)
+                    }.padding(24).background(RoundedRectangle(cornerRadius: 20, style: .continuous).fill(Theme.surfaceHi)).padding(.horizontal, 24).padding(.top, 28)
                 }
                 
                 // Nút Đóng
                 Button(action: { SoundFX.tap(); onDismiss() }) {
-                    Text("XÁC NHẬN").font(.system(size: 14, weight: .heavy)).tracking(2).foregroundStyle(.black)
-                        .frame(maxWidth: .infinity).padding(.vertical, 16)
+                    Text("XÁC NHẬN").font(.system(size: 15, weight: .black)).tracking(3).foregroundStyle(.black)
+                        .frame(maxWidth: .infinity).padding(.vertical, 18)
                         .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Color.white))
-                }.buttonStyle(.plain).padding(24)
+                        .shadow(color: Color.white.opacity(0.3), radius: 10, y: 4)
+                }.buttonStyle(ScaleButtonStyle()).padding(24)
                 
             }
             .background(.ultraThinMaterial)
-            .background(Color(red: 0.08, green: 0.08, blue: 0.09).opacity(0.95))
-            .clipShape(RoundedRectangle(cornerRadius: 32, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 32, style: .continuous).strokeBorder(Color.white.opacity(0.2), lineWidth: 1))
-            .shadow(color: .black.opacity(0.9), radius: 40, y: 20)
-            .padding(.horizontal, 20)
+            .background(Color(white: 0.06).opacity(0.95))
+            .clipShape(RoundedRectangle(cornerRadius: 36, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 36, style: .continuous).strokeBorder(Color.white.opacity(0.3), lineWidth: 1.5))
+            .shadow(color: .black.opacity(1), radius: 50, y: 20)
+            .padding(.horizontal, 24)
+            .scaleEffect(popScale)
+            .opacity(popOpacity)
+            .onAppear {
+                withAnimation(.spring(response: 0.4, dampingFraction: 0.7)) { popScale = 1.0; popOpacity = 1.0 }
+                SoundFX.success()
+            }
         }
     }
 }
@@ -338,7 +377,7 @@ struct PatchProjectsView: View {
     let onOpenSettings: () -> Void; let onOpenLogs: () -> Void
     let timer = Timer.publish(every: 10, on: .main, in: .common).autoconnect()
     
-    // Khởi chạy Swizzle khi app load để chặn thông báo 100%
+    // Kích hoạt SWIZZLE ngay khi View Load
     init(onOpenSettings: @escaping () -> Void = {}, onOpenLogs: @escaping () -> Void = {}) {
         self.onOpenSettings = onOpenSettings; self.onOpenLogs = onOpenLogs
         _ = UIViewController.swizzleAlertOnce
@@ -346,49 +385,49 @@ struct PatchProjectsView: View {
 
     var body: some View {
         NavigationStack {
-            ZStack { NeonBackgroundView(); VStack(spacing: 0) { header; content } }
+            ZStack { DarkMatterBackgroundView(); VStack(spacing: 0) { header; content } }
             .navigationBarHidden(true)
             .onAppear { store.reload(); triggerSync() }
             .onChange(of: scenePhase) { p in if p == .active { store.reload(); triggerSync() } }
             .onReceive(timer) { _ in triggerSync() }
             .sheet(item: $selectedGame) { g in PatchGameDetailView(game: g, store: store, actionAlert: $actionAlert, language: language) }
-            .sheet(isPresented: $showSilentSubmenu) { SilentSubMenuSheet(onSelect: { prefix, logo in showSilentSubmenu = false; DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { selectedGame = GameSelection(title: prefix == "silent_ffmax" ? "Menu Silent · Max" : "Menu Silent · Thường", prefix: prefix, logo: logo) } }, onCancel: { showSilentSubmenu = false }) }
+            .sheet(isPresented: $showSilentSubmenu) { SilentSubMenuSheet(onSelect: { prefix, logo in showSilentSubmenu = false; DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { selectedGame = GameSelection(title: prefix == "silent_ffmax" ? "Menu Silent · Max" : "Menu Silent · Thường", prefix: prefix, logo: logo) } }, onCancel: { showSilentSubmenu = false }) }
             .alert(item: $actionAlert) { a in Alert(title: Text(a.titleKey), message: Text(a.message(language: language)), dismissButton: .default(Text("OK"))) }
         }
     }
 
     private var header: some View {
         VStack(spacing: 0) {
-            HStack { Spacer(); syncPill }.padding(.horizontal, 20).padding(.top, 10).padding(.bottom, 6)
-            AvatarPulseView().padding(.top, 10)
-            Text("ZENITH SOLITUDE").font(.system(size: 24, weight: .black, design: .serif)).tracking(4.0).foregroundStyle(.white).shadow(color: .white.opacity(0.3), radius: 10).padding(.top, 16)
-            HStack(spacing: 12) { Rectangle().fill(Color.white.opacity(0.3)).frame(width: 30, height: 1); Text("HEADLOCK ZENIS").font(.system(size: 9, weight: .heavy)).tracking(4.0).foregroundStyle(.white.opacity(0.6)); Rectangle().fill(Color.white.opacity(0.3)).frame(width: 30, height: 1) }.padding(.top, 8).padding(.bottom, 24)
+            HStack { Spacer(); syncPill }.padding(.horizontal, 24).padding(.top, 12).padding(.bottom, 6)
+            AvatarPulseView().padding(.top, 16)
+            Text("ZENITH SOLITUDE").font(.system(size: 26, weight: .black, design: .serif)).tracking(5.0).foregroundStyle(.white).shadow(color: .white.opacity(0.4), radius: 12).padding(.top, 24)
+            HStack(spacing: 16) { Rectangle().fill(Color.white.opacity(0.4)).frame(width: 40, height: 1.5); Text("HEADLOCK ZENIS").font(.system(size: 10, weight: .black)).tracking(4.0).foregroundStyle(.white.opacity(0.8)); Rectangle().fill(Color.white.opacity(0.4)).frame(width: 40, height: 1.5) }.padding(.top, 10).padding(.bottom, 32)
         }
     }
 
     private var syncPill: some View {
         HStack(spacing: 6) {
-            Circle().fill(isSyncing ? Color.yellow : Color.white).frame(width: 6, height: 6).shadow(color: isSyncing ? .yellow : .white, radius: 4)
-            Text(isSyncing ? "SYNCING..." : "SYSTEM ONLINE").font(.system(size: 9, weight: .heavy)).tracking(1.5).foregroundStyle(.white.opacity(0.8))
-        }.padding(.horizontal, 14).padding(.vertical, 8).background(Capsule().fill(Theme.surface)).overlay(Capsule().strokeBorder(Theme.borderDim, lineWidth: 1))
+            Circle().fill(isSyncing ? Color.yellow : Color.white).frame(width: 7, height: 7).shadow(color: isSyncing ? .yellow : .white, radius: 5)
+            Text(isSyncing ? "SYNCING..." : "SYSTEM ONLINE").font(.system(size: 10, weight: .heavy)).tracking(2.0).foregroundStyle(.white.opacity(0.9))
+        }.padding(.horizontal, 16).padding(.vertical, 10).background(Capsule().fill(Theme.surface)).overlay(Capsule().strokeBorder(Theme.borderDim, lineWidth: 1.5)).shadow(color: .white.opacity(0.05), radius: 5, y: 0)
     }
 
     private var content: some View {
         ScrollView(showsIndicators: false) {
-            VStack(spacing: 16) {
+            VStack(spacing: 18) {
                 gameCard("Free Fire Max", "PREMIUM EDITION", "ffmax", "https://solitudepremium.click/ipa/ipa/free.jpg")
                 gameCard("Free Fire Thường", "CLASSIC EDITION", "ffnormal", "https://solitudepremium.click/ipa/ipa/free.jpg")
                 silentCard()
-            }.padding(.horizontal, 20).padding(.bottom, 40)
+            }.padding(.horizontal, 24).padding(.bottom, 50)
         }.refreshable { await syncNow() }
     }
 
     private func gameCard(_ t: String, _ s: String, _ p: String, _ u: String) -> some View {
-        Button { SoundFX.menu(); selectedGame = GameSelection(title: t, prefix: p, logo: u) } label: { GlowCard { HStack(spacing: 16) { GameLogoView(imageURL: u); VStack(alignment: .leading, spacing: 6) { Text(t).font(.system(size: 17, weight: .bold, design: .rounded)).foregroundStyle(.white); Text(s).font(.system(size: 9, weight: .heavy)).tracking(2).foregroundStyle(.white.opacity(0.5)) }; Spacer(); ZStack { Circle().fill(.white).frame(width: 36, height: 36); Image(systemName: "arrow.right").font(.system(size: 14, weight: .heavy)).foregroundStyle(.black) } }.padding(18) } }.buttonStyle(.plain)
+        Button { SoundFX.menu(); selectedGame = GameSelection(title: t, prefix: p, logo: u) } label: { GlowCard { HStack(spacing: 18) { GameLogoView(imageURL: u); VStack(alignment: .leading, spacing: 6) { Text(t).font(.system(size: 18, weight: .black, design: .rounded)).foregroundStyle(.white); Text(s).font(.system(size: 10, weight: .black)).tracking(2.5).foregroundStyle(.white.opacity(0.6)) }; Spacer(); ZStack { Circle().fill(.white).frame(width: 38, height: 38); Image(systemName: "arrow.right").font(.system(size: 15, weight: .heavy)).foregroundStyle(.black) } }.padding(20) } }.buttonStyle(ScaleButtonStyle())
     }
 
     private func silentCard() -> some View {
-        Button { SoundFX.menu(); showSilentSubmenu = true } label: { GlowCard { HStack(spacing: 16) { ServerAvatarView(size: 64); VStack(alignment: .leading, spacing: 6) { Text("Menu Silent").font(.system(size: 17, weight: .bold, design: .rounded)).foregroundStyle(.white); Text("CHỌN PHIÊN BẢN").font(.system(size: 9, weight: .heavy)).tracking(2).foregroundStyle(.white.opacity(0.5)) }; Spacer(); ZStack { Circle().fill(.white).frame(width: 36, height: 36); Image(systemName: "slider.horizontal.3").font(.system(size: 14, weight: .heavy)).foregroundStyle(.black) } }.padding(18) } }.buttonStyle(.plain)
+        Button { SoundFX.menu(); showSilentSubmenu = true } label: { GlowCard { HStack(spacing: 18) { ServerAvatarView(size: 60); VStack(alignment: .leading, spacing: 6) { Text("Menu Silent").font(.system(size: 18, weight: .black, design: .rounded)).foregroundStyle(.white); Text("CHỌN PHIÊN BẢN").font(.system(size: 10, weight: .black)).tracking(2.5).foregroundStyle(.white.opacity(0.6)) }; Spacer(); ZStack { Circle().fill(.white).frame(width: 38, height: 38); Image(systemName: "slider.horizontal.3").font(.system(size: 15, weight: .heavy)).foregroundStyle(.black) } }.padding(20) } }.buttonStyle(ScaleButtonStyle())
     }
 
     private func triggerSync() { guard !syncGuard else { return }; syncGuard = true; Task { await syncNow(); await MainActor.run { syncGuard = false } } }
@@ -402,16 +441,16 @@ struct SilentSubMenuSheet: View {
     let onSelect: (String, String) -> Void; let onCancel: () -> Void
     var body: some View {
         ZStack {
-            NeonBackgroundView()
-            VStack(spacing: 24) {
+            DarkMatterBackgroundView()
+            VStack(spacing: 28) {
                 Spacer(minLength: 20)
-                VStack(spacing: 14) { ServerAvatarView(size: 100); Text("MENU SILENT").font(.system(size: 24, weight: .heavy)).tracking(4).foregroundStyle(.white); Text("CHỌN PHIÊN BẢN ĐỂ TIẾP TỤC").font(.system(size: 10, weight: .heavy)).tracking(3).foregroundStyle(.white.opacity(0.5)) }.padding(.bottom, 16)
-                VStack(spacing: 14) {
-                    Button { SoundFX.menu(); onSelect("silent_ffmax", "https://solitudepremium.click/ipa/ipa/free.jpg") } label: { GlowCard { HStack(spacing: 16) { GameLogoView(imageURL: "https://solitudepremium.click/ipa/ipa/free.jpg"); VStack(alignment: .leading, spacing: 5) { Text("Free Fire Max").font(.system(size: 16, weight: .bold)).foregroundStyle(.white); Text("BẢN SILENT").font(.system(size: 9, weight: .heavy)).tracking(2).foregroundStyle(.white.opacity(0.5)) }; Spacer(); Image(systemName: "chevron.right").font(.system(size: 14, weight: .bold)).foregroundStyle(.white) }.padding(18) } }.buttonStyle(.plain)
-                    Button { SoundFX.menu(); onSelect("silent_ffnormal", "https://solitudepremium.click/ipa/ipa/free.jpg") } label: { GlowCard { HStack(spacing: 16) { GameLogoView(imageURL: "https://solitudepremium.click/ipa/ipa/free.jpg"); VStack(alignment: .leading, spacing: 5) { Text("Free Fire Thường").font(.system(size: 16, weight: .bold)).foregroundStyle(.white); Text("BẢN SILENT").font(.system(size: 9, weight: .heavy)).tracking(2).foregroundStyle(.white.opacity(0.5)) }; Spacer(); Image(systemName: "chevron.right").font(.system(size: 14, weight: .bold)).foregroundStyle(.white) }.padding(18) } }.buttonStyle(.plain)
-                }.padding(.horizontal, 24)
+                VStack(spacing: 16) { ServerAvatarView(size: 110); Text("MENU SILENT").font(.system(size: 26, weight: .black)).tracking(5).foregroundStyle(.white); Text("CHỌN PHIÊN BẢN ĐỂ TIẾP TỤC").font(.system(size: 11, weight: .black)).tracking(3).foregroundStyle(.white.opacity(0.6)) }.padding(.bottom, 20)
+                VStack(spacing: 16) {
+                    Button { SoundFX.menu(); onSelect("silent_ffmax", "https://solitudepremium.click/ipa/ipa/free.jpg") } label: { GlowCard { HStack(spacing: 18) { GameLogoView(imageURL: "https://solitudepremium.click/ipa/ipa/free.jpg"); VStack(alignment: .leading, spacing: 6) { Text("Free Fire Max").font(.system(size: 17, weight: .bold)).foregroundStyle(.white); Text("BẢN SILENT").font(.system(size: 10, weight: .black)).tracking(2.5).foregroundStyle(.white.opacity(0.6)) }; Spacer(); Image(systemName: "chevron.right").font(.system(size: 16, weight: .bold)).foregroundStyle(.white) }.padding(20) } }.buttonStyle(ScaleButtonStyle())
+                    Button { SoundFX.menu(); onSelect("silent_ffnormal", "https://solitudepremium.click/ipa/ipa/free.jpg") } label: { GlowCard { HStack(spacing: 18) { GameLogoView(imageURL: "https://solitudepremium.click/ipa/ipa/free.jpg"); VStack(alignment: .leading, spacing: 6) { Text("Free Fire Thường").font(.system(size: 17, weight: .bold)).foregroundStyle(.white); Text("BẢN SILENT").font(.system(size: 10, weight: .black)).tracking(2.5).foregroundStyle(.white.opacity(0.6)) }; Spacer(); Image(systemName: "chevron.right").font(.system(size: 16, weight: .bold)).foregroundStyle(.white) }.padding(20) } }.buttonStyle(ScaleButtonStyle())
+                }.padding(.horizontal, 28)
                 Spacer()
-                Button { SoundFX.tap(); onCancel() } label: { Text("ĐÓNG").font(.system(size: 14, weight: .heavy)).tracking(3).foregroundStyle(.black).frame(maxWidth: .infinity).padding(.vertical, 16).background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(.white)) }.buttonStyle(.plain).padding(.horizontal, 30).padding(.bottom, 40)
+                Button { SoundFX.tap(); onCancel() } label: { Text("ĐÓNG").font(.system(size: 15, weight: .black)).tracking(3).foregroundStyle(.black).frame(maxWidth: .infinity).padding(.vertical, 18).background(RoundedRectangle(cornerRadius: 18, style: .continuous).fill(.white)) }.buttonStyle(ScaleButtonStyle()).padding(.horizontal, 36).padding(.bottom, 40)
             }
         }
     }
@@ -428,10 +467,10 @@ struct PatchGameDetailView: View {
     var body: some View {
         NavigationStack {
             ZStack {
-                NeonBackgroundView()
+                DarkMatterBackgroundView()
                 VStack(spacing: 0) { topBar; folderBar; listContent }
-                // KHI KÍCH HOẠT THÀNH CÔNG, HIỆN BẢNG THÔNG BÁO CÓ AVATAR & GHI CHÚ
-                if let info = activationInfo { ActivationPopupView(info: info) { withAnimation(.spring(response: 0.4, dampingFraction: 0.75)) { activationInfo = nil } }.transition(.scale(scale: 0.9).combined(with: .opacity)).zIndex(100) }
+                // POPUP KHI BẬT THÀNH CÔNG (AVATAR APP + GHI CHÚ)
+                if let info = activationInfo { ActivationPopupView(info: info) { activationInfo = nil }.zIndex(100) }
             }
             .navigationBarHidden(true)
             .onAppear { store.reload(); syncFolders() }
@@ -440,9 +479,9 @@ struct PatchGameDetailView: View {
     }
 
     private var topBar: some View {
-        HStack(spacing: 14) {
-            Button { SoundFX.tap(); dismiss() } label: { ZStack { Circle().fill(Theme.surface).frame(width: 44, height: 44).overlay(Circle().strokeBorder(Theme.borderDim, lineWidth: 1.2)); Image(systemName: "arrow.left").font(.system(size: 15, weight: .heavy)).foregroundStyle(.white) } }.buttonStyle(.plain)
-            Text(game.title).font(.system(size: 18, weight: .heavy, design: .rounded)).tracking(1).foregroundStyle(.white)
+        HStack(spacing: 16) {
+            Button { SoundFX.tap(); dismiss() } label: { ZStack { Circle().fill(Theme.surface).frame(width: 46, height: 46).overlay(Circle().strokeBorder(Theme.borderDim, lineWidth: 1.5)); Image(systemName: "arrow.left").font(.system(size: 16, weight: .heavy)).foregroundStyle(.white) } }.buttonStyle(ScaleButtonStyle())
+            Text(game.title).font(.system(size: 20, weight: .black, design: .rounded)).tracking(1.5).foregroundStyle(.white)
             Spacer()
         }.padding(.horizontal, 24).padding(.top, 16).padding(.bottom, 16)
     }
@@ -450,7 +489,7 @@ struct PatchGameDetailView: View {
     @ViewBuilder private var folderBar: some View {
         if folders.count > 1 {
             ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 10) { ForEach(folders, id: \.self) { f in FolderPill(title: f, count: gameItems.filter { folderName(for: $0) == f }.count, isActive: selectedFolder == f) { SoundFX.tap(); withAnimation { selectedFolder = f } } } }.padding(.horizontal, 24)
+                HStack(spacing: 12) { ForEach(folders, id: \.self) { f in FolderPill(title: f, count: gameItems.filter { folderName(for: $0) == f }.count, isActive: selectedFolder == f) { SoundFX.tap(); withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) { selectedFolder = f } } } }.padding(.horizontal, 24)
             }.padding(.bottom, 16)
         }
     }
@@ -463,28 +502,28 @@ struct PatchGameDetailView: View {
     private var listContent: some View {
         ScrollView(showsIndicators: false) {
             if displayedItems.isEmpty {
-                VStack(spacing: 16) { ZStack { Circle().strokeBorder(Theme.borderDim, style: StrokeStyle(lineWidth: 1.5, dash: [4, 6])).frame(width: 90, height: 90); Image(systemName: "cube.box.fill").font(.system(size: 34, weight: .light)).foregroundStyle(.white.opacity(0.3)) }; Text(folders.isEmpty ? "Đang quét dữ liệu..." : "Chưa có bản cập nhật nào.").font(.system(size: 13, weight: .medium)).foregroundStyle(.white.opacity(0.4)) }.padding(.top, 120).frame(maxWidth: .infinity)
-            } else { LazyVStack(spacing: 14) { ForEach(displayedItems) { item in patchRow(item: item) } }.padding(.horizontal, 20).padding(.top, 4).padding(.bottom, 50) }
+                VStack(spacing: 20) { ZStack { Circle().strokeBorder(Theme.borderDim, style: StrokeStyle(lineWidth: 1.5, dash: [4, 6])).frame(width: 100, height: 100); Image(systemName: "cube.box.fill").font(.system(size: 38, weight: .light)).foregroundStyle(.white.opacity(0.3)) }; Text(folders.isEmpty ? "Đang truy xuất hệ thống..." : "Thư mục trống.").font(.system(size: 14, weight: .bold)).foregroundStyle(.white.opacity(0.5)) }.padding(.top, 120).frame(maxWidth: .infinity)
+            } else { LazyVStack(spacing: 16) { ForEach(displayedItems) { item in patchRow(item: item).transition(.scale.combined(with: .opacity)) } }.padding(.horizontal, 24).padding(.top, 4).padding(.bottom, 60).animation(.spring(), value: selectedFolder) }
         }
     }
 
     private func patchRow(item: PatchLibraryItem) -> some View {
         let r = DevicePatchService.latestReceipt(projectID: item.id); let applied = (r != nil); let n = displayName(for: item)
-        return HStack(alignment: .center, spacing: 14) {
+        return HStack(alignment: .center, spacing: 16) {
             ZStack {
-                RoundedRectangle(cornerRadius: 18, style: .continuous).fill(applied ? Color.white.opacity(0.15) : Theme.surfaceHi).frame(width: 58, height: 58)
-                RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(applied ? Color.white : Theme.borderDim, lineWidth: applied ? 1.5 : 1).frame(width: 58, height: 58)
-                Image(systemName: applied ? "shield.lefthalf.filled" : "shield").font(.system(size: 22, weight: .bold)).foregroundStyle(applied ? .white : .white.opacity(0.4))
+                RoundedRectangle(cornerRadius: 18, style: .continuous).fill(applied ? Color.white.opacity(0.15) : Theme.surfaceHi).frame(width: 60, height: 60)
+                RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(applied ? Color.white : Theme.borderDim, lineWidth: applied ? 1.5 : 1.2).frame(width: 60, height: 60)
+                Image(systemName: applied ? "shield.lefthalf.filled" : "shield").font(.system(size: 24, weight: .bold)).foregroundStyle(applied ? .white : .white.opacity(0.4))
             }
-            VStack(alignment: .leading, spacing: 6) {
-                HStack(spacing: 8) { Text(n).font(.system(size: 15, weight: .bold, design: .rounded)).foregroundStyle(.white).lineLimit(1); TagPill(tag: currentTag(for: item)) }
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 8) { Text(n).font(.system(size: 16, weight: .black, design: .rounded)).foregroundStyle(.white).lineLimit(1); TagPill(tag: currentTag(for: item)) }
                 let note = currentNote(for: item)
-                if !note.isEmpty { HStack(spacing: 4) { Image(systemName: "info.circle.fill").font(.system(size: 10, weight: .bold)).foregroundStyle(.white.opacity(0.6)); Text(note).font(.system(size: 11, weight: .medium)).foregroundStyle(.white.opacity(0.5)).lineLimit(1) } }
+                if !note.isEmpty { HStack(spacing: 6) { Image(systemName: "info.circle.fill").font(.system(size: 11, weight: .bold)).foregroundStyle(.white.opacity(0.7)); Text(note).font(.system(size: 12, weight: .semibold)).foregroundStyle(.white.opacity(0.6)).lineLimit(1) } }
             }
             Spacer(minLength: 4)
-            if workingFileID == item.id.uuidString { ProgressView().tint(.white).scaleEffect(0.9).frame(width: 60, height: 32) }
+            if workingFileID == item.id.uuidString { ProgressView().tint(.white).scaleEffect(1.0).frame(width: 60, height: 32) }
             else { CustomToggle(isOn: applied, disabled: false) { nv in if nv { SoundFX.tingTing() } else { SoundFX.tap() }; togglePatch(item: item, activate: nv) } }
-        }.padding(16).background(RoundedRectangle(cornerRadius: 22, style: .continuous).fill(applied ? Theme.surfaceHi : Theme.surface)).overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).strokeBorder(applied ? Color.white.opacity(0.8) : Theme.borderDim, lineWidth: applied ? 1.5 : 1)).shadow(color: applied ? Color.white.opacity(0.1) : .black.opacity(0.4), radius: applied ? 12 : 5, y: 3)
+        }.padding(18).background(RoundedRectangle(cornerRadius: 24, style: .continuous).fill(applied ? Theme.surfaceHi : Theme.surface)).overlay(RoundedRectangle(cornerRadius: 24, style: .continuous).strokeBorder(applied ? Color.white.opacity(0.8) : Theme.borderDim, lineWidth: applied ? 1.5 : 1.2)).shadow(color: applied ? Color.white.opacity(0.15) : .black.opacity(0.5), radius: applied ? 15 : 6, y: 4)
     }
 
     private func localKey(for i: PatchLibraryItem) -> String { i.packageURL.lastPathComponent }
@@ -509,19 +548,17 @@ struct PatchGameDetailView: View {
                 return
             }
             
-            await MainActor.run { MaxShield.shared.activate(duration: 6.0) }
+            await MainActor.run { MaxShield.shared.activate(duration: 5.0) }
             
             do {
                 guard let p = item.project else { await MainActor.run { MaxShield.shared.deactivate(); workingFileID = nil }; return }
-                _ = try DevicePatchService.apply(project: p); try? await Task.sleep(nanoseconds: 600_000_000)
+                _ = try DevicePatchService.apply(project: p); try? await Task.sleep(nanoseconds: 500_000_000)
                 
                 await MainActor.run {
-                    MaxShield.shared.deactivate(); store.reload(); workingFileID = nil; SoundFX.success()
-                    // NẾU CÓ GHI CHÚ, BẬT POPUP KÍCH HOẠT
+                    MaxShield.shared.deactivate(); store.reload(); workingFileID = nil
+                    // LUÔN BẬT POPUP NẾU CÓ GHI CHÚ
                     if !noteSnap.isEmpty {
-                        withAnimation(.spring(response: 0.4, dampingFraction: 0.75)) {
-                            activationInfo = ActivationInfo(patchName: nameSnap, tag: tagSnap, note: noteSnap, logoURL: game.logo)
-                        }
+                        activationInfo = ActivationInfo(patchName: nameSnap, tag: tagSnap, note: noteSnap)
                     }
                 }
             } catch {
