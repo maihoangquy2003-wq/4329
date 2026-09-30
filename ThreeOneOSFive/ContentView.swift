@@ -980,7 +980,7 @@ private struct KeyLockView: View {
     
     private var controlPanelSection: some View {
         VStack(spacing: 18) {
-            hwidSection
+            // Đã ẩn phần hwidSection đi theo yêu cầu (vẫn giữ logic bên dưới nếu cần gọi ngầm)
             
             HStack(spacing: 6) {
                 Circle().fill(Color.green).frame(width: 6, height: 6).neonGlow(color: .green, radius: 3)
@@ -1012,6 +1012,7 @@ private struct KeyLockView: View {
         .padding(.horizontal, 16)
     }
     
+    // (Đoạn hàm hwidSection cũ vẫn được giữ lại bên dưới để tránh lỗi biên dịch nếu có chỗ khác gọi tới)
     private var hwidSection: some View {
         HStack {
             Image(systemName: "cpu")
